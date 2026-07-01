@@ -93,16 +93,26 @@ nano .env
 
 3. В `.env` тестовой копии поставить новый `MENTOR_CHAT_ID` группы, куда должен приходить отчёт во время проверки.
 
-4. Запустить тестовую копию:
+4. Запустить тестовую копию. Если на сервере уже есть общий Caddy в сети
+   `loft-hall-internship_default`, используйте override:
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.yml -f deploy/docker-compose.proxy.yml up -d --build
 curl http://127.0.0.1:3500/api/health
 ```
 
-5. Подключить тестовый домен/путь в Caddy или nginx на порт `3500`, проверить запись, кабинет рекрута и отправку отчётов.
+5. Добавить тестовый домен в общий Caddy, например:
 
-6. Только после проверки заменить рабочий проект или переключить reverse proxy на объединённый контейнер.
+```caddy
+internship-copy.77.110.122.36.sslip.io {
+    encode zstd gzip
+    reverse_proxy loft-internship-unified:3000
+}
+```
+
+6. Проверить запись, кабинет рекрута и отправку отчётов.
+
+7. Только после проверки заменить рабочий проект или переключить reverse proxy на объединённый контейнер.
 
 ## PuzzleBot
 

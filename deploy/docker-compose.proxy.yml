@@ -1,24 +1,10 @@
 services:
-  caddy:
-    image: caddy:2-alpine
-    container_name: loft-hall-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
+  loft-internship-unified:
     networks:
       - default
-      - loft_app
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - loft_proxy
 
 networks:
-  loft_app:
+  loft_proxy:
     external: true
-    name: loft-hall-internship-unified_default
-
-volumes:
-  caddy_data:
-  caddy_config:
+    name: loft-hall-internship_default
