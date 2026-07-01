@@ -1,0 +1,2620 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#0c0c0f">
+  <title>Стажировка · LOFT HALL</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?62"></script>
+  <script>
+    (() => {
+      const tgTheme = window.Telegram?.WebApp?.colorScheme;
+      const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+      const resolvedTheme = tgTheme || (systemDark ? 'dark' : 'light');
+      document.documentElement.dataset.telegramTheme = resolvedTheme;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolvedTheme === 'dark' ? '#0b0b0e' : '#f5f5f7');
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f5f7;
+      --panel: rgba(255, 255, 255, .88);
+      --panel-strong: #fff;
+      --text: #111116;
+      --muted: #6f7078;
+      --line: rgba(17, 17, 22, .09);
+      --accent: #6d5dfc;
+      --accent-soft: rgba(109, 93, 252, .12);
+      --good: #16865d;
+      --bad: #c74444;
+      --shadow: 0 18px 55px rgba(13, 13, 18, .08);
+      --radius: 24px;
+      --safe-top: max(18px, env(safe-area-inset-top));
+      --safe-bottom: max(18px, env(safe-area-inset-bottom));
+    }
+
+    @media(prefers-color-scheme:dark) {
+      :root:not([data-telegram-theme="light"]) {
+        --bg: #0b0b0e;
+        --panel: rgba(23, 23, 28, .88);
+        --panel-strong: #17171c;
+        --text: #f5f5f7;
+        --muted: #9b9ca5;
+        --line: rgba(255, 255, 255, .09);
+        --accent: #8b7cff;
+        --accent-soft: rgba(139, 124, 255, .15);
+        --good: #45c995;
+        --bad: #ff7979;
+        --shadow: 0 22px 65px rgba(0, 0, 0, .34)
+      }
+    }
+
+    html[data-telegram-theme="dark"] {
+      --bg: #0b0b0e;
+      --panel: rgba(23, 23, 28, .88);
+      --panel-strong: #17171c;
+      --text: #f5f5f7;
+      --muted: #9b9ca5;
+      --line: rgba(255, 255, 255, .09);
+      --accent: #8b7cff;
+      --accent-soft: rgba(139, 124, 255, .15);
+      --good: #45c995;
+      --bad: #ff7979;
+      --shadow: 0 22px 65px rgba(0, 0, 0, .34)
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent
+    }
+
+    html {
+      scroll-behavior: smooth
+    }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      overscroll-behavior: none
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+      color: inherit
+    }
+
+    button {
+      border: 0
+    }
+
+    .app {
+      min-height: 100dvh;
+      position: relative;
+      overflow: hidden
+    }
+
+    .app:before {
+      content: "";
+      position: fixed;
+      inset: -15vh -20vw auto;
+      height: 52vh;
+      background: radial-gradient(circle at 55% 25%, var(--accent-soft), transparent 58%);
+      pointer-events: none;
+      z-index: 0
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 760px);
+      margin: auto;
+      padding: var(--safe-top) 16px calc(96px + var(--safe-bottom))
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 26px;
+      min-height: 42px
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase
+    }
+
+    .mark {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow)
+    }
+
+    .mark span {
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-radius: 3px;
+      transform: rotate(45deg)
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      backdrop-filter: blur(18px)
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px
+    }
+
+    [hidden] {
+      display: none !important
+    }
+
+    .screen {
+      animation: screenIn .34s cubic-bezier(.2, .75, .2, 1)
+    }
+
+    @keyframes screenIn {
+      from {
+        opacity: 0;
+        transform: translateY(9px)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase
+    }
+
+    h1 {
+      font-size: 58px;
+      line-height: .94;
+      letter-spacing: 0;
+      margin: 0;
+      max-width: 680px
+    }
+
+    h2 {
+      font-size: 28px;
+      line-height: 1.05;
+      letter-spacing: 0;
+      margin: 0
+    }
+
+    .lead {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 610px
+    }
+
+    .role-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 30px
+    }
+
+    .role-card {
+      position: relative;
+      text-align: left;
+      min-height: 230px;
+      padding: 22px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform .2s ease, border-color .2s ease
+    }
+
+    .role-card:active {
+      transform: scale(.985)
+    }
+
+    .role-card:hover {
+      border-color: rgba(109, 93, 252, .36)
+    }
+
+    .role-card:after {
+      content: "";
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      right: -60px;
+      bottom: -65px;
+      background: var(--accent-soft)
+    }
+
+    .role-index {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted)
+    }
+
+    .role-name {
+      position: absolute;
+      left: 22px;
+      bottom: 22px;
+      z-index: 1;
+      font-size: 24px;
+      font-weight: 850;
+      letter-spacing: 0
+    }
+
+    .role-arrow {
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      width: 38px;
+      height: 38px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      background: var(--accent-soft);
+      color: var(--accent)
+    }
+
+    .role-arrow svg {
+      width: 17px;
+      height: 17px
+    }
+
+    .hint {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45
+    }
+
+    .hint svg {
+      width: 18px;
+      min-width: 18px;
+      color: var(--accent)
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 22px
+    }
+
+    .back {
+      margin-top: 2px;
+      min-width: 42px
+    }
+
+    .role-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 12px
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px)
+    }
+
+    .form-card {
+      padding: 20px
+    }
+
+    .field {
+      display: block;
+      margin-top: 16px
+    }
+
+    .field:first-child {
+      margin-top: 0
+    }
+
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      margin: 0 0 8px 3px
+    }
+
+    .input,
+    .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 16px;
+      outline: none;
+      padding: 15px 16px;
+      transition: border-color .2s, box-shadow .2s;
+      font-size: 16px
+    }
+
+    .input:focus,
+    .textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft)
+    }
+
+    .textarea {
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.5
+    }
+
+    .error {
+      font-size: 12px;
+      color: var(--bad);
+      margin: 7px 3px 0;
+      display: none
+    }
+
+    .field.invalid .input {
+      border-color: var(--bad)
+    }
+
+    .field.invalid .hall-select {
+      border-color: var(--bad)
+    }
+
+    .field.invalid .error {
+      display: block
+    }
+
+    .primary,
+    .secondary {
+      width: 100%;
+      min-height: 54px;
+      border-radius: 17px;
+      font-weight: 820;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      transition: transform .18s, opacity .18s
+    }
+
+    .primary {
+      background: var(--text);
+      color: var(--bg);
+      margin-top: 18px
+    }
+
+    .secondary {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--text)
+    }
+
+    .primary:active,
+    .secondary:active {
+      transform: scale(.986)
+    }
+
+    .primary:disabled {
+      opacity: .45;
+      cursor: not-allowed
+    }
+
+    .progress-wrap {
+      margin: 18px 0 20px
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      font-weight: 780;
+      color: var(--muted);
+      margin-bottom: 9px
+    }
+
+    .progress {
+      height: 7px;
+      border-radius: 99px;
+      background: var(--line);
+      overflow: hidden
+    }
+
+    .progress>span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      border-radius: inherit;
+      transition: width .28s ease
+    }
+
+    .section-list {
+      display: grid;
+      gap: 12px
+    }
+
+    .final-fields {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px
+    }
+
+    .final-head {
+      padding: 2px 2px 0
+    }
+
+    .final-head .lead {
+      margin-top: 8px;
+      font-size: 14px
+    }
+
+    .choice-stack {
+      display: grid;
+      gap: 8px
+    }
+
+    .choice-stack .choice {
+      height: auto;
+      min-height: 48px;
+      padding: 12px 14px;
+      text-align: left
+    }
+
+    .section {
+      overflow: hidden
+    }
+
+    .section-head {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 18px 18px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer
+    }
+
+    .section-num {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 850;
+      font-size: 12px
+    }
+
+    .section-title {
+      flex: 1;
+      font-weight: 830;
+      letter-spacing: 0
+    }
+
+    .section-count {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap
+    }
+
+    .chevron {
+      width: 18px;
+      height: 18px;
+      transition: transform .24s
+    }
+
+    .section.open .chevron {
+      transform: rotate(180deg)
+    }
+
+    .section-body {
+      display: none;
+      border-top: 1px solid var(--line)
+    }
+
+    .section.open .section-body {
+      display: block
+    }
+
+    .check-item {
+      padding: 18px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .check-item:last-child {
+      border-bottom: 0
+    }
+
+    .item-top {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start
+    }
+
+    .item-index {
+      font-size: 11px;
+      font-weight: 850;
+      color: var(--muted);
+      padding-top: 3px;
+      min-width: 24px
+    }
+
+    .item-text {
+      font-size: 15px;
+      line-height: 1.48;
+      letter-spacing: 0
+    }
+
+    .choice-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px
+    }
+
+    .choice {
+      height: 43px;
+      border-radius: 13px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 820;
+      cursor: pointer
+    }
+
+    .choice[data-value="yes"].selected {
+      background: rgba(22, 134, 93, .12);
+      border-color: rgba(22, 134, 93, .5);
+      color: var(--good)
+    }
+
+    .choice[data-value="no"].selected {
+      background: rgba(199, 68, 68, .12);
+      border-color: rgba(199, 68, 68, .5);
+      color: var(--bad)
+    }
+
+    .comment-box {
+      display: none;
+      margin-top: 10px
+    }
+
+    .check-item.show-comment .comment-box {
+      display: block;
+      animation: screenIn .22s ease
+    }
+
+    .comment-toggle {
+      display: inline-flex;
+      margin-top: 10px;
+      background: none;
+      color: var(--muted);
+      padding: 4px 0;
+      font-size: 12px;
+      font-weight: 760;
+      cursor: pointer
+    }
+
+    .comment-input {
+      min-height: 76px;
+      font-size: 14px;
+      padding: 12px 13px
+    }
+
+    .floating {
+      position: fixed;
+      z-index: 10;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: min(100%, 760px);
+      padding: 12px 16px var(--safe-bottom);
+      background: linear-gradient(180deg, transparent, var(--bg) 25%);
+      pointer-events: none
+    }
+
+    .floating-inner {
+      pointer-events: auto;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding-top: 15px
+    }
+
+    .floating .icon-btn {
+      width: 54px;
+      height: 54px;
+      background: var(--panel-strong)
+    }
+
+    .floating .primary {
+      margin: 0;
+      min-height: 54px
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin: 18px 0
+    }
+
+    .summary-stat {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line)
+    }
+
+    .summary-stat strong {
+      display: block;
+      font-size: 24px;
+      letter-spacing: 0
+    }
+
+    .summary-stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 4px
+    }
+
+    .review-card {
+      padding: 18px;
+      margin-top: 12px
+    }
+
+    .review-title {
+      font-size: 13px;
+      font-weight: 850;
+      margin: 0 0 10px
+    }
+
+    .meta-list {
+      display: grid;
+      gap: 8px
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 13px
+    }
+
+    .meta-row span:first-child {
+      color: var(--muted)
+    }
+
+    .missing {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 15px;
+      background: rgba(199, 68, 68, .09);
+      color: var(--bad);
+      font-size: 13px;
+      line-height: 1.4
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px
+    }
+
+    .segmented .choice {
+      height: 48px
+    }
+
+    .send-status {
+      display: none;
+      margin-top: 12px;
+      padding: 13px 14px;
+      border-radius: 15px;
+      font-size: 13px;
+      line-height: 1.42
+    }
+
+    .send-status.show {
+      display: block
+    }
+
+    .send-status.ok {
+      background: rgba(22, 134, 93, .12);
+      color: var(--good)
+    }
+
+    .send-status.warn {
+      background: var(--accent-soft);
+      color: var(--accent)
+    }
+
+    .send-status.error {
+      background: rgba(199, 68, 68, .12);
+      color: var(--bad)
+    }
+
+    .skeleton {
+      height: 82px;
+      border-radius: 18px;
+      background: linear-gradient(90deg, var(--panel), var(--panel-strong), var(--panel));
+      background-size: 220% 100%;
+      animation: shimmer 1.2s infinite
+    }
+
+    @keyframes shimmer {
+      to {
+        background-position: -220% 0
+      }
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 50;
+      left: 50%;
+      bottom: calc(90px + var(--safe-bottom));
+      transform: translate(-50%, 16px);
+      max-width: calc(100% - 32px);
+      padding: 12px 15px;
+      border-radius: 14px;
+      background: var(--text);
+      color: var(--bg);
+      font-size: 13px;
+      font-weight: 720;
+      opacity: 0;
+      pointer-events: none;
+      transition: .24s
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0)
+    }
+
+    .hall-select {
+      width: 100%;
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 16px;
+      padding: 15px 16px;
+      text-align: left;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color .2s, box-shadow .2s, transform .18s
+    }
+
+    .hall-select:active {
+      transform: scale(.99)
+    }
+
+    .hall-select-value {
+      min-width: 0;
+      display: grid;
+      gap: 2px
+    }
+
+    .hall-select-value strong {
+      font-size: 16px;
+      line-height: 1.25;
+      overflow-wrap: anywhere
+    }
+
+    .hall-select-value span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3
+    }
+
+    .hall-select-icon {
+      width: 30px;
+      height: 30px;
+      flex: 0 0 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 900
+    }
+
+    .hall-picker {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: grid;
+      place-items: end center;
+      padding: 18px 14px max(18px, env(safe-area-inset-bottom));
+      background: rgba(5, 5, 8, .54);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      animation: hallPickerFade .18s ease
+    }
+
+    .hall-picker-panel {
+      width: min(100%, 720px);
+      max-height: min(82dvh, 760px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .34);
+      overflow: hidden;
+      animation: hallPickerIn .24s cubic-bezier(.2, .8, .2, 1)
+    }
+
+    .hall-picker-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .hall-picker-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 850;
+      letter-spacing: -.02em
+    }
+
+    .hall-picker-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4
+    }
+
+    .hall-picker-close {
+      flex: 0 0 40px;
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer
+    }
+
+    .hall-picker-body {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(116px, .9fr) minmax(0, 1.15fr)
+    }
+
+    .hall-picker-column {
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
+      scrollbar-width: thin
+    }
+
+    .hall-picker-column:first-child {
+      border-right: 1px solid var(--line);
+      background: rgba(109, 93, 252, .035)
+    }
+
+    .hall-picker-kicker {
+      margin: 0 0 10px 2px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .1em;
+      text-transform: uppercase
+    }
+
+    .hall-option {
+      width: 100%;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 8px;
+      padding: 11px 12px;
+      border: 1px solid transparent;
+      border-radius: 15px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.25;
+      cursor: pointer;
+      min-width: 0;
+      transition: background .18s ease, border-color .18s ease, transform .18s ease
+    }
+
+    .hall-option > span:first-child {
+      min-width: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word
+    }
+
+    .hall-option:first-of-type {
+      margin-top: 0
+    }
+
+    .hall-option:active {
+      transform: scale(.985)
+    }
+
+    .hall-option.selected {
+      background: var(--accent-soft);
+      border-color: rgba(109, 93, 252, .28);
+      color: var(--accent)
+    }
+
+    .hall-option .hall-check {
+      opacity: 0;
+      width: 20px;
+      height: 20px;
+      flex: 0 0 20px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      transition: opacity .18s ease, transform .18s ease;
+      transform: scale(.75)
+    }
+
+    .hall-option.selected .hall-check {
+      opacity: 1;
+      transform: scale(1)
+    }
+
+    .hall-picker-halls {
+      animation: screenIn .22s ease
+    }
+
+    @keyframes hallPickerFade {
+      from { opacity: 0 }
+      to { opacity: 1 }
+    }
+
+    @keyframes hallPickerIn {
+      from {
+        opacity: 0;
+        transform: translateY(18px) scale(.98)
+      }
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    @media(max-width:560px) {
+      .role-grid {
+        grid-template-columns: 1fr
+      }
+
+      .role-card {
+        min-height: 170px
+      }
+
+      .role-name {
+        font-size: 22px
+      }
+
+      h1 {
+        font-size: 42px
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr 1fr
+      }
+
+      .summary-stat:last-child {
+        grid-column: 1/-1
+      }
+
+      .shell {
+        padding-left: 14px;
+        padding-right: 14px
+      }
+    }
+
+    @media(prefers-reduced-motion:reduce) {
+      * {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important
+      }
+    }
+
+
+    /* UI upgrade v5 */
+    :root {
+      --shadow-soft: 0 10px 34px rgba(13, 13, 18, .065);
+      --shadow-lift: 0 20px 50px rgba(13, 13, 18, .11);
+      --surface-tint: rgba(109, 93, 252, .055);
+    }
+
+    .home-mode { overflow: hidden; }
+    .home-mode .app,
+    .home-mode .shell { height: 100dvh; min-height: 100dvh; }
+    .home-mode .shell { display: flex; flex-direction: column; padding-bottom: var(--safe-bottom); }
+    .home-mode .topbar { margin-bottom: 0; flex: 0 0 auto; }
+
+    .home-screen {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 20px 0 28px;
+    }
+
+    .home-copy { text-align: center; margin: 0 auto; max-width: 560px; }
+    .home-copy .eyebrow { margin-bottom: 12px; }
+    .home-copy h1 { margin: 0 auto; font-size: clamp(40px, 10vw, 62px); line-height: .93; letter-spacing: -.045em; }
+    .home-copy .lead { margin: 16px auto 0; max-width: 460px; font-size: 15px; line-height: 1.45; }
+
+    .role-grid { width: min(100%, 620px); margin: 30px auto 0; gap: 14px; }
+    .role-card {
+      min-height: 210px;
+      padding: 20px;
+      border-radius: 26px;
+      box-shadow: var(--shadow-soft);
+      isolation: isolate;
+      background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(255,255,255,.76));
+      transition: transform .22s cubic-bezier(.2,.8,.2,1), border-color .22s ease, box-shadow .22s ease;
+    }
+    html[data-telegram-theme="dark"] .role-card { background: linear-gradient(145deg, rgba(30,30,37,.96), rgba(20,20,25,.88)); }
+    .role-card:hover { transform: translateY(-2px); border-color: rgba(109,93,252,.32); box-shadow: var(--shadow-lift); }
+    .role-card:active { transform: scale(.982); }
+    .role-card:before { content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(145deg,var(--accent-soft),transparent 55%); opacity:.72; }
+    .role-card:after { width:180px; height:180px; right:-78px; bottom:-85px; }
+    .role-index { display:inline-flex; align-items:center; min-height:26px; padding:0 9px; border-radius:999px; background:var(--panel-strong); border:1px solid var(--line); font-size:10px; letter-spacing:.08em; }
+    .role-content { position:absolute; left:20px; right:58px; bottom:20px; z-index:2; display:grid; gap:7px; }
+    .role-name { position:static; font-size:25px; letter-spacing:-.025em; }
+    .role-description { color:var(--muted); font-size:12px; font-weight:650; line-height:1.35; }
+    .role-arrow { width:42px; height:42px; border-radius:15px; box-shadow:inset 0 0 0 1px rgba(109,93,252,.08); }
+    .role-card[href] { color: inherit; text-decoration: none; }
+    .booking-card { grid-column: 1 / -1; min-height: 154px; }
+    .booking-card .role-name { font-size: 28px; }
+
+    .card { box-shadow: var(--shadow-soft); }
+    .form-card { padding:22px; }
+    .field-label { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; letter-spacing:.01em; }
+    .field-label em,
+    .comment-label em { font-style:normal; font-size:10px; font-weight:760; color:var(--accent); background:var(--accent-soft); border-radius:999px; padding:4px 7px; white-space:nowrap; }
+    .field-help { display:block; margin:7px 3px 0; color:var(--muted); font-size:11px; line-height:1.35; }
+
+    .section-list { gap:14px; }
+    .section { border-radius:22px; box-shadow:var(--shadow-soft); }
+    .section-head { min-height:72px; padding:17px 18px; }
+    .section-num { border-radius:12px; box-shadow:inset 0 0 0 1px rgba(109,93,252,.08); }
+    .check-item { padding:20px 18px; transition:background .2s ease; }
+    .item-index { display:grid; place-items:center; width:28px; height:28px; min-width:28px; padding:0; border-radius:9px; background:var(--surface-tint); color:var(--accent); }
+    .item-text { min-width:0; padding-top:1px; font-size:16px; line-height:1.48; overflow-wrap:anywhere; }
+    .choice-row { gap:10px; margin-top:16px; }
+
+    .answer-choice { height:46px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:14px; transition:transform .16s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease; }
+    .answer-choice:active { transform:scale(.975); }
+    .answer-icon { width:22px; height:22px; border-radius:8px; display:grid; place-items:center; background:var(--line); font-size:13px; transition:.2s ease; }
+    .answer-choice[data-value="yes"].selected { box-shadow:0 8px 22px rgba(22,134,93,.13),inset 0 0 0 1px rgba(22,134,93,.12); }
+    .answer-choice[data-value="no"].selected { box-shadow:0 8px 22px rgba(199,68,68,.13),inset 0 0 0 1px rgba(199,68,68,.12); }
+    .answer-choice.selected .answer-icon { font-weight:900; }
+
+    .comment-toggle { align-items:center; gap:7px; margin-top:12px; padding:7px 4px; color:var(--muted); transition:color .18s ease; }
+    .comment-toggle:hover { color:var(--accent); }
+    .comment-plus { width:20px; height:20px; display:grid; place-items:center; border-radius:7px; background:var(--accent-soft); color:var(--accent); font-size:14px; line-height:1; }
+    .comment-box { margin-top:8px; padding:12px; border-radius:16px; background:var(--surface-tint); border:1px solid rgba(109,93,252,.08); }
+    .comment-label { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; color:var(--muted); font-size:11px; font-weight:780; }
+    .comment-input { min-height:82px; background:var(--panel-strong); }
+
+    .final-fields { margin-top:28px; gap:14px; }
+    .final-head { padding:10px 4px 2px; }
+    .final-text-card,
+    .decision-card { margin-top:0; border-radius:22px; }
+    .decision-card { position:relative; overflow:hidden; padding:18px; }
+    .decision-card:before { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 85% 0%,var(--accent-soft),transparent 42%); opacity:.85; }
+    .decision-head { position:relative; display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:14px; }
+    .decision-head .eyebrow { margin-bottom:7px; font-size:10px; }
+    .decision-head .review-title { margin:0; font-size:15px; }
+    .decision-status { flex:0 0 auto; padding:7px 9px; border-radius:999px; background:var(--line); color:var(--muted); font-size:10px; font-weight:800; }
+    .decision-status.is-set { color:var(--accent); background:var(--accent-soft); }
+    .decision-options { position:relative; gap:10px; }
+    .decision-option { position:relative; min-height:58px!important; display:grid; grid-template-columns:34px 1fr 24px; align-items:center; gap:11px; padding:11px 13px!important; border-radius:16px!important; text-align:left; overflow:hidden; transition:transform .18s ease,border-color .22s ease,background .22s ease,box-shadow .22s ease; }
+    .decision-option:active { transform:scale(.985); }
+    .decision-icon { width:34px; height:34px; display:grid; place-items:center; border-radius:11px; background:var(--line); font-size:16px; }
+    .decision-check { opacity:0; transform:scale(.6); width:22px; height:22px; display:grid; place-items:center; border-radius:50%; color:#fff; transition:.2s ease; }
+    .decision-option.selected { transform:translateY(-1px); }
+    .decision-option.selected .decision-check { opacity:1; transform:scale(1); }
+    .decision-positive.selected { color:var(--good); background:rgba(22,134,93,.11); border-color:rgba(22,134,93,.48); box-shadow:0 0 0 3px rgba(22,134,93,.07),0 12px 30px rgba(22,134,93,.14); }
+    .decision-positive.selected .decision-icon { background:rgba(22,134,93,.16); }
+    .decision-positive.selected .decision-check { background:var(--good); }
+    .decision-negative.selected { color:var(--bad); background:rgba(199,68,68,.11); border-color:rgba(199,68,68,.48); box-shadow:0 0 0 3px rgba(199,68,68,.07),0 12px 30px rgba(199,68,68,.14); }
+    .decision-negative.selected .decision-icon { background:rgba(199,68,68,.16); }
+    .decision-negative.selected .decision-check { background:var(--bad); }
+    .floating .primary { box-shadow:0 12px 32px rgba(17,17,22,.15); }
+
+    @media(max-width:560px) {
+      .home-screen { padding:8px 0 18px; }
+      .home-copy h1 { font-size:clamp(38px,12vw,48px); }
+      .home-copy .lead { max-width:330px; font-size:14px; }
+      .role-grid { margin-top:24px; grid-template-columns:1fr; gap:12px; }
+      .role-card { min-height:132px; padding:17px; }
+      .booking-card { min-height:132px; }
+      .booking-card .role-name { font-size:21px; }
+      .role-content { left:17px; right:62px; bottom:16px; gap:4px; }
+      .role-name { font-size:21px; }
+      .role-description { font-size:11px; }
+      .role-arrow { top:16px; right:16px; }
+      .page-head { margin-bottom:18px; }
+      .form-card { padding:18px; }
+      .check-item { padding:18px 15px; }
+      .item-top { gap:10px; }
+      .item-text { font-size:15px; line-height:1.5; }
+      .decision-head { display:grid; }
+      .decision-status { width:max-content; }
+    }
+
+    @media(max-height:700px) and (max-width:560px) {
+      .home-copy .eyebrow { margin-bottom:8px; }
+      .home-copy h1 { font-size:38px; }
+      .home-copy .lead { margin-top:11px; font-size:13px; }
+      .role-grid { margin-top:17px; gap:9px; }
+      .role-card { min-height:110px; }
+      .role-description { display:none; }
+    }
+
+
+    /* Review screen upgrade v6 */
+    .review-screen{padding-bottom:34px}
+    .review-screen .page-head{position:relative;align-items:flex-start;margin-bottom:22px;padding:2px 0 4px}
+    .review-screen .page-head>div:last-child{min-width:0;flex:1}
+    .review-screen .page-head h2{font-size:clamp(30px,6vw,42px);letter-spacing:-.035em;line-height:.98}
+    .review-screen .page-head .lead{max-width:560px;margin-top:12px;font-size:14px;line-height:1.5}
+    .review-readiness{display:flex;align-items:center;gap:10px;margin:0 0 18px 56px;padding:13px 15px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow-soft);color:var(--muted)}
+    .review-readiness-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:12px;background:var(--line);font-size:16px;font-weight:900}
+    .review-readiness-copy{min-width:0;display:grid;gap:2px}
+    .review-readiness-copy strong{font-size:13px;line-height:1.25}
+    .review-readiness-copy span{color:var(--muted);font-size:11px;line-height:1.35}
+    .review-readiness.ready{border-color:rgba(22,134,93,.22);background:linear-gradient(145deg,rgba(22,134,93,.10),var(--panel) 64%);color:var(--good)}
+    .review-readiness.ready .review-readiness-icon{background:rgba(22,134,93,.15)}
+    .review-readiness.attention{border-color:rgba(199,68,68,.22);background:linear-gradient(145deg,rgba(199,68,68,.09),var(--panel) 64%);color:var(--bad)}
+    .review-readiness.attention .review-readiness-icon{background:rgba(199,68,68,.14)}
+    .review-section-kicker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:22px 2px 10px;color:var(--muted);font-size:10px;font-weight:850;letter-spacing:.12em;text-transform:uppercase}
+    .review-section-kicker:after{content:"";height:1px;flex:1;background:var(--line)}
+    .review-screen .summary-grid{margin:0;gap:10px}
+    .review-screen .summary-stat{position:relative;overflow:hidden;min-height:112px;padding:17px;border-radius:21px;box-shadow:var(--shadow-soft);isolation:isolate}
+    .review-screen .summary-stat:after{content:"";position:absolute;z-index:-1;width:88px;height:88px;right:-35px;bottom:-40px;border-radius:50%;background:currentColor;opacity:.055}
+    .review-screen .summary-stat strong{font-size:30px;line-height:1;letter-spacing:-.04em}
+    .review-screen .summary-stat span{margin-top:8px;font-size:11px;line-height:1.25}
+    .summary-stat-good{color:var(--good)}.summary-stat-bad{color:var(--bad)}.summary-stat-neutral{color:var(--muted)}
+    .summary-stat-good span,.summary-stat-bad span,.summary-stat-neutral span{color:var(--muted)}
+    .review-issues{margin-top:14px}
+    .review-issues-card{padding:18px;border-radius:22px;overflow:hidden}
+    .review-issues-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:13px}
+    .review-issues-head>div{min-width:0}.review-issues-title{margin:0;font-size:15px;font-weight:860;line-height:1.25}
+    .review-issues-subtitle{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.4}
+    .review-issues-badge{flex:0 0 auto;display:inline-flex;align-items:center;min-height:28px;padding:0 9px;border-radius:999px;font-size:10px;font-weight:850}
+    .review-issues-badge.good{color:var(--good);background:rgba(22,134,93,.12)}.review-issues-badge.bad{color:var(--bad);background:rgba(199,68,68,.12)}
+    .review-issue-list{display:grid;gap:9px}.review-issue{width:100%;display:grid;grid-template-columns:32px 1fr;gap:11px;padding:13px;border:1px solid var(--line);border-radius:16px;background:var(--panel-strong);color:var(--text);text-align:left;cursor:pointer;transition:border-color .18s ease,transform .18s ease,background .18s ease}
+    .review-issue:active{transform:scale(.988)}
+    .review-issue:hover{border-color:rgba(109,93,252,.28);background:var(--surface-tint)}
+    .review-issue-index{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;font-size:10px;font-weight:900}
+    .review-issue.failed .review-issue-index{color:var(--bad);background:rgba(199,68,68,.12)}.review-issue.skipped .review-issue-index{color:var(--muted);background:var(--line)}
+    .review-issue-copy{min-width:0}.review-issue-text{font-size:12px;font-weight:750;line-height:1.42}
+    .review-issue-comment{margin-top:6px;padding:8px 10px;border-radius:11px;background:var(--surface-tint);color:var(--muted);font-size:11px;line-height:1.4}
+    .review-issue-required{margin-top:6px;color:var(--bad);font-size:10px;font-weight:780;line-height:1.35}
+    .check-item.issue-focus,.final-text-card.issue-focus,.decision-card.issue-focus{animation:issueFocus 1.45s ease}
+    @keyframes issueFocus{0%,100%{box-shadow:var(--shadow-soft)}20%,70%{box-shadow:0 0 0 3px var(--accent-soft),var(--shadow-lift);border-color:rgba(109,93,252,.48)}}
+    .review-success{display:flex;align-items:center;gap:13px;padding:16px;border:1px solid rgba(22,134,93,.18);border-radius:18px;background:rgba(22,134,93,.075)}
+    .review-success-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border-radius:13px;background:rgba(22,134,93,.14);color:var(--good);font-size:18px;font-weight:900}
+    .review-success strong{display:block;color:var(--good);font-size:13px}.review-success span{display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.4}
+    .review-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:14px;align-items:start}
+    .review-screen .review-card{margin:0;padding:19px;border-radius:22px;min-width:0}
+    .review-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.review-card-head .review-title{margin:0;font-size:14px}
+    .review-card-icon{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;border-radius:11px;color:var(--accent);background:var(--accent-soft);font-size:14px;font-weight:900}
+    .review-screen .meta-list{gap:0}.review-screen .meta-row{display:grid;gap:4px;padding:11px 0;border-bottom:1px solid var(--line);font-size:12px}
+    .review-screen .meta-row:first-child{padding-top:0}.review-screen .meta-row:last-child{padding-bottom:0;border-bottom:0}
+    .review-screen .meta-row span:first-child{color:var(--muted);font-size:10px;font-weight:760;letter-spacing:.035em;text-transform:uppercase}
+    .review-screen .meta-row strong{max-width:100%;color:var(--text);font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+    .review-screen .missing{margin-top:14px;padding:13px;border-radius:14px;font-size:11px}
+    .review-actions{position:sticky;z-index:12;bottom:max(8px,env(safe-area-inset-bottom));display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;margin-top:16px;padding:10px;border:1px solid var(--line);border-radius:22px;background:rgba(255,255,255,.92);box-shadow:0 18px 55px rgba(13,13,18,.16);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+    html[data-telegram-theme="dark"] .review-actions{background:rgba(23,23,28,.92)}
+    .review-actions .primary,.review-actions .secondary{margin:0;min-height:54px}.review-actions .secondary{width:54px;padding:0;flex:0 0 54px;border-radius:17px}.review-actions .secondary svg{width:19px;height:19px}
+    .review-actions-note{grid-column:1/-1;margin:-1px 4px 2px;color:var(--muted);font-size:10px;line-height:1.35;text-align:center}
+    .review-screen .send-status{margin:10px 0 0;border-radius:16px}
+    @media(max-width:640px){.review-readiness{margin-left:0}.review-columns{grid-template-columns:1fr}.review-screen .summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.review-screen .summary-stat{min-height:96px;padding:14px}.review-screen .summary-stat strong{font-size:27px}.review-screen .summary-stat span{font-size:10px}}
+    @media(max-width:420px){.review-screen .page-head h2{font-size:32px}.review-screen .summary-grid{gap:7px}.review-screen .summary-stat{min-height:92px;padding:12px;border-radius:18px}.review-screen .summary-stat strong{font-size:25px}.review-actions{bottom:max(5px,env(safe-area-inset-bottom))}}
+    .review-actions{grid-template-columns:1fr}
+    .review-actions .copy-report-button{width:100%;margin:0;min-height:56px;display:flex;align-items:center;justify-content:center;gap:10px}
+    .review-actions .copy-report-button svg{width:20px;height:20px;flex:0 0 20px}
+    .review-actions-note{margin:1px 6px 2px}
+
+  
+
+    /* Review screen v8: compact hierarchy and always-visible copy action */
+    body.review-mode .shell{padding-bottom:calc(118px + var(--safe-bottom))}
+    .review-screen{padding-bottom:0}
+    .review-screen .review-page-head{margin-bottom:16px;padding-top:0}
+    .review-screen .review-page-head h2{font-size:clamp(30px,5.8vw,38px);line-height:1;letter-spacing:-.035em}
+    .review-screen .review-page-head .lead{max-width:520px;margin-top:9px;font-size:13px;line-height:1.45}
+
+    .review-overview{overflow:hidden;margin:0 0 12px;border-radius:22px;box-shadow:var(--shadow-soft)}
+    .review-overview .review-readiness{margin:0;padding:14px 16px;border:0;border-radius:0;box-shadow:none;background:transparent}
+    .review-overview .review-readiness.ready{background:linear-gradient(120deg,rgba(22,134,93,.10),transparent 68%)}
+    .review-overview .review-readiness.attention{background:linear-gradient(120deg,rgba(199,68,68,.09),transparent 68%)}
+    .review-readiness-icon{width:36px;height:36px;flex-basis:36px;border-radius:12px}
+    .review-readiness-copy strong{font-size:13px}
+    .review-readiness-copy span{font-size:11px}
+
+    .review-screen .summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:0;border-top:1px solid var(--line)}
+    .review-screen .summary-stat{min-height:76px;padding:13px 15px;border:0;border-right:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+    .review-screen .summary-stat:last-child{border-right:0}
+    .review-screen .summary-stat:after{display:none}
+    .review-screen .summary-stat strong{font-size:27px;line-height:1}
+    .review-screen .summary-stat span{margin-top:6px;font-size:10px;line-height:1.2}
+
+    .review-issues{margin:0 0 12px}
+    .review-issues-card{padding:0;border-radius:22px;overflow:hidden}
+    .review-issues-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;background:transparent;text-align:left;cursor:pointer}
+    .review-issues-main{min-width:0;display:grid;gap:4px}
+    .review-issues-title{margin:0;font-size:14px;font-weight:860;line-height:1.25}
+    .review-issues-subtitle{color:var(--muted);font-size:11px;line-height:1.38}
+    .review-issues-side{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+    .review-issues-badge{min-height:28px;padding:0 10px;border-radius:999px;font-size:10px;font-weight:850;white-space:nowrap}
+    .review-issues-badge.bad{color:var(--bad);background:rgba(199,68,68,.12)}
+    .review-issues-badge.neutral{color:var(--muted);background:var(--line)}
+    .review-issues-chevron{width:18px;height:18px;color:var(--muted);transition:transform .2s ease}
+    .review-issues-card.open .review-issues-chevron{transform:rotate(180deg)}
+    .review-issues-body{padding:0 14px 14px;border-top:1px solid var(--line)}
+    .review-issue-list{padding-top:12px}
+    .review-success-card{display:flex;align-items:center;gap:12px;padding:15px 16px;border-radius:22px;color:var(--good)}
+    .review-success-card strong{display:block;font-size:13px;line-height:1.3}
+    .review-success-card span span{display:block;margin-top:3px;color:var(--muted);font-size:11px;line-height:1.4}
+
+    .review-columns{gap:12px;margin-top:0}
+    .review-screen .review-card{padding:17px;border-radius:22px}
+    .review-card-head{margin-bottom:11px}
+    .review-screen .meta-row{padding:9px 0}
+    .review-screen .meta-row span:first-child{font-size:9px}
+    .review-screen .meta-row strong{font-size:12px}
+
+    .review-actions{position:fixed;z-index:40;left:50%;right:auto;bottom:max(8px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(calc(100% - 28px),732px);display:grid;grid-template-columns:1fr;gap:5px;margin:0;padding:8px;border-radius:20px;background:rgba(255,255,255,.94);box-shadow:0 18px 52px rgba(8,8,12,.24);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+    html[data-telegram-theme="dark"] .review-actions{background:rgba(22,22,27,.94)}
+    .review-actions .copy-report-button{width:100%;min-height:56px;margin:0;border-radius:16px;box-shadow:none}
+    .review-actions-note{margin:0 8px 2px;color:var(--muted);font-size:9px;line-height:1.25;text-align:center}
+    .review-screen .send-status{margin:12px 0 0}
+
+    @media(max-width:640px){
+      .review-columns{grid-template-columns:1fr}
+      .review-screen .summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    }
+    @media(max-width:420px){
+      body.review-mode .shell{padding-bottom:calc(112px + var(--safe-bottom))}
+      .review-screen .review-page-head h2{font-size:30px}
+      .review-screen .review-page-head .lead{font-size:12px}
+      .review-screen .summary-stat{min-height:70px;padding:12px 10px}
+      .review-screen .summary-stat strong{font-size:24px}
+      .review-screen .summary-stat span{font-size:9px}
+      .review-issues-toggle{padding:14px}
+      .review-issues-side{gap:6px}
+      .review-issues-badge{padding:0 8px;font-size:9px}
+      .review-actions{width:calc(100% - 20px);bottom:max(6px,env(safe-area-inset-bottom));padding:7px}
+      .review-actions .copy-report-button{min-height:54px}
+      .review-actions-note{font-size:8.5px}
+    }
+
+
+    /* Final interface audit v9 */
+    :root{
+      --content-radius:24px;
+      --content-border:rgba(17,17,22,.095);
+      --surface-flat:rgba(255,255,255,.72);
+      --surface-subtle:rgba(17,17,22,.025);
+    }
+    html[data-telegram-theme="dark"]{
+      --content-border:rgba(255,255,255,.095);
+      --surface-flat:rgba(23,23,28,.76);
+      --surface-subtle:rgba(255,255,255,.025);
+    }
+
+    /* Unified screen header */
+    .screen-hero{margin:0 0 22px}
+    .screen-toolbar{display:flex;align-items:center;gap:12px;min-height:46px;margin-bottom:20px}
+    .screen-toolbar .back{margin:0;width:46px;height:46px;min-width:46px;border-radius:15px}
+    .screen-toolbar .role-pill{margin:0;padding:8px 13px;font-size:11px;letter-spacing:.095em}
+    .screen-heading{max-width:590px}
+    .screen-heading h2{margin:0;font-size:clamp(36px,7vw,48px);font-weight:780;line-height:.98;letter-spacing:-.045em}
+    .screen-heading .lead{max-width:520px;margin:12px 0 0;font-size:15px;line-height:1.48;color:var(--muted)}
+
+    /* Checklist hero and progress */
+    .checklist-hero{padding:2px 0 0}
+    .checklist-progress-card{margin-top:22px;padding:15px 17px 16px;border:1px solid var(--content-border);border-radius:18px;background:var(--surface-flat);box-shadow:0 8px 26px rgba(13,13,18,.045);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+    .checklist-progress-card .progress-meta{margin:0 0 10px;font-size:12px;line-height:1;color:var(--muted)}
+    .checklist-progress-card .progress-meta span:first-child{font-weight:720;color:var(--text)}
+    .checklist-progress-card .progress-meta span:last-child{font-weight:760;color:var(--accent)}
+    .checklist-progress-card .progress{height:6px;background:var(--line)}
+    .checklist-progress-card .progress>span{box-shadow:0 0 14px rgba(109,93,252,.28)}
+
+    /* Review header */
+    .review-screen{padding-bottom:0}
+    .review-hero{margin-bottom:18px}
+    .review-hero .screen-heading h2{font-size:clamp(34px,6.6vw,44px)}
+    .review-hero .screen-heading .lead{font-size:14px}
+
+    /* Overview: strict 3-column row on all widths */
+    .review-overview{margin:0 0 12px;border:1px solid var(--content-border);border-radius:var(--content-radius);background:var(--surface-flat);box-shadow:0 10px 32px rgba(13,13,18,.055)}
+    .review-overview .review-readiness{min-height:74px;padding:15px 17px}
+    .review-readiness-icon{width:38px;height:38px;flex:0 0 38px;border-radius:13px}
+    .review-readiness-copy strong{font-size:14px;line-height:1.25}
+    .review-readiness-copy span{margin-top:2px;font-size:11px;line-height:1.38}
+    .review-screen .summary-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:0!important;margin:0!important;border-top:1px solid var(--content-border)}
+    .review-screen .summary-stat,
+    .review-screen .summary-stat:last-child{grid-column:auto!important;min-width:0;min-height:84px;padding:14px 16px;border:0;border-right:1px solid var(--content-border);border-radius:0;background:transparent;box-shadow:none}
+    .review-screen .summary-stat:last-child{border-right:0}
+    .review-screen .summary-stat strong{font-size:28px;line-height:1;font-weight:760;letter-spacing:-.045em}
+    .review-screen .summary-stat span{margin-top:7px;font-size:10.5px;line-height:1.2;color:var(--muted)}
+
+    /* Issues remain the only clearly interactive content block */
+    .review-issues{margin:0 0 12px}
+    .review-issues-card{border:1px solid var(--content-border);background:var(--surface-flat);box-shadow:none}
+    .review-issues-toggle{padding:15px 17px}
+    .review-issues-title{font-size:14px}
+    .review-issues-subtitle{font-size:11px}
+    .review-success-card{border:1px solid rgba(22,134,93,.17);background:linear-gradient(120deg,rgba(22,134,93,.075),var(--surface-flat));box-shadow:none}
+
+    /* Report details: one calm information sheet, not a stack of buttons */
+    .review-details{margin:0;padding:0;overflow:hidden;border:1px solid var(--content-border);border-radius:var(--content-radius);background:var(--surface-flat);box-shadow:none;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+    .review-details-section{padding:20px 20px 18px}
+    .review-details-divider{height:1px;margin:0 20px;background:var(--content-border)}
+    .review-details-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:13px}
+    .review-details-kicker{display:block;margin-bottom:5px;color:var(--muted);font-size:9px;font-weight:760;letter-spacing:.12em;text-transform:uppercase}
+    .review-details-head h3{margin:0;font-size:17px;font-weight:760;line-height:1.2;letter-spacing:-.02em}
+    .review-details-number{flex:0 0 auto;color:var(--accent);font-size:10px;font-weight:800;letter-spacing:.08em}
+
+    #reviewMeta.meta-list,#reviewSummary.meta-list{display:grid;gap:0}
+    #reviewMeta .meta-row{display:grid;grid-template-columns:minmax(125px,.9fr) minmax(0,1.1fr);align-items:start;gap:18px;padding:11px 0;border-bottom:1px solid var(--content-border)}
+    #reviewMeta .meta-row:first-child{padding-top:0}
+    #reviewMeta .meta-row:last-child{padding-bottom:0;border-bottom:0}
+    #reviewMeta .meta-row span:first-child{color:var(--muted);font-size:12px;font-weight:560;line-height:1.35;letter-spacing:0;text-transform:none}
+    #reviewMeta .meta-row strong{max-width:100%;color:var(--text);font-size:13px;font-weight:690;line-height:1.4;text-align:right;overflow-wrap:anywhere;white-space:pre-wrap}
+
+    #reviewSummary .meta-row{display:block;padding:12px 0;border-bottom:1px solid var(--content-border)}
+    #reviewSummary .meta-row:first-child{padding-top:0}
+    #reviewSummary .meta-row:last-child{padding-bottom:0;border-bottom:0}
+    #reviewSummary .meta-row span:first-child{display:block;color:var(--muted);font-size:11px;font-weight:600;line-height:1.35;letter-spacing:0;text-transform:none}
+    #reviewSummary .meta-row strong{display:block;margin-top:5px;color:var(--text);font-size:13px;font-weight:620;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+    .review-details .missing{margin:14px 0 0;padding:12px 13px;border-radius:14px;font-size:11px;line-height:1.4}
+
+    /* Fixed action uses the same geometry as the content column */
+    body.review-mode .shell{padding-bottom:calc(124px + var(--safe-bottom))}
+    .review-actions{left:50%;bottom:max(7px,env(safe-area-inset-bottom));width:min(calc(100% - 28px),732px);padding:8px;border:1px solid var(--content-border);border-radius:20px;background:rgba(255,255,255,.945);box-shadow:0 18px 48px rgba(8,8,12,.22)}
+    html[data-telegram-theme="dark"] .review-actions{background:rgba(22,22,27,.95)}
+    .review-actions .copy-report-button{min-height:56px;border-radius:15px;font-size:15px;font-weight:770;letter-spacing:-.01em}
+    .review-actions-note{margin:1px 8px 2px;font-size:9px;line-height:1.3}
+    .review-actions .send-status{margin:5px 0 0;padding:10px 12px;border-radius:12px;font-size:10px;line-height:1.35}
+
+    /* Remove inherited oversized/duplicated review styles */
+    .review-columns,.review-card-head,.review-card-icon{display:none!important}
+
+    @media(max-width:560px){
+      .screen-toolbar{margin-bottom:17px}
+      .screen-heading h2{font-size:38px}
+      .screen-heading .lead{margin-top:10px;font-size:14px;line-height:1.45}
+      .checklist-progress-card{margin-top:19px;padding:14px 15px 15px}
+      .review-overview .review-readiness{padding:14px 15px}
+      .review-screen .summary-stat,.review-screen .summary-stat:last-child{min-height:80px;padding:13px 12px}
+      .review-screen .summary-stat strong{font-size:26px}
+      .review-screen .summary-stat span{font-size:10px}
+      .review-details-section{padding:18px 17px 17px}
+      .review-details-divider{margin:0 17px}
+      #reviewMeta .meta-row{grid-template-columns:minmax(112px,.85fr) minmax(0,1.15fr);gap:14px;padding:10px 0}
+      #reviewMeta .meta-row span:first-child{font-size:11px}
+      #reviewMeta .meta-row strong{font-size:12.5px}
+    }
+
+    @media(max-width:390px){
+      .screen-heading h2{font-size:35px}
+      .review-screen .summary-stat,.review-screen .summary-stat:last-child{min-height:76px;padding:12px 9px}
+      .review-screen .summary-stat strong{font-size:24px}
+      .review-screen .summary-stat span{font-size:9px}
+      #reviewMeta .meta-row{grid-template-columns:minmax(96px,.8fr) minmax(0,1.2fr);gap:12px}
+      .review-actions{width:calc(100% - 20px)}
+    }
+
+
+    /* Review cleanup v11 — based on the working v10 */
+    .review-screen .review-overview[hidden]{display:none!important}
+    .review-screen .review-issues{margin-top:0}
+    .review-details .missing{display:block;background:rgba(199,68,68,.075);border:1px solid rgba(199,68,68,.16);color:var(--text)}
+    .review-details .missing strong{display:block;margin-bottom:8px;color:var(--bad);font-size:12px;font-weight:800}
+    .review-details .missing ul{margin:0;padding-left:18px;display:grid;gap:6px}
+    .review-details .missing li{color:var(--text);font-size:11px;line-height:1.42}
+    .review-details .missing li::marker{color:var(--bad)}
+
+
+    /* Server version: Telegram-only access gate */
+    .access-gate{
+      position:relative;
+      z-index:2;
+      min-height:100dvh;
+      display:grid;
+      place-items:center;
+      padding:max(24px,env(safe-area-inset-top)) 18px max(24px,env(safe-area-inset-bottom));
+    }
+    .access-gate-card{
+      width:min(100%,440px);
+      padding:28px 24px 24px;
+      border:1px solid var(--line);
+      border-radius:28px;
+      background:var(--panel);
+      box-shadow:var(--shadow);
+      text-align:center;
+      backdrop-filter:blur(22px);
+      -webkit-backdrop-filter:blur(22px);
+    }
+    .access-gate-mark{
+      width:58px;
+      height:58px;
+      margin:0 auto 18px;
+      display:grid;
+      place-items:center;
+      border-radius:19px;
+      color:var(--accent);
+      background:var(--accent-soft);
+    }
+    .access-gate-mark svg{width:27px;height:27px}
+    .access-gate-card h1{
+      margin:0;
+      max-width:none;
+      font-size:clamp(30px,8vw,40px);
+      line-height:1.02;
+      letter-spacing:-.04em;
+    }
+    .access-gate-card p{
+      margin:14px auto 0;
+      max-width:340px;
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.5;
+    }
+    .access-gate-loader{
+      width:24px;
+      height:24px;
+      margin:22px auto 0;
+      border:2px solid var(--line);
+      border-top-color:var(--accent);
+      border-radius:50%;
+      animation:accessSpin .75s linear infinite;
+    }
+    .access-gate-action{
+      display:none;
+      width:100%;
+      min-height:52px;
+      margin-top:22px;
+      border-radius:16px;
+      align-items:center;
+      justify-content:center;
+      background:var(--text);
+      color:var(--bg);
+      font-weight:800;
+      text-decoration:none;
+    }
+    .access-gate.denied .access-gate-loader{display:none}
+    .access-gate.denied .access-gate-action{display:flex}
+    @keyframes accessSpin{to{transform:rotate(360deg)}}
+
+    .copy-report-button.is-loading{pointer-events:none;opacity:.72}
+
+    /* Mobile usability fixes */
+    .home-copy{
+      transform:translateY(clamp(-52px,-6vh,-28px));
+    }
+    .field,
+    #profileFields{
+      min-width:0;
+    }
+    .input[type="date"]{
+      display:block;
+      width:-webkit-fill-available;
+      inline-size:100%;
+      min-width:0!important;
+      max-width:100%!important;
+      overflow:hidden;
+      -webkit-appearance:none;
+      appearance:none;
+    }
+    .input[type="date"]::-webkit-date-and-time-value{
+      width:100%;
+      min-width:0;
+      text-align:left;
+    }
+    .input[type="date"]::-webkit-calendar-picker-indicator{
+      flex:0 0 auto;
+      margin:0;
+    }
+    .comment-input,
+    [data-summary-input]{
+      scroll-margin-block:24vh;
+    }
+    .floating{
+      transition:opacity .18s ease,transform .18s ease;
+    }
+    body.keyboard-open .floating{
+      opacity:0;
+      transform:translate(-50%,12px);
+      pointer-events:none;
+    }
+    body.modal-open{
+      overflow:hidden;
+    }
+    .checklist-scrollbar{
+      position:fixed;
+      z-index:24;
+      top:calc(var(--safe-top) + 68px);
+      right:max(4px,calc((100vw - 760px) / 2 + 4px));
+      bottom:calc(88px + var(--safe-bottom));
+      width:4px;
+      border-radius:999px;
+      background:var(--line);
+      pointer-events:none;
+      opacity:.7;
+      transition:opacity .2s ease;
+    }
+    .checklist-scrollbar-thumb{
+      display:block;
+      width:100%;
+      min-height:42px;
+      border-radius:inherit;
+      background:var(--accent);
+      box-shadow:0 0 12px var(--accent-soft);
+      will-change:height,transform;
+    }
+    body.keyboard-open .checklist-scrollbar{
+      opacity:.25;
+    }
+    @media(max-width:560px){
+      .hall-picker-body {
+        grid-template-columns: minmax(112px, .86fr) minmax(0, 1.14fr)
+      }
+
+      .hall-picker-column {
+        padding: 12px 10px
+      }
+
+      .hall-option {
+        gap: 8px;
+        padding: 10px;
+        font-size: 11.5px
+      }
+
+      .home-copy{
+        transform:translateY(clamp(-38px,-5vh,-20px));
+      }
+    }
+    @media(max-height:700px) and (max-width:560px){
+      .home-copy{
+        transform:translateY(-14px);
+      }
+    }
+
+    .mentor-growth-card {
+      padding: 20px;
+      border-radius: 24px
+    }
+
+    .mentor-growth-title {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 850;
+      letter-spacing: -.01em
+    }
+
+    .mentor-growth-note {
+      display: flex;
+      gap: 12px;
+      margin: 0 0 14px;
+      padding: 13px 14px;
+      border: 1px solid rgba(199, 68, 68, .18);
+      border-radius: 16px;
+      background: rgba(199, 68, 68, .075);
+      color: var(--bad);
+      font-size: 12px;
+      line-height: 1.5
+    }
+
+    .mentor-growth-note-icon {
+      width: 24px;
+      height: 24px;
+      flex: 0 0 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: rgba(199, 68, 68, .12);
+      font-weight: 900
+    }
+
+    .mentor-growth-card textarea {
+      min-height: 128px
+    }
+
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <section class="access-gate" id="accessGate" role="status" aria-live="polite">
+      <div class="access-gate-card">
+        <div class="access-gate-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 4.5 6v5.4c0 4.7 3.2 8.1 7.5 9.6 4.3-1.5 7.5-4.9 7.5-9.6V6L12 3Z"/><path d="m9.2 12.1 1.8 1.8 3.9-4"/></svg>
+        </div>
+        <h1 id="accessGateTitle">Проверяем запуск</h1>
+        <p id="accessGateText">Подтверждаем, что мини-приложение открыто через Telegram.</p>
+        <div class="access-gate-loader" aria-hidden="true"></div>
+        <a class="access-gate-action" id="openBotLink" href="https://t.me/LOFT_HELPER_V2_BOT">Открыть LOFT_HELPER_BOT_2.0</a>
+      </div>
+    </section>
+    <main class="shell" id="appShell" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark"><span></span></div>LOFT HALL
+        </div>
+        <button class="icon-btn" id="resetBtn" type="button" aria-label="Сбросить черновик" title="Сбросить черновик"
+          hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 4v6h6" />
+            <path d="M5.4 15A7.5 7.5 0 1 0 6 8.4L4 10" />
+          </svg>
+        </button>
+      </header>
+
+      <section class="screen home-screen" id="homeScreen">
+        <div class="home-copy">
+          <p class="eyebrow">Стажировка · LOFT HALL</p>
+          <h1>Центр<br>стажировки</h1>
+          <p class="lead">Запись кандидатов, чек-лист стажёра и отчёт наставника собраны в одном мини-приложении.</p>
+        </div>
+        <div class="role-grid">
+          <a class="role-card booking-card" href="/booking">
+            <span class="role-arrow"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M8 2v4M16 2v4M3 10h18" />
+                <path d="M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                <path d="m9 16 2 2 4-5" />
+              </svg></span>
+            <span class="role-content"><span class="role-name">ЗАПИСЬ НА СТАЖИРОВКУ</span><span class="role-description">Даты, заявки, очередь, приглашения и уведомления кандидатов</span></span>
+          </a>
+          <button class="role-card" type="button" data-role="trainee">
+            <span class="role-arrow"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg></span>
+            <span class="role-content"><span class="role-name">СТАЖЕР</span><span class="role-description">Пройти чек-лист своей стажировки</span></span>
+          </button>
+          <button class="role-card" type="button" data-role="mentor">
+            <span class="role-arrow"><svg viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg></span>
+            <span class="role-content"><span class="role-name">НАСТАВНИК</span><span class="role-description">Оценить прохождение и дать рекомендации</span></span>
+          </button>
+        </div>
+
+      </section>
+
+      <section class="screen" id="profileScreen" hidden>
+        <div class="page-head">
+          <button class="icon-btn back" type="button" data-action="home" aria-label="Назад"><svg viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="m15 18-6-6 6-6" />
+            </svg></button>
+          <div>
+            <div class="role-pill" id="profileRole"></div>
+            <h2>Данные стажировки</h2>
+            <p class="lead">Заполните данные — они попадут в итоговый отчёт.</p>
+          </div>
+        </div>
+        <form class="card form-card" id="profileForm" novalidate>
+          <div id="profileFields"></div>
+          <button class="primary" type="submit">Перейти к чек-листу</button>
+        </form>
+      </section>
+
+      <section class="screen checklist-screen" id="checklistScreen" hidden>
+        <header class="screen-hero checklist-hero">
+          <div class="screen-toolbar">
+            <button class="icon-btn back" type="button" data-action="profile" aria-label="Назад"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6" /></svg></button>
+            <div class="role-pill" id="checklistRole"></div>
+          </div>
+          <div class="screen-heading">
+            <h2>Чек-лист</h2>
+            <p class="lead" id="checklistLead"></p>
+          </div>
+          <div class="checklist-progress-card" aria-label="Прогресс заполнения чек-листа">
+            <div class="progress-meta"><span id="progressText">0 из 0</span><span id="progressPercent">0%</span></div>
+            <div class="progress"><span id="progressBar"></span></div>
+          </div>
+        </header>
+        <div class="section-list" id="sectionList">
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+        </div>
+        <div class="final-fields" id="finalFields"></div>
+      </section>
+
+      <section class="screen review-screen" id="reviewScreen" hidden>
+        <div id="reviewTop" aria-hidden="true"></div>
+        <header class="screen-hero review-hero">
+          <div class="screen-toolbar">
+            <button class="icon-btn back" type="button" data-action="checklist" aria-label="Вернуться к чек-листу"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6" /></svg></button>
+            <div class="role-pill" id="reviewRole"></div>
+          </div>
+          <div class="screen-heading">
+            <h2>Проверка отчёта</h2>
+            <p class="lead">Проверьте данные и непройденные пункты перед отправкой.</p>
+          </div>
+        </header>
+
+        <div class="card review-overview" hidden aria-hidden="true">
+          <div class="review-readiness" id="reviewReadiness" role="status" aria-live="polite"><span class="review-readiness-icon" id="reviewReadinessIcon">·</span><span class="review-readiness-copy"><strong id="reviewReadinessTitle">Проверяем заполнение</strong><span id="reviewReadinessText">Собираем данные отчёта…</span></span></div>
+          <div class="summary-grid"><div class="summary-stat summary-stat-good"><strong id="yesCount">0</strong><span>пройдено</span></div><div class="summary-stat summary-stat-bad"><strong id="noCount">0</strong><span>не пройдено</span></div><div class="summary-stat summary-stat-neutral"><strong id="emptyCount">0</strong><span>без ответа</span></div></div>
+        </div>
+
+        <div class="review-issues" id="reviewIssues"></div>
+
+        <div class="card review-details" aria-label="Данные сформированного отчёта">
+          <section class="review-details-section review-participants">
+            <div class="review-details-head"><div><span class="review-details-kicker">Данные отчёта</span><h3>Участники и стажировка</h3></div><span class="review-details-number">01</span></div>
+            <div class="meta-list" id="reviewMeta"></div>
+          </section>
+          <div class="review-details-divider" aria-hidden="true"></div>
+          <section class="review-details-section review-summary-section">
+            <div class="review-details-head"><div><span class="review-details-kicker">Финальный блок</span><h3>Итог стажировки</h3></div><span class="review-details-number">02</span></div>
+            <div class="meta-list" id="reviewSummary"></div>
+          </section>
+        </div>
+
+        <div class="review-actions" aria-label="Отправка отчёта">
+          <button class="primary copy-report-button" id="sendBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m21 3-7.2 18-4.1-7.7L3 9.2 21 3Z"/><path d="m9.7 13.3 4.8-4.8"/></svg><span>Отправить отчёт</span></button>
+          <div class="review-actions-note" id="reviewActionHint">Отчёт автоматически отправится в рабочую группу.</div>
+          <div class="send-status" id="sendStatus"></div>
+        </div>
+      </section>
+    </main>
+
+    <div class="floating" id="floating" hidden>
+      <div class="floating-inner"><button class="icon-btn" type="button" data-action="home" aria-label="На главную"><svg
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M3 11.5 12 4l9 7.5" />
+            <path d="M5.5 10.5V20h13v-9.5" />
+          </svg></button><button class="primary" id="reviewBtn" type="button">Проверить отчёт</button></div>
+    </div>
+    <div class="checklist-scrollbar" id="checklistScrollbar" hidden aria-hidden="true">
+      <span class="checklist-scrollbar-thumb" id="checklistScrollbarThumb"></span>
+    </div>
+    <div class="hall-picker" id="hallPicker" hidden role="dialog" aria-modal="true" aria-labelledby="hallPickerTitle">
+      <div class="hall-picker-panel">
+        <div class="hall-picker-head">
+          <div>
+            <p class="hall-picker-title" id="hallPickerTitle">Выберите зал</p>
+            <p class="hall-picker-subtitle">Сначала выберите лофт, затем зал внутри него.</p>
+          </div>
+          <button class="hall-picker-close" type="button" data-hall-close aria-label="Закрыть выбор зала">×</button>
+        </div>
+        <div class="hall-picker-body">
+          <div class="hall-picker-column">
+            <p class="hall-picker-kicker">Лофты</p>
+            <div id="hallLoftList"></div>
+          </div>
+          <div class="hall-picker-column hall-picker-halls" id="hallRoomColumn">
+            <p class="hall-picker-kicker">Залы</p>
+            <div id="hallRoomList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <script type="module">
+    import { formatInternshipReport } from './report-format.js';
+
+    (() => {
+      'use strict';
+      try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (_) { }
+
+      const DEFAULT_ITEMS = [{ "id": "mentor-01", "role": "mentor", "section_key": "start", "section_title": "Знакомство и начало стажировки", "section_order": 1, "item_order": 1, "text": "Я познакомился со стажёром, узнал его имя, уточнил опыт работы в банкетной службе и читал ли он мануал. Познакомил с менеджером, сообщил о начале стажировки и уточнил, расписался ли стажёр на охране.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-02", "role": "mentor", "section_key": "start", "section_title": "Знакомство и начало стажировки", "section_order": 1, "item_order": 2, "text": "Я показал стажёру раздевалку, выдал рубашку, сумку и фартук. Проверил внешний вид на соответствие стандартам компании и наличие инструментов официанта.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-03", "role": "mentor", "section_key": "start", "section_title": "Знакомство и начало стажировки", "section_order": 1, "item_order": 3, "text": "Я рассказал о правилах поведения в компании и раздевалке, зонах курения, санитарных нормах, зоне гостя, технике безопасности и пожарной безопасности.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-04", "role": "mentor", "section_key": "intro", "section_title": "Компания и площадка", "section_order": 2, "item_order": 4, "text": "Я рассказал о компании и локациях, а также объяснил принципы работы коллектива: взаимопомощь, взаимовыручка и общее дело.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-05", "role": "mentor", "section_key": "intro", "section_title": "Компания и площадка", "section_order": 2, "item_order": 5, "text": "Я рассказал о форматах мероприятий: банкет, фуршет, гала-ужин, кофе-брейк, анимации и выездной кейтеринг.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-06", "role": "mentor", "section_key": "intro", "section_title": "Компания и площадка", "section_order": 2, "item_order": 6, "text": "Я провёл экскурсию по площадке и показал зал, сервизную комнату, бэк-зону, кухню, склад или текстильную, гостевые и персональские уборные.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-07", "role": "mentor", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 7, "text": "Я разъяснил рабочие термины: названия бокалов и посуды, различия сервировки в лофтах, диаметры тарелок, основные и закусочные приборы.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-08", "role": "mentor", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 8, "text": "Я объяснил затаривание кухни посудой, различия посуды для банкета и фуршета, а также анимационную посуду.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-09", "role": "mentor", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 9, "text": "Я рассказал о подготовке, работе и сдаче гардероба, а также научил крутить пледы.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-10", "role": "mentor", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 10, "text": "Я проверил знание меню, алкоголя и плана мероприятия, чтобы стажёр успел повторить материал до начала мероприятия.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-11", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 11, "text": "Я показал принцип натирки стекла и посуды горячей водой, уксусом и натирочным полотном, объяснил меры безопасности и действия с грязной, сколотой или разноколлекционной посудой.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-12", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 12, "text": "Я научил пользоваться раскладкой, крутить гостевые салфетки и ручник, делать конверт для приборов.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-13", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 13, "text": "Я объяснил сервировку на одну персону и показал, как сервировать весь стол.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-14", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 14, "text": "Под моим присмотром стажёр участвовал в расстановке холодных закусок. Я рассказал о курсах подачи и порядке предложения холодных закусок гостям.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-15", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 15, "text": "Я рассказал, что такое облив и обнос, и показал правило открытой руки при работе с гостями.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-16", "role": "mentor", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 16, "text": "Стажёр участвовал в репетиции синхронной подачи и практиковал правильную сервировку тарелок до начала мероприятия.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-17", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 17, "text": "Стажёр помогал сервировать бар и линию welcome. Я объяснил, что такое аперитив и дижестив.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-18", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 18, "text": "Я рассказал о подготовке рабочей зоны официанта — стейшена — и о том, какие элементы должны на нём находиться.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-19", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 19, "text": "Я продемонстрировал предложение алкогольных и безалкогольных напитков и дал стажёру повторить. Показал, как открывать бутылку вина и игристого.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-20", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 20, "text": "Я научил стажёра носить три тарелки на обеих руках и правильно зачищать посуду у гостей, собирая стопку и накрывая её ручником.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-21", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 21, "text": "Я встретил гостей вместе со стажёром, показал работу со стулом и раскладывание салфетки гостю на колени.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-22", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 22, "text": "Стажёр активно раскладывал блюда, предлагал и наливал напитки, зачищал грязную посуду.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-23", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 23, "text": "Стажёр помогал в выносе горячих закусок и горячих основных блюд.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-24", "role": "mentor", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 24, "text": "Я показал сервировку после горячего основного блюда на десерт или торт, а также сервировку чая, кофе и дижестивов.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-25", "role": "mentor", "section_key": "closing", "section_title": "Закрытие и оценка", "section_order": 6, "item_order": 25, "text": "Я объяснил закрытие смены: порядок в рабочих зонах, сервизных и раздевалке, а также отправку фотографий в рабочую беседу.", "allow_comment": false, "required": true, "is_active": true }, { "id": "mentor-26", "role": "mentor", "section_key": "closing", "section_title": "Закрытие и оценка", "section_order": 6, "item_order": 26, "text": "По окончании стажировки я принял форму, уточнил, остались ли вопросы, и напомнил про обязательную выписку на охране.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-27", "role": "mentor", "section_key": "closing", "section_title": "Закрытие и оценка", "section_order": 6, "item_order": 27, "text": "Стажёр задавал уточняющие вопросы, интересовался процессом и проявлял инициативу быть самостоятельным.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-28", "role": "mentor", "section_key": "closing", "section_title": "Закрытие и оценка", "section_order": 6, "item_order": 28, "text": "Стажёр был вежлив и учтив по отношению к гостям и всем участникам рабочего процесса.", "allow_comment": true, "required": true, "is_active": true }, { "id": "mentor-29", "role": "mentor", "section_key": "closing", "section_title": "Закрытие и оценка", "section_order": 6, "item_order": 29, "text": "Я подготовил краткий отчёт о стажёре для менеджера или группы «Официанты» в формате «да/нет» и при необходимости добавил комментарии.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-01", "role": "trainee", "section_key": "before", "section_title": "До стажировки", "section_order": 1, "item_order": 1, "text": "Перед стажировкой я подготовил комплект униформы и рабочие инструменты: блокнот, нарзанник, ручку и зажигалку. Прочитал мануал, посмотрел обучающие видео, ознакомился с историей лофта и зала через канал «Учебный материал» или Хелпер-бота.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-02", "role": "trainee", "section_key": "before", "section_title": "До стажировки", "section_order": 1, "item_order": 2, "text": "В беседе я познакомился с наставником, узнал его имя и уточнил место встречи. Выучил меню, перечень алкогольной продукции и ознакомился с планом мероприятия.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-03", "role": "trainee", "section_key": "start", "section_title": "Начало смены и стандарты", "section_order": 2, "item_order": 3, "text": "Я расписался на охране, получил рубашку, сумку и фартук. Привёл внешний вид в соответствие стандартам компании и проверил наличие инструментов официанта.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-04", "role": "trainee", "section_key": "start", "section_title": "Начало смены и стандарты", "section_order": 2, "item_order": 4, "text": "Я ознакомился с правилами поведения в компании и раздевалке, зонами курения, санитарными нормами, зоной гостя, техникой безопасности и пожарной безопасностью.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-05", "role": "trainee", "section_key": "start", "section_title": "Начало смены и стандарты", "section_order": 2, "item_order": 5, "text": "Я ознакомился с компанией и локациями и понял принципы работы коллектива: взаимопомощь, взаимовыручка и общее дело.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-06", "role": "trainee", "section_key": "start", "section_title": "Начало смены и стандарты", "section_order": 2, "item_order": 6, "text": "Я изучил форматы мероприятий: банкет, фуршет, гала-ужин, кофе-брейк, анимации и выездной кейтеринг.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-07", "role": "trainee", "section_key": "start", "section_title": "Начало смены и стандарты", "section_order": 2, "item_order": 7, "text": "У меня была экскурсия по площадке. Я знаю, где находятся бэк-зона, кухня, склад или текстильная, гостевые и персональские уборные.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-08", "role": "trainee", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 8, "text": "Я запомнил рабочие термины: названия бокалов и посуды, различия сервировки в лофтах, диаметры тарелок, основные и закусочные приборы.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-09", "role": "trainee", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 9, "text": "Мне объяснили затаривание кухни посудой, различия посуды для банкета и фуршета, а также анимационную посуду.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-10", "role": "trainee", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 10, "text": "Я запомнил процесс подготовки, работы и сдачи гардероба, а также научился крутить пледы.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-11", "role": "trainee", "section_key": "basics", "section_title": "База и подготовка", "section_order": 3, "item_order": 11, "text": "Я выучил меню мероприятия, перечень алкоголя и план мероприятия до брифа.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-12", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 12, "text": "Я умею правильно натирать стекло и посуду горячей водой, уксусом и натирочным полотном. Знаю меры безопасности и действия с грязной, сколотой или разноколлекционной посудой.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-13", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 13, "text": "Я научился пользоваться раскладкой, крутить гостевые салфетки и ручник, делать конверт для приборов.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-14", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 14, "text": "Я сделал сервировку на одну персону и научился сервировать весь стол.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-15", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 15, "text": "Я участвовал в расстановке холодных закусок, изучил курсы подачи и порядок предложения холодных закусок гостям.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-16", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 16, "text": "Я узнал, что такое облив и обнос, и освоил правило открытой руки при работе с гостями.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-17", "role": "trainee", "section_key": "skills", "section_title": "Практические навыки", "section_order": 4, "item_order": 17, "text": "Я участвовал в репетиции синхронной подачи и практиковал правильную сервировку тарелок до начала мероприятия.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-18", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 18, "text": "Я помогал выставлять бар и линию welcome и запомнил, что такое аперитив и дижестив.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-19", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 19, "text": "Я подготавливал рабочую зону официанта — стейшен — и запомнил, какие элементы должны на ней находиться.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-20", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 20, "text": "Я отрепетировал предложение алкогольных и безалкогольных напитков и научился открывать бутылки вина и игристого.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-21", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 21, "text": "Я научился носить три тарелки на обеих руках и правильно зачищать посуду у гостей, собирая стопку и накрывая её ручником.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-22", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 22, "text": "Я встречал гостей вместе с наставником, представлялся, отодвигал стулья и раскладывал салфетки гостям на колени.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-23", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 23, "text": "Я активно раскладывал блюда, предлагал и наливал напитки, зачищал грязную посуду на руках.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-24", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 24, "text": "Я участвовал в выносе горячих закусок и горячих основных блюд.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-25", "role": "trainee", "section_key": "service", "section_title": "Сервис и работа с гостями", "section_order": 5, "item_order": 25, "text": "Я запомнил сервировку после горячего основного блюда на десерт или торт, а также сервировку чая, кофе и дижестивов.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-26", "role": "trainee", "section_key": "closing", "section_title": "Закрытие и отчёт", "section_order": 6, "item_order": 26, "text": "Я понял принцип закрытия смены: порядок в рабочих зонах, сервизных и раздевалке, а также отправка фотографий в рабочую беседу.", "allow_comment": false, "required": true, "is_active": true }, { "id": "trainee-27", "role": "trainee", "section_key": "closing", "section_title": "Закрытие и отчёт", "section_order": 6, "item_order": 27, "text": "По окончании стажировки я сдал форму наставнику, задал уточняющие вопросы и выписался на охране.", "allow_comment": true, "required": true, "is_active": true }, { "id": "trainee-28", "role": "trainee", "section_key": "closing", "section_title": "Закрытие и отчёт", "section_order": 6, "item_order": 28, "text": "Я подготовил краткий отчёт о стажировке для рабочего телефона рекрутинга в формате «да/нет» и добавил общее впечатление о пройденной стажировке.", "allow_comment": true, "required": true, "is_active": true }];
+      const DEFAULT_PROFILE_FIELDS = [{"id": "trainee-profile-fio", "record_type": "profile_field", "role": "trainee", "role_title": "СТАЖЕР", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "1", "field_key": "fio", "label": "Фамилия и имя стажёра", "text": "", "answer_type": "text", "placeholder": "Иванов Иван", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "trainee_report_chat", "content_version": "2"}, {"id": "trainee-profile-telegram", "record_type": "profile_field", "role": "trainee", "role_title": "СТАЖЕР", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "2", "field_key": "telegram", "label": "Ник в Telegram", "text": "", "answer_type": "text", "placeholder": "@username", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "trainee_report_chat", "content_version": "2"}, {"id": "trainee-profile-date", "record_type": "profile_field", "role": "trainee", "role_title": "СТАЖЕР", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "3", "field_key": "date", "label": "Дата стажировки", "text": "", "answer_type": "date", "placeholder": "", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "trainee_report_chat", "content_version": "2"}, {"id": "mentor-profile-fio", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "1", "field_key": "fio", "label": "Фамилия и имя наставника", "text": "", "answer_type": "text", "placeholder": "Иванов Иван", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}, {"id": "mentor-profile-telegram", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "2", "field_key": "telegram", "label": "Ник наставника в Telegram", "text": "", "answer_type": "text", "placeholder": "@username", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}, {"id": "mentor-profile-trainee-fio", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "3", "field_key": "traineeFio", "label": "Фамилия и имя стажёра", "text": "", "answer_type": "text", "placeholder": "Петров Пётр", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "3"}, {"id": "mentor-profile-trainee-telegram", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "4", "field_key": "traineeTelegram", "label": "Ник стажёра в Telegram", "text": "", "answer_type": "text", "placeholder": "@username", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "false", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "4"}, {"id": "mentor-profile-date", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "5", "field_key": "date", "label": "Дата стажировки", "text": "", "answer_type": "date", "placeholder": "", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}, {"id": "mentor-profile-hall", "record_type": "profile_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "profile", "section_title": "Данные стажировки", "section_order": "0", "item_order": "6", "field_key": "hall", "label": "Зал стажировки", "text": "", "answer_type": "text", "placeholder": "Например: LOFT#1 — зал ...", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}];
+      const DEFAULT_SUMMARY_FIELDS = [{"id": "trainee-summary-feedback", "record_type": "summary_field", "role": "trainee", "role_title": "СТАЖЕР", "section_key": "final", "section_title": "Итог стажировки", "section_order": "7", "item_order": "1", "field_key": "traineeFeedback", "label": "Общее впечатление о стажировке", "text": "", "answer_type": "textarea", "placeholder": "Что было понятно, что вызвало сложности, какие остались вопросы", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "trainee_report_chat", "content_version": "2"}, {"id": "mentor-summary-unmastered", "record_type": "summary_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "final", "section_title": "Итог наставника", "section_order": "7", "item_order": "1", "field_key": "mentorUnmasteredComments", "label": "Комментарии о неосвоенных стажёром пунктах чек-листа", "text": "", "answer_type": "textarea", "placeholder": "Укажите конкретные пункты и что именно стажёр пока не освоил. Если таких пунктов нет — напишите «Нет».", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}, {"id": "mentor-summary-recommendations", "record_type": "summary_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "final", "section_title": "Итог наставника", "section_order": "7", "item_order": "2", "field_key": "mentorRecommendations", "label": "Комментарий наставника", "text": "", "answer_type": "textarea", "placeholder": "Дайте общую оценку стажировки и укажите, что важно дополнительно проработать", "options": "", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "4"}, {"id": "mentor-summary-decision", "record_type": "summary_field", "role": "mentor", "role_title": "НАСТАВНИК", "section_key": "final", "section_title": "Итог наставника", "section_order": "7", "item_order": "3", "field_key": "mentorDecision", "label": "Решение по стажировке", "text": "", "answer_type": "choice", "placeholder": "", "options": "Стажировка пройдена|Требуется повторная стажировка", "allow_comment": "false", "comment_on_no": "false", "required": "true", "is_active": "true", "report_route": "mentor_report_chat", "content_version": "2"}];
+      const MENTOR_REPORT_TOPICS = {
+        "1": "Знакомство со стажёром, проверка опыта, мануала и регистрации на охране.",
+        "2": "Раздевалка, форма, внешний вид и инструменты официанта.",
+        "3": "Правила поведения, санитарные нормы, техника и пожарная безопасность.",
+        "4": "Компания, площадки и принципы работы коллектива.",
+        "5": "Форматы мероприятий LOFT HALL.",
+        "6": "Экскурсия по площадке и расположение рабочих зон.",
+        "7": "Названия бокалов, посуды, тарелок и приборов.",
+        "8": "Затаривание кухни и различия банкетной, фуршетной и анимационной посуды.",
+        "9": "Подготовка, работа и сдача гардероба; скручивание пледов.",
+        "10": "Меню, алкоголь и план мероприятия.",
+        "11": "Натирка стекла и посуды, техника безопасности.",
+        "12": "Раскладка, гостевые салфетки, ручник и конверт для приборов.",
+        "13": "Сервировка одной персоны и полного стола.",
+        "14": "Расстановка холодных закусок и порядок их предложения.",
+        "15": "Облив, обнос и правило открытой руки.",
+        "16": "Синхронная подача и сервировка тарелок.",
+        "17": "Сервировка бара и welcome-линии; аперитив и дижестив.",
+        "18": "Подготовка стейшена официанта.",
+        "19": "Предложение напитков и открытие вина и игристого.",
+        "20": "Перенос трёх тарелок и зачистка посуды с ручником.",
+        "21": "Встреча гостей, работа со стулом и салфеткой.",
+        "22": "Раскладка блюд, предложение напитков и зачистка посуды.",
+        "23": "Вынос горячих закусок и основных блюд.",
+        "24": "Сервировка десерта, торта, чая, кофе и дижестивов.",
+        "25": "Закрытие смены и порядок в рабочих зонах.",
+        "26": "Сдача формы, вопросы стажёра и выписка на охране.",
+        "27": "Инициативность, самостоятельность и вовлечённость стажёра.",
+        "28": "Вежливость и корректность в работе с гостями и командой.",
+        "29": "Подготовка итогового отчёта о стажёре."
+};
+      const HALL_GROUPS = [
+        { loft: 'LOFT #1', halls: ['AVANTAGE', 'CHATEAU', 'ROYAL BLANC'] },
+        { loft: 'LOFT #2', halls: ['ROCKFELLER&ROTHSHILD`S HALL', 'BACKYARD'] },
+        { loft: 'LOFT #3', halls: ['MONTBLANC', 'GRACE', 'RATUSHA'] },
+        { loft: 'LOFT #4', halls: ['ANDY&CYNDY', 'MONDRIAN', 'BANKSY', 'LONG&ITTEN'] },
+        { loft: 'LOFT #5', halls: ['SMALL', 'CONTRABANDA'] },
+        { loft: 'LOFT #8', halls: ['MAIN HALL', 'WELCOME HALL', 'ROSEWOOD HALL', 'MILINIS HALL'] },
+        { loft: 'LOFT #10 (TAU)', halls: ['MAIN HALL'] },
+        { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
+        { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOB HALL', 'LEVITAN HALL'] }
+      ];
+      const tg = window.Telegram?.WebApp;
+      const state = {
+        screen: 'home', role: null, items: [], profileFields: [], summaryFields: [], profile: { date: '' }, answers: {},
+        summary: {}, openedSections: new Set(), isSubmitting: false, hallPickerLoft: HALL_GROUPS[0].loft,
+        launchProfile: {}
+      };
+      const $ = s => document.querySelector(s);
+      const $$ = s => [...document.querySelectorAll(s)];
+      const screens = { home: $('#homeScreen'), profile: $('#profileScreen'), checklist: $('#checklistScreen'), review: $('#reviewScreen') };
+      const roleLabels = { trainee: 'СТАЖЕР', mentor: 'НАСТАВНИК' };
+      const draftKey = role => `lh_internship_checklist_v5_${role}`;
+      const legacyDraftKeys = role => [`lh_internship_checklist_v4_${role}`, `lh_internship_checklist_v3_${role}`, `lh_internship_checklist_v2_${role}`];
+
+      function setTelegramTheme(theme) {
+        const resolved = theme || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.dataset.telegramTheme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#0b0b0e' : '#f5f5f7');
+      }
+      function initTelegram() {
+        try {
+          tg?.ready();
+          tg?.expand();
+          tg?.enableClosingConfirmation?.();
+          tg?.setHeaderColor?.('secondary_bg_color');
+          tg?.setBackgroundColor?.('bg_color');
+          tg?.setBottomBarColor?.('bottom_bar_bg_color');
+          setTelegramTheme(tg?.colorScheme);
+          tg?.onEvent?.('themeChanged', () => setTelegramTheme(tg.colorScheme));
+          tg?.onEvent?.('viewportChanged', scheduleFocusedFieldVisibility);
+        } catch (_) { }
+      }
+      function haptic(type = 'light') { try { tg?.HapticFeedback?.impactOccurred(type) } catch (_) { } }
+      function today() { const d = new Date(), o = d.getTimezoneOffset(); return new Date(d.getTime() - o * 60000).toISOString().slice(0, 10) }
+      function escapeHtml(v = '') { return String(v).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[c])) }
+      function showToast(text) { const el = $('#toast'); el.textContent = text; el.classList.add('show'); clearTimeout(showToast.t); showToast.t = setTimeout(() => el.classList.remove('show'), 2300) }
+      function firstValue(source, keys) {
+        for (const key of keys) {
+          const value = source?.[key];
+          if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+        }
+        return '';
+      }
+      function splitPersonName(value) {
+        const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+        return { lastName: parts.shift() || '', firstName: parts.join(' ') };
+      }
+      function normalizeTelegramUsername(value) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        return text.startsWith('@') ? text : `@${text}`;
+      }
+      function readPuzzleBotLaunchParams() {
+        const params = new URLSearchParams(location.search);
+        const data = {};
+        for (const [key, value] of params.entries()) data[key] = value;
+        const fio = firstValue(data, [
+          'registered_fio',
+          'lh_user_fio',
+          'old_fio',
+          'Fio_registr_in_bot',
+          'fio',
+          'FIO',
+          'full_name',
+          'fullName',
+          'FIRST_AND_LAST_NAME_TEXT'
+        ]);
+        const name = splitPersonName(fio);
+        return {
+          fio,
+          firstName: name.firstName || firstValue(data, ['first_name', 'firstName', 'FIRST_NAME_TEXT']),
+          lastName: name.lastName || firstValue(data, ['last_name', 'lastName', 'LAST_NAME_TEXT']),
+          telegram: normalizeTelegramUsername(firstValue(data, ['username', 'telegram', 'USERNAME_TEXT', 'USERNAME'])),
+          telegramUserId: firstValue(data, ['user_id', 'userId', 'USER_ID_TEXT', 'USER_ID']),
+          categories: firstValue(data, ['categories', 'category', 'CATEGORIES_NAMES', 'CATEGORY_NAME'])
+        };
+      }
+      function mergeLaunchProfile(telegramUser = {}) {
+        const puzzle = readPuzzleBotLaunchParams();
+        state.launchProfile = {
+          ...puzzle,
+          firstName: puzzle.firstName || telegramUser.firstName || '',
+          lastName: puzzle.lastName || telegramUser.lastName || '',
+          telegram: puzzle.telegram || normalizeTelegramUsername(telegramUser.username || ''),
+          telegramUserId: puzzle.telegramUserId || (telegramUser.id ? String(telegramUser.id) : '')
+        };
+      }
+      function applyLaunchProfileToCurrentRole() {
+        const source = state.launchProfile || {};
+        if (!source.firstName && !source.lastName && !source.telegram) return;
+        if (source.fio) {
+          state.profile.firstName = source.firstName || state.profile.firstName || '';
+          state.profile.lastName = source.lastName || state.profile.lastName || '';
+        } else {
+          state.profile.firstName ||= source.firstName || '';
+          state.profile.lastName ||= source.lastName || '';
+        }
+        state.profile.telegram ||= source.telegram || '';
+      }
+      function forceScrollTop() {
+        const nodes = [document.scrollingElement, document.documentElement, document.body, $('.app'), $('.shell')].filter(Boolean);
+        nodes.forEach(node => { try { node.scrollTop = 0; node.scrollLeft = 0; } catch (_) { } });
+        try { window.scrollTo({ top: 0, left: 0, behavior: 'auto' }); } catch (_) { try { window.scrollTo(0, 0); } catch (_) { } }
+      }
+      function updateChecklistScrollbar() {
+        const scrollbar = $('#checklistScrollbar');
+        const thumb = $('#checklistScrollbarThumb');
+        if (!scrollbar || !thumb || state.screen !== 'checklist') {
+          if (scrollbar) scrollbar.hidden = true;
+          return;
+        }
+
+        const root = document.scrollingElement || document.documentElement;
+        const maxScroll = Math.max(0, root.scrollHeight - root.clientHeight);
+        if (maxScroll <= 2) {
+          scrollbar.hidden = true;
+          return;
+        }
+
+        scrollbar.hidden = false;
+        const trackHeight = scrollbar.clientHeight;
+        const thumbHeight = Math.max(42, Math.round(trackHeight * root.clientHeight / root.scrollHeight));
+        const travel = Math.max(0, trackHeight - thumbHeight);
+        const offset = maxScroll ? travel * root.scrollTop / maxScroll : 0;
+        thumb.style.height = `${thumbHeight}px`;
+        thumb.style.transform = `translateY(${offset}px)`;
+      }
+      function focusedEditor() {
+        const active = document.activeElement;
+        return active?.matches?.('.comment-input, [data-summary-input]') ? active : null;
+      }
+      function keepFocusedFieldVisible() {
+        const active = focusedEditor();
+        if (!active) return;
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop || 0;
+        const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+        const rect = active.getBoundingClientRect();
+        const safeTop = viewportTop + 18;
+        const safeBottom = viewportBottom - 22;
+        if (rect.top < safeTop || rect.bottom > safeBottom) {
+          active.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+      }
+      function scheduleFocusedFieldVisibility() {
+        requestAnimationFrame(keepFocusedFieldVisible);
+        setTimeout(keepFocusedFieldVisible, 120);
+        setTimeout(keepFocusedFieldVisible, 320);
+      }
+      function setScreen(name) {
+        if (name !== 'checklist' && focusedEditor()) document.activeElement?.blur();
+        Object.entries(screens).forEach(([key, el]) => el.hidden = key !== name); state.screen = name;
+        document.body.classList.toggle('home-mode', name === 'home');
+        document.body.classList.toggle('review-mode', name === 'review');
+        document.body.classList.toggle('checklist-mode', name === 'checklist');
+        if (name !== 'checklist') document.body.classList.remove('keyboard-open');
+        $('#floating').hidden = name !== 'checklist'; $('#resetBtn').hidden = !state.role || name === 'home';
+        forceScrollTop();
+        requestAnimationFrame(() => requestAnimationFrame(forceScrollTop));
+        setTimeout(forceScrollTop, 80);
+        requestAnimationFrame(updateChecklistScrollbar);
+        setTimeout(updateChecklistScrollbar, 100);
+        if (name === 'review') { try { tg?.expand?.(); } catch (_) { } }
+      }
+      function toBool(value, defaultValue = true) { if (value === undefined || value === null || value === '') return defaultValue; return value === true || value === 1 || String(value).toLowerCase() === 'true' }
+      function normalizeRow(row) {
+        const recordType = String(row.record_type || 'checklist_item').toLowerCase();
+        return { id: String(row.idd ?? row.id ?? row.Id ?? `${row.role}-${row.item_order}`), record_type: recordType, role: String(row.role || '').toLowerCase(), section_key: String(row.section_key || 'section'), section_title: String(row.section_title || 'Раздел'), section_order: Number(row.section_order || 0), item_order: Number(row.item_order || 0), field_key: String(row.field_key || ''), label: String(row.label || ''), text: String(row.text || row.title || ''), answer_type: String(row.answer_type || 'text').toLowerCase(), placeholder: String(row.placeholder || ''), options: String(row.options || '').split('|').map(x => x.trim()).filter(Boolean), allow_comment: toBool(row.allow_comment, false), required: toBool(row.required, true), is_active: toBool(row.is_active, true) };
+      }
+      function splitProfileNameFields(fields) {
+        return fields.flatMap(field => {
+          if (field.role === 'trainee' && field.field_key === 'fio') {
+            return [
+              { ...field, id: `${field.id}-first-name`, field_key: 'firstName', label: 'Имя стажёра', placeholder: 'Введите имя', item_order: 1 },
+              { ...field, id: `${field.id}-last-name`, field_key: 'lastName', label: 'Фамилия стажёра', placeholder: 'Введите фамилию', item_order: 2 }
+            ];
+          }
+          if (field.role === 'mentor' && field.field_key === 'fio') {
+            return [
+              { ...field, id: `${field.id}-first-name`, field_key: 'firstName', label: 'Имя наставника', placeholder: 'Введите имя', item_order: 1 },
+              { ...field, id: `${field.id}-last-name`, field_key: 'lastName', label: 'Фамилия наставника', placeholder: 'Введите фамилию', item_order: 2 }
+            ];
+          }
+          if (field.role === 'mentor' && field.field_key === 'traineeFio') {
+            return [
+              { ...field, id: `${field.id}-first-name`, field_key: 'traineeFirstName', label: 'Имя стажёра', placeholder: 'Введите имя', item_order: 4 },
+              { ...field, id: `${field.id}-last-name`, field_key: 'traineeLastName', label: 'Фамилия стажёра', placeholder: 'Введите фамилию', item_order: 5 }
+            ];
+          }
+          const orderShifts = field.role === 'trainee'
+            ? { telegram: 3, date: 4 }
+            : { telegram: 3, traineeTelegram: 6, date: 7, hall: 8 };
+          return [{ ...field, item_order: orderShifts[field.field_key] || field.item_order }];
+        });
+      }
+      function loadItems() {
+        state.items = DEFAULT_ITEMS
+          .map(x => normalizeRow({ ...x, record_type: 'checklist_item' }))
+          .map(x => ({ ...x, allow_comment: true }))
+          .filter(x => x.is_active && x.text)
+          .sort((a, b) => a.section_order - b.section_order || a.item_order - b.item_order);
+        state.profileFields = splitProfileNameFields(DEFAULT_PROFILE_FIELDS.map(normalizeRow))
+          .map(x => /telegram/i.test(x.field_key) ? { ...x, required: false } : x)
+          .filter(x => x.is_active && x.field_key)
+          .sort((a, b) => a.item_order - b.item_order);
+        state.summaryFields = DEFAULT_SUMMARY_FIELDS.map(normalizeRow).filter(x => x.is_active && x.field_key).sort((a, b) => a.section_order - b.section_order || a.item_order - b.item_order);
+      }
+      function roleProfileFields() { return state.profileFields.filter(x => x.role === state.role) }
+      function roleSummaryFields() {
+        return state.summaryFields.filter(x => x.role === state.role && x.field_key !== 'mentorUnmasteredComments')
+      }
+      function migrateLegacyProfile(profile) {
+        const next = { ...(profile || {}) };
+        if ((!next.firstName || !next.lastName) && next.fio) {
+          const legacy = splitPersonName(next.fio);
+          next.firstName ||= legacy.firstName;
+          next.lastName ||= legacy.lastName;
+        }
+        if ((!next.traineeFirstName || !next.traineeLastName) && next.traineeFio) {
+          const legacy = splitPersonName(next.traineeFio);
+          next.traineeFirstName ||= legacy.firstName;
+          next.traineeLastName ||= legacy.lastName;
+        }
+        return next;
+      }
+      function loadDraft(role) {
+        state.answers = {}; state.summary = {}; state.profile = { date: today() }; state.openedSections = new Set();
+        try {
+          const raw = [draftKey(role), ...legacyDraftKeys(role)].map(key => localStorage.getItem(key)).find(Boolean);
+          if (raw) {
+            const d = JSON.parse(raw);
+            state.profile = migrateLegacyProfile({ ...state.profile, ...d.profile });
+            state.answers = d.answers || {};
+            state.summary = d.summary || {};
+            state.openedSections = new Set();
+          }
+        } catch (_) { }
+        applyLaunchProfileToCurrentRole();
+      }
+      function saveDraft() { if (!state.role) return; try { localStorage.setItem(draftKey(state.role), JSON.stringify({ profile: state.profile, answers: state.answers, summary: state.summary, savedAt: new Date().toISOString() })) } catch (_) { } }
+      function setRole(role) { state.role = role; loadDraft(role); setRoleLabels(); fillProfile(); setScreen('profile'); haptic() }
+      function setRoleLabels() { $('#profileRole').textContent = roleLabels[state.role]; $('#checklistRole').textContent = roleLabels[state.role]; $('#reviewRole').textContent = roleLabels[state.role] }
+      function hallValue(loft, hall) { return `${loft} ${hall}` }
+      function parseHallValue(value) {
+        const text = String(value || '').trim();
+        for (const group of HALL_GROUPS) {
+          for (const hall of group.halls) {
+            if (text === hallValue(group.loft, hall)) return { loft: group.loft, hall };
+          }
+        }
+        return { loft: HALL_GROUPS[0].loft, hall: '' };
+      }
+      function renderHallField(field, id, value) {
+        const selected = parseHallValue(value);
+        const display = selected.hall ? hallValue(selected.loft, selected.hall) : 'Выбрать лофт и зал';
+        const subtitle = selected.hall ? selected.loft : 'Нажмите, чтобы открыть список';
+        return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><input type="hidden" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" value="${escapeHtml(value)}"><button class="hall-select" type="button" data-hall-open><span class="hall-select-value"><strong>${escapeHtml(display)}</strong><span>${escapeHtml(subtitle)}</span></span><span class="hall-select-icon">⌄</span></button><span class="error">Выберите зал</span></label>`;
+      }
+      function renderProfileFields() {
+        $('#profileFields').innerHTML = roleProfileFields().map(field => {
+          const id = `profile-${field.field_key}`;
+          const value = state.profile[field.field_key] ?? (field.field_key === 'date' ? today() : '');
+          if (field.field_key === 'hall') return renderHallField(field, id, value);
+          const autocomplete = /firstName$/i.test(field.field_key) ? 'given-name' : /lastName$/i.test(field.field_key) ? 'family-name' : 'off';
+          const isTelegram = /telegram/i.test(field.field_key);
+          const helper = isTelegram ? '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>' : '';
+          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}">${helper}<span class="error">Заполните поле</span></label>`
+        }).join('');
+      }
+      function fillProfile() { renderProfileFields() }
+      function validateProfile() {
+        let ok = true; roleProfileFields().forEach(field => { const input = document.querySelector(`[data-profile-key="${CSS.escape(field.field_key)}"]`); let value = (input?.value || '').trim(); if (/telegram/i.test(field.field_key) && value && !value.startsWith('@')) value = '@' + value; state.profile[field.field_key] = value; input?.closest('.field')?.classList.toggle('invalid', field.required && !value); if (field.required && !value) ok = false }); saveDraft(); return ok;
+      }
+      function renderHallPicker() {
+        const selected = parseHallValue(state.profile.hall);
+        state.hallPickerLoft = HALL_GROUPS.some(group => group.loft === state.hallPickerLoft)
+          ? state.hallPickerLoft
+          : selected.loft;
+        const activeGroup = HALL_GROUPS.find(group => group.loft === state.hallPickerLoft) || HALL_GROUPS[0];
+        $('#hallLoftList').innerHTML = HALL_GROUPS.map(group => `<button type="button" class="hall-option ${group.loft === activeGroup.loft ? 'selected' : ''}" data-hall-loft="${escapeHtml(group.loft)}"><span>${escapeHtml(group.loft)}</span><span class="hall-check">✓</span></button>`).join('');
+        $('#hallRoomList').innerHTML = activeGroup.halls.map(hall => {
+          const isSelected = selected.loft === activeGroup.loft && selected.hall === hall;
+          return `<button type="button" class="hall-option ${isSelected ? 'selected' : ''}" data-hall-room="${escapeHtml(hall)}"><span>${escapeHtml(hall)}</span><span class="hall-check">✓</span></button>`;
+        }).join('');
+        $('#hallRoomColumn')?.classList.remove('hall-picker-halls');
+        requestAnimationFrame(() => $('#hallRoomColumn')?.classList.add('hall-picker-halls'));
+      }
+      function openHallPicker() {
+        const selected = parseHallValue(state.profile.hall);
+        state.hallPickerLoft = selected.loft || HALL_GROUPS[0].loft;
+        renderHallPicker();
+        $('#hallPicker').hidden = false;
+        document.body.classList.add('modal-open');
+        haptic('light');
+      }
+      function closeHallPicker() {
+        $('#hallPicker').hidden = true;
+        document.body.classList.remove('modal-open');
+      }
+      function selectHallLoft(loft) {
+        state.hallPickerLoft = loft;
+        renderHallPicker();
+        haptic('light');
+      }
+      function selectHallRoom(room) {
+        state.profile.hall = hallValue(state.hallPickerLoft, room);
+        saveDraft();
+        fillProfile();
+        closeHallPicker();
+        showToast('Зал выбран');
+      }
+      function roleItems() { return state.items.filter(x => x.role === state.role) }
+      function groupedItems() { const map = new Map(); roleItems().forEach(item => { if (!map.has(item.section_key)) map.set(item.section_key, { key: item.section_key, title: item.section_title, order: item.section_order, items: [] }); map.get(item.section_key).items.push(item) }); return [...map.values()].sort((a, b) => a.order - b.order) }
+      function renderChecklist() {
+        const groups = groupedItems();
+        $('#checklistLead').textContent = state.role === 'mentor' ? 'Отмечайте, что было выполнено и усвоено стажёром.' : 'Отмечайте пункты по ходу стажировочного дня.';
+        $('#sectionList').innerHTML = groups.map((g, gi) => {
+          const done = g.items.filter(i => state.answers[i.id]?.status).length;
+          return `<section class="card section ${state.openedSections.has(g.key) ? 'open' : ''}" data-section="${escapeHtml(g.key)}">
+        <button class="section-head" type="button" data-toggle-section="${escapeHtml(g.key)}" aria-expanded="${state.openedSections.has(g.key)}"><span class="section-num">${String(gi + 1).padStart(2, '0')}</span><span class="section-title">${escapeHtml(g.title)}</span><span class="section-count">${done}/${g.items.length}</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 10 5 5 5-5"/></svg></button>
+        <div class="section-body">${g.items.map(renderItem).join('')}</div></section>`
+        }).join(''); renderFinalFields(); updateProgress(); saveDraft(); requestAnimationFrame(updateChecklistScrollbar);
+      }
+      function renderFinalFields() {
+        const fields = roleSummaryFields(); if (!fields.length) { $('#finalFields').innerHTML = ''; return }
+        const title = fields[0].section_title || 'Итог';
+        $('#finalFields').innerHTML = `<div class="final-head"><p class="eyebrow">Финальный блок</p><h2>${escapeHtml(title)}</h2><p class="lead">Заполните итоговые поля перед проверкой отчёта.</p></div>` + fields.map(renderFinalField).join('');
+      }
+      function renderFinalField(field) {
+        const value = state.summary[field.field_key] || '';
+        if (field.answer_type === 'choice') {
+          return `<div class="card review-card decision-card" data-summary-card="${escapeHtml(field.field_key)}"><div class="decision-head"><div><p class="eyebrow">Финальное решение</p><p class="review-title">${escapeHtml(field.label)}</p></div><span class="decision-status ${value ? 'is-set' : ''}">${value ? 'Выбрано' : 'Выберите вариант'}</span></div><div class="choice-stack decision-options" data-summary-field="${escapeHtml(field.field_key)}">${field.options.map((option, index) => `<button type="button" class="choice decision-option ${index === 0 ? 'decision-positive' : 'decision-negative'} ${value === option ? 'selected' : ''}" data-summary-choice="${escapeHtml(field.field_key)}" data-value="${escapeHtml(option)}" aria-pressed="${value === option}"><span class="decision-icon">${index === 0 ? '✓' : '↻'}</span><span>${escapeHtml(option)}</span><span class="decision-check">✓</span></button>`).join('')}</div></div>`;
+        }
+        if (field.field_key === 'mentorRecommendations') {
+          return `<div class="card review-card final-text-card mentor-growth-card" data-summary-card="${escapeHtml(field.field_key)}"><label class="field"><span class="field-label"><span>Что нужно подтянуть</span></span><p class="mentor-growth-note"><span class="mentor-growth-note-icon">!</span><span>Укажите только зоны роста стажёра и навыки, которые требуют дополнительной проработки. Не пишите про форму, пунктуальность и другие общие моменты.</span></p><textarea class="textarea" data-summary-input="${escapeHtml(field.field_key)}" placeholder="Опишите, что стажёру необходимо проработать и в чём были трудности во время стажировки">${escapeHtml(value)}</textarea></label></div>`;
+        }
+        return `<div class="card review-card final-text-card" data-summary-card="${escapeHtml(field.field_key)}"><label class="field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><textarea class="textarea" data-summary-input="${escapeHtml(field.field_key)}" placeholder="${escapeHtml(field.placeholder)}">${escapeHtml(value)}</textarea></label></div>`;
+      }
+      function renderItem(item) {
+        const a = state.answers[item.id] || {};
+        const show = !!a.comment || a.status === 'no';
+        return `<article class="check-item ${show ? 'show-comment' : ''}" data-item="${escapeHtml(item.id)}">
+      <div class="item-top"><span class="item-index">${String(item.item_order).padStart(2, '0')}</span><div class="item-text">${escapeHtml(item.text)}</div></div>
+      <div class="choice-row"><button type="button" class="choice answer-choice ${a.status === 'yes' ? 'selected' : ''}" data-answer="${escapeHtml(item.id)}" data-value="yes" aria-pressed="${a.status === 'yes'}"><span class="answer-icon">✓</span><span>Да</span></button><button type="button" class="choice answer-choice ${a.status === 'no' ? 'selected' : ''}" data-answer="${escapeHtml(item.id)}" data-value="no" aria-pressed="${a.status === 'no'}"><span class="answer-icon">×</span><span>Нет</span></button></div>
+      <button type="button" class="comment-toggle" data-comment-toggle="${escapeHtml(item.id)}"><span class="comment-plus">${show ? '−' : '+'}</span><span>${show ? 'Скрыть комментарий' : 'Добавить комментарий'}</span></button><div class="comment-box"><label class="comment-label">Комментарий к пункту <em>необязательно</em></label><textarea class="textarea comment-input" data-comment="${escapeHtml(item.id)}" placeholder="Уточните детали, если это необходимо">${escapeHtml(a.comment || '')}</textarea></div>
+    </article>`;
+      }
+      function updateSectionProgress(sectionEl) {
+        if (!sectionEl) return;
+        const ids = [...sectionEl.querySelectorAll('[data-item]')].map(el => el.dataset.item);
+        const done = ids.filter(itemId => state.answers[itemId]?.status).length;
+        const counter = sectionEl.querySelector('.section-count');
+        if (counter) counter.textContent = `${done}/${ids.length}`;
+      }
+      function answer(id, value) {
+        state.answers[id] = { ...(state.answers[id] || {}), status: value };
+        const itemEl = document.querySelector(`[data-item="${CSS.escape(id)}"]`);
+        if (itemEl) {
+          itemEl.querySelectorAll('[data-answer]').forEach(button => {
+            const selected = button.dataset.value === value;
+            button.classList.toggle('selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+          });
+          const showComment = value === 'no' || !!state.answers[id]?.comment;
+          itemEl.classList.toggle('show-comment', showComment);
+          const toggle = itemEl.querySelector('[data-comment-toggle]');
+          if (toggle) toggle.innerHTML = `<span class="comment-plus">${showComment ? '−' : '+'}</span><span>${showComment ? 'Скрыть комментарий' : 'Добавить комментарий'}</span>`;
+          updateSectionProgress(itemEl.closest('.section'));
+        }
+        updateProgress(); saveDraft(); haptic(value === 'no' ? 'medium' : 'light');
+        requestAnimationFrame(updateChecklistScrollbar);
+      }
+      function updateProgress() { const items = roleItems(), done = items.filter(i => state.answers[i.id]?.status).length, pct = items.length ? Math.round(done / items.length * 100) : 0; $('#progressText').textContent = `${done} из ${items.length}`; $('#progressPercent').textContent = `${pct}%`; $('#progressBar').style.width = `${pct}%`; $('#reviewBtn').textContent = done === items.length ? 'Проверить отчёт' : `Проверить · ${done}/${items.length}` }
+      function setSummaryChoice(key, value) {
+        state.summary[key] = value;
+        document.querySelectorAll(`[data-summary-choice="${CSS.escape(key)}"]`).forEach(button => {
+          const selected = button.dataset.value === value;
+          button.classList.toggle('selected', selected);
+          button.setAttribute('aria-pressed', String(selected));
+        });
+        const status = document.querySelector(`[data-summary-field="${CSS.escape(key)}"]`)?.closest('.decision-card')?.querySelector('.decision-status');
+        if (status) { status.textContent = 'Выбрано'; status.classList.add('is-set'); }
+        saveDraft(); haptic();
+      }
+      function renderReviewIssues(items, missingFields) {
+        const failed = items.filter(item => state.answers[item.id]?.status === 'no');
+        const skipped = items.filter(item => !state.answers[item.id]?.status);
+        const container = $('#reviewIssues');
+        if (!failed.length && !skipped.length && !missingFields.length) {
+          container.innerHTML = `<div class="card review-success-card"><span class="review-success-icon">✓</span><span><strong>Пунктов, требующих внимания, нет</strong><span>В отчёт попадут данные стажировки и итоговый комментарий.</span></span></div>`;
+          return;
+        }
+        const itemRows = [...failed.map(item => ({item,type:'failed',mark:'×'})), ...skipped.map(item => ({item,type:'skipped',mark:'·'}))].map(({item,type,mark}) => {
+          const comment = String(state.answers[item.id]?.comment || '').trim();
+          return `<button type="button" class="review-issue ${type}" data-review-target="item" data-review-target-id="${escapeHtml(item.id)}"><span class="review-issue-index">${mark}${String(item.item_order).padStart(2,'0')}</span><span class="review-issue-copy"><span class="review-issue-text">${escapeHtml(item.text)}</span>${comment ? `<span class="review-issue-comment">${escapeHtml(comment)}</span>` : ''}</span></button>`;
+        }).join('');
+        const fieldRows = missingFields.map(field => `<button type="button" class="review-issue skipped" data-review-target="summary" data-review-target-id="${escapeHtml(field.field_key)}"><span class="review-issue-index">!</span><span class="review-issue-copy"><span class="review-issue-text">${escapeHtml(field.label)}</span><span class="review-issue-required">Заполните обязательное поле</span></span></button>`).join('');
+        const total = failed.length + skipped.length + missingFields.length;
+        const parts = [];
+        if (failed.length) parts.push(`${failed.length} не пройдено`);
+        if (skipped.length) parts.push(`${skipped.length} без ответа`);
+        if (missingFields.length) parts.push(`${missingFields.length} итоговых полей`);
+        container.innerHTML = `<div class="card review-issues-card" data-review-issues-card><button class="review-issues-toggle" type="button" data-review-issues-toggle aria-expanded="false"><span class="review-issues-main"><span class="review-issues-title">Пункты, требующие внимания</span><span class="review-issues-subtitle">${parts.join(' · ')}. Нажмите на пункт, чтобы перейти к нему.</span></span><span class="review-issues-side"><span class="review-issues-badge bad">${total}</span><svg class="review-issues-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></span></button><div class="review-issues-body" hidden><div class="review-issue-list">${itemRows}${fieldRows}</div></div></div>`;
+      }
+      function goToReviewIssue(target, id) {
+        if (target === 'item') {
+          const item = roleItems().find(candidate => candidate.id === id);
+          if (item) state.openedSections.add(item.section_key);
+        }
+        renderChecklist();
+        setScreen('checklist');
+        setTimeout(() => {
+          const element = target === 'item'
+            ? document.querySelector(`[data-item="${CSS.escape(id)}"]`)
+            : document.querySelector(`[data-summary-card="${CSS.escape(id)}"]`);
+          if (!element) return;
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.classList.add('issue-focus');
+          setTimeout(() => element.classList.remove('issue-focus'), 1500);
+        }, 160);
+      }
+      function updateReviewReadiness(missingItems, missingFields) {
+        const box=$('#reviewReadiness'),icon=$('#reviewReadinessIcon'),title=$('#reviewReadinessTitle'),description=$('#reviewReadinessText'),hint=$('#reviewActionHint');
+        const total=missingItems.length+missingFields.length;
+        box.classList.toggle('ready',total===0); box.classList.toggle('attention',total>0);
+        if(total===0){
+          icon.textContent='✓';
+          title.textContent='Отчёт готов';
+          description.textContent='Обязательные поля заполнены. Проверьте детали ниже.';
+          if(hint) hint.textContent='Отчёт автоматически отправится в рабочую группу.';
+        } else {
+          icon.textContent='!';
+          title.textContent='Нужно дополнить отчёт';
+          description.textContent=`Не заполнено обязательных пунктов или полей: ${total}.`;
+          if(hint) hint.textContent='Сначала заполните пункты и поля, отмеченные в блоке выше.';
+        }
+      }
+      function prepareReview() {
+        const items=roleItems();
+        const yes=items.filter(i=>state.answers[i.id]?.status==='yes').length;
+        const no=items.filter(i=>state.answers[i.id]?.status==='no').length;
+        const empty=items.length-yes-no;
+        $('#yesCount').textContent=yes; $('#noCount').textContent=no; $('#emptyCount').textContent=empty;
+        const meta=[['Роль',roleLabels[state.role]],...roleProfileFields().map(field=>{
+          const raw=state.profile[field.field_key];
+          const value=field.field_key==='date'?formatDate(raw):(raw||(/telegram/i.test(field.field_key)?'Не указан':'—'));
+          return [field.label.replace(/\s*\(необязательно\)\s*/i,''),value];
+        })];
+        $('#reviewMeta').innerHTML=meta.map(([label,value])=>`<div class="meta-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+        const missingItems=items.filter(i=>i.required&&!state.answers[i.id]?.status);
+        const missingFields=roleSummaryFields().filter(f=>f.required&&!String(state.summary[f.field_key]||'').trim());
+        const rows=roleSummaryFields().map(field=>{const value=String(state.summary[field.field_key]||'').trim()||'Не заполнено';return `<div class="meta-row"><span>${escapeHtml(field.label)}</span><strong>${escapeHtml(value)}</strong></div>`}).join('');
+        $('#reviewSummary').innerHTML=rows||`<div class="meta-row"><span>Итог</span><strong>Дополнительные итоговые поля не предусмотрены</strong></div>`;
+        renderReviewIssues(items,missingFields); updateReviewReadiness(missingItems,missingFields);
+        $('#sendStatus').className='send-status'; $('#sendStatus').textContent=''; setScreen('review');
+      }
+      function formatDate(v) { if (!v) return '—'; const [y, m, d] = v.split('-'); return `${d}.${m}.${y}` }
+      function reportText() {
+        return formatInternshipReport({
+          role: state.role,
+          profile: state.profile,
+          summary: state.summary,
+          items: roleItems(),
+          answers: state.answers,
+          mentorTopics: MENTOR_REPORT_TOPICS
+        });
+      }
+      function validateReport() {
+        if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
+        const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
+        const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
+        return true;
+      }
+      function showStatus(text, type) { const el = $('#sendStatus'); el.textContent = text; el.className = `send-status show ${type}`; }
+      function confirmAction(message) {
+        return new Promise(resolve => {
+          try {
+            if (tg?.showConfirm) {
+              tg.showConfirm(message, confirmed => resolve(Boolean(confirmed)));
+              return;
+            }
+          } catch (_) { }
+          resolve(window.confirm(message));
+        });
+      }
+      async function postReport() {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        try {
+          const response = await fetch('/api/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              initData: tg?.initData || '',
+              role: state.role,
+              reportText: reportText()
+            }),
+            signal: controller.signal
+          });
+          let payload = {};
+          try { payload = await response.json(); } catch (_) { }
+          if (!response.ok) {
+            throw new Error(payload?.error || 'Сервер не смог отправить отчёт.');
+          }
+          return payload;
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      function clearCurrentDraft() {
+        if (!state.role) return;
+        try {
+          [draftKey(state.role), ...legacyDraftKeys(state.role)].forEach(key => localStorage.removeItem(key));
+        } catch (_) { }
+      }
+      async function sendAndCloseReport() {
+        if (state.isSubmitting) return;
+        saveDraft();
+        if (!validateReport()) return;
+        const btn = $('#sendBtn');
+        const original = btn.innerHTML;
+        state.isSubmitting = true;
+        btn.disabled = true;
+        let sent = false;
+        try {
+          const confirmed = await confirmAction('Отправить итоговый отчёт в рабочую группу?');
+          if (!confirmed) return;
+
+          btn.classList.add('is-loading');
+          btn.innerHTML = '<span>Отправляем…</span>';
+          showStatus('Отправляем отчёт в рабочую группу…', 'warn');
+          await postReport();
+          sent = true;
+          clearCurrentDraft();
+          showStatus('Отчёт успешно отправлен в рабочую группу.', 'ok');
+          haptic('heavy');
+          try { tg?.HapticFeedback?.notificationOccurred('success') } catch (_) { }
+          const closeMiniApp = () => {
+            try { tg?.disableClosingConfirmation?.(); } catch (_) { }
+            setTimeout(() => { try { tg?.close?.(); } catch (_) { } }, 180);
+          };
+          try {
+            if (tg?.showAlert) {
+              tg.showAlert('Отчёт успешно отправлен.', closeMiniApp);
+            } else {
+              window.alert('Отчёт успешно отправлен.');
+              closeMiniApp();
+            }
+          } catch (_) {
+            closeMiniApp();
+          }
+        } catch (error) {
+          console.error(error);
+          const message = error?.name === 'AbortError'
+            ? 'Сервер долго не отвечает. Проверьте соединение и повторите отправку.'
+            : (error?.message || 'Не удалось отправить отчёт. Повторите попытку.');
+          showStatus(message, 'error');
+          try { tg?.HapticFeedback?.notificationOccurred('error') } catch (_) { }
+        } finally {
+          if (!sent) {
+            state.isSubmitting = false;
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+            btn.innerHTML = original;
+          }
+        }
+      }
+      function showAccessDenied(message) {
+        const gate = $('#accessGate');
+        gate?.classList.add('denied');
+        const title = $('#accessGateTitle');
+        const text = $('#accessGateText');
+        if (title) title.textContent = 'Приложение доступно только через Telegram';
+        if (text) text.textContent = message || 'Мини-приложение доступно только из меню бота LOFT HELPER.';
+      }
+      async function verifyTelegramLaunch() {
+        initTelegram();
+        const initData = tg?.initData || '';
+        if (!initData) {
+          showAccessDenied('Откройте чек-лист из меню LOFT_HELPER_BOT_2.0.');
+          return;
+        }
+        try {
+          const response = await fetch('/api/auth/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData })
+          });
+          if (!response.ok) {
+            let payload = {};
+            try { payload = await response.json(); } catch (_) { }
+            throw new Error(payload?.error || 'Не удалось подтвердить запуск через Telegram.');
+          }
+          const payload = await response.json();
+          mergeLaunchProfile(payload?.user);
+          $('#accessGate').hidden = true;
+          $('#appShell').hidden = false;
+          loadItems();
+          setScreen('home');
+        } catch (error) {
+          console.error(error);
+          showAccessDenied(error?.message || 'Не удалось подтвердить запуск. Откройте приложение повторно из Telegram.');
+        }
+      }
+      function resetDraft() { if (!state.role) return; if (!confirm('Сбросить текущий черновик?')) return; [draftKey(state.role), ...legacyDraftKeys(state.role)].forEach(key => localStorage.removeItem(key)); loadDraft(state.role); fillProfile(); renderChecklist(); setScreen('home'); state.role = null; $('#resetBtn').hidden = true; showToast('Черновик сброшен') }
+
+      document.addEventListener('click', e => {
+        const hallOpen = e.target.closest('[data-hall-open]');
+        if (hallOpen) { openHallPicker(); return }
+        const hallClose = e.target.closest('[data-hall-close]');
+        if (hallClose) { closeHallPicker(); return }
+        if (e.target.id === 'hallPicker') { closeHallPicker(); return }
+        const hallLoft = e.target.closest('[data-hall-loft]')?.dataset.hallLoft;
+        if (hallLoft) { selectHallLoft(hallLoft); return }
+        const hallRoom = e.target.closest('[data-hall-room]')?.dataset.hallRoom;
+        if (hallRoom) { selectHallRoom(hallRoom); return }
+        const role = e.target.closest('[data-role]')?.dataset.role; if (role) { setRole(role); return }
+        const act = e.target.closest('[data-action]')?.dataset.action; if (act) { if (act === 'home') { setScreen('home') } else if (act === 'profile') { fillProfile(); setScreen('profile') } else if (act === 'checklist') { renderChecklist(); setScreen('checklist') } return }
+        const sectionButton = e.target.closest('[data-toggle-section]'); if (sectionButton) { const section = sectionButton.dataset.toggleSection; const sectionEl = sectionButton.closest('.section'); const willOpen = !sectionEl?.classList.contains('open'); sectionEl?.classList.toggle('open', willOpen); sectionButton.setAttribute('aria-expanded', String(willOpen)); willOpen ? state.openedSections.add(section) : state.openedSections.delete(section); saveDraft(); haptic('light'); requestAnimationFrame(updateChecklistScrollbar); return }
+        const ans = e.target.closest('[data-answer]'); if (ans) { answer(ans.dataset.answer, ans.dataset.value); return }
+        const toggle = e.target.closest('[data-comment-toggle]')?.dataset.commentToggle; if (toggle) {
+          const itemEl = document.querySelector(`[data-item="${CSS.escape(toggle)}"]`);
+          if (itemEl) {
+            const willShow = !itemEl.classList.contains('show-comment');
+            itemEl.classList.toggle('show-comment', willShow);
+            const button = itemEl.querySelector('[data-comment-toggle]');
+            if (button) button.innerHTML = `<span class="comment-plus">${willShow ? '−' : '+'}</span><span>${willShow ? 'Скрыть комментарий' : 'Добавить комментарий'}</span>`;
+            if (willShow) requestAnimationFrame(() => {
+              itemEl.querySelector('[data-comment]')?.focus();
+              scheduleFocusedFieldVisibility();
+            });
+            requestAnimationFrame(updateChecklistScrollbar);
+          }
+          return;
+        }
+        const issuesToggle = e.target.closest('[data-review-issues-toggle]');
+        if (issuesToggle) {
+          const card = issuesToggle.closest('[data-review-issues-card]');
+          const body = card?.querySelector('.review-issues-body');
+          const willOpen = !card?.classList.contains('open');
+          card?.classList.toggle('open', willOpen);
+          issuesToggle.setAttribute('aria-expanded', String(willOpen));
+          if (body) body.hidden = !willOpen;
+          haptic('light');
+          return;
+        }
+        const reviewTarget = e.target.closest('[data-review-target]');
+        if (reviewTarget) {
+          goToReviewIssue(reviewTarget.dataset.reviewTarget, reviewTarget.dataset.reviewTargetId);
+          haptic('light');
+          return;
+        }
+        const summary = e.target.closest('[data-summary-choice]'); if (summary) { setSummaryChoice(summary.dataset.summaryChoice, summary.dataset.value) }
+      });
+      $('#profileForm').addEventListener('submit', e => { e.preventDefault(); if (!validateProfile()) return; fillProfile(); renderChecklist(); setScreen('checklist') });
+      $('#profileForm').addEventListener('input', e => { const key = e.target.dataset.profileKey; if (key) { state.profile[key] = e.target.value; e.target.closest('.field')?.classList.remove('invalid'); saveDraft() } });
+      $('#sectionList').addEventListener('input', e => { const id = e.target.dataset.comment; if (id) { state.answers[id] = { ...(state.answers[id] || {}), comment: e.target.value }; saveDraft() } });
+      $('#finalFields').addEventListener('input', e => { const key = e.target.dataset.summaryInput; if (key) { state.summary[key] = e.target.value; saveDraft() } });
+      $('#reviewBtn').addEventListener('click', prepareReview);
+      $('#sendBtn').addEventListener('click', sendAndCloseReport); $('#resetBtn').addEventListener('click', resetDraft);
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#hallPicker').hidden) closeHallPicker() });
+      document.addEventListener('focusin', e => {
+        if (!e.target.matches?.('.comment-input, [data-summary-input]')) return;
+        document.body.classList.add('keyboard-open');
+        scheduleFocusedFieldVisibility();
+      });
+      document.addEventListener('focusout', () => {
+        setTimeout(() => {
+          if (!focusedEditor()) document.body.classList.remove('keyboard-open');
+        }, 80);
+      });
+      window.addEventListener('scroll', updateChecklistScrollbar, { passive: true });
+      window.addEventListener('resize', () => {
+        updateChecklistScrollbar();
+        scheduleFocusedFieldVisibility();
+      }, { passive: true });
+      window.visualViewport?.addEventListener('resize', scheduleFocusedFieldVisibility, { passive: true });
+      window.visualViewport?.addEventListener('scroll', scheduleFocusedFieldVisibility, { passive: true });
+      window.addEventListener('beforeunload', saveDraft);
+
+      verifyTelegramLaunch();
+    })();
+  </script>
+</body>
+
+</html>

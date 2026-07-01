@@ -1,0 +1,2073 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Запись на стажировку · LOFT HALL</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f7;
+      --surface: #ffffff;
+      --surface-2: #f8fafb;
+      --text: #111820;
+      --muted: #657386;
+      --line: #d8e1e8;
+      --accent: #167780;
+      --accent-soft: #e4f4f5;
+      --ok: #16745f;
+      --warn: #a06b1c;
+      --bad: #b94444;
+      --field: #ffffff;
+      font-family: Arial, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111820;
+        --surface: #18222c;
+        --surface-2: #202b36;
+        --text: #eef4f7;
+        --muted: #a6b5c3;
+        --line: #314353;
+        --accent: #55b7bf;
+        --accent-soft: #12343a;
+        --ok: #73d7a7;
+        --warn: #e1b15f;
+        --bad: #f08383;
+        --field: #111a23;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    html, body { touch-action: manipulation; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .app { width: min(100%, 840px); margin: 0 auto; padding: 18px 14px 34px; }
+    .top { display: grid; gap: 12px; margin-bottom: 12px; }
+    .tools { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+    h1 { margin: 0; font-size: 32px; line-height: 1.06; letter-spacing: 0; }
+    h2 { margin: 0; font-size: 21px; line-height: 1.18; letter-spacing: 0; }
+    h3 { margin: 0; font-size: 17px; line-height: 1.25; letter-spacing: 0; }
+    p { margin: 0; }
+    .lead, .muted, .meta { color: var(--muted); line-height: 1.42; }
+    .meta { font-size: 14px; }
+    .tabs, .subtabs, .grid, .stats, .actions, .date-list, .list, .form { display: grid; gap: 10px; }
+    .tabs { grid-template-columns: 1fr 1fr; }
+    .subtabs { grid-template-columns: repeat(4, 1fr); margin: 10px 0 12px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    .stats { grid-template-columns: repeat(4, 1fr); }
+    .panel, .card, .date-card, .stat {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .panel { padding: 14px; margin-bottom: 12px; display: grid; gap: 12px; }
+    .card, .date-card { padding: 12px; display: grid; gap: 10px; }
+    .date-card.selected {
+      border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+      background: linear-gradient(180deg, var(--accent-soft), var(--surface));
+      box-shadow: 0 8px 22px rgba(22,119,128,.10);
+    }
+    .date-card.locked {
+      background: color-mix(in srgb, var(--surface) 92%, var(--surface-2));
+    }
+    .date-summary {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+      border-radius: 8px;
+      background: var(--accent-soft);
+      padding: 10px;
+    }
+    .date-mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 950;
+    }
+    .date-summary b { display: block; line-height: 1.18; }
+    .date-summary span { display: block; color: var(--muted); font-size: 13px; line-height: 1.3; margin-top: 2px; }
+    .status-hero {
+      display: grid;
+      gap: 10px;
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+      border-radius: 8px;
+      background: linear-gradient(180deg, var(--accent-soft), var(--surface));
+      padding: 12px;
+    }
+    .status-hero-title {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: start;
+    }
+    .status-date {
+      display: grid;
+      gap: 3px;
+      border-radius: 8px;
+      background: var(--field);
+      border: 1px solid var(--line);
+      padding: 10px;
+    }
+    .status-date span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .status-date b { font-size: 22px; line-height: 1.15; }
+    .shift-card {
+      padding: 0;
+      overflow: hidden;
+      border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+      box-shadow: 0 8px 22px rgba(17,24,32,.05);
+    }
+    .shift-header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding: 14px;
+      background: linear-gradient(180deg, var(--accent-soft), var(--surface));
+      border-bottom: 1px solid var(--line);
+    }
+    .shift-body {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+    .shift-title {
+      display: grid;
+      gap: 4px;
+    }
+    .shift-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .metric {
+      min-height: 50px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft));
+      padding: 7px 8px;
+      text-align: center;
+    }
+    .metric b { display: block; font-size: 18px; line-height: 1.05; }
+    .metric span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .stat { padding: 10px 8px; text-align: center; }
+    .stat b { display: block; font-size: 23px; line-height: 1.05; }
+    .stat span { color: var(--muted); font-size: 12px; font-weight: 800; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 900; }
+    input, select, textarea {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--field);
+      color: var(--text);
+      outline: none;
+    }
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 42px;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position:
+        calc(100% - 19px) 50%,
+        calc(100% - 13px) 50%;
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+    }
+    .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    textarea { min-height: 92px; resize: vertical; line-height: 1.42; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(22,119,128,.14); }
+    .tab, .subtab, .secondary, .danger, .quiet {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      color: var(--muted);
+      font-weight: 900;
+    }
+    .tab.active, .subtab.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .primary {
+      min-height: 52px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 950;
+    }
+    .date-card.selected .primary:disabled {
+      opacity: 1;
+      background: var(--accent);
+      color: #fff;
+    }
+    .date-card.locked .primary:disabled {
+      opacity: .72;
+      background: color-mix(in srgb, var(--muted) 22%, var(--surface-2));
+      color: var(--muted);
+    }
+    .secondary { color: var(--accent); background: var(--accent-soft); border-color: rgba(22,119,128,.28); }
+    .danger { color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 25%, var(--line)); }
+    .quiet { min-height: 38px; padding: 0 10px; font-size: 13px; }
+    .head, .date-head, .candidate-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+      background: var(--surface-2);
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+    .pill.new { color: #245f9d; background: #edf5ff; border-color: #cfe0f5; }
+    .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 25%, var(--line)); }
+    .pill.wait { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 25%, var(--line)); }
+    .pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 25%, var(--line)); }
+    .badges, .compact-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .candidate-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .candidate-actions .primary,
+    .candidate-actions .secondary,
+    .candidate-actions .danger,
+    .candidate-actions .quiet {
+      width: 100%;
+      min-height: 44px;
+      padding: 9px 10px;
+      line-height: 1.12;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .badge {
+      min-height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 9px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      background: var(--surface-2);
+    }
+    .badge.good { color: var(--ok); background: color-mix(in srgb, var(--ok) 7%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 23%, var(--line)); }
+    .notice {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      padding: 12px;
+      line-height: 1.42;
+    }
+    .date-title, .name { font-weight: 950; line-height: 1.25; }
+    .date-title { font-size: 19px; }
+    .empty { text-align: center; color: var(--muted); padding: 26px 10px; }
+    .empty.tight { padding: 14px 8px; }
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 2px;
+    }
+    .section-title span:first-child {
+      font-size: 18px;
+      font-weight: 950;
+      line-height: 1.2;
+    }
+    .count {
+      min-width: 28px;
+      min-height: 26px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .timeline {
+      display: grid;
+      grid-template-columns: 1fr 28px 1fr 28px 1fr;
+      gap: 0;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--field);
+    }
+    .step {
+      display: grid;
+      gap: 5px;
+      align-content: start;
+      background: var(--field);
+      padding: 12px;
+      min-height: 92px;
+    }
+    .step-arrow {
+      position: relative;
+      background: var(--field);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+    .step-arrow::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 0;
+      width: 28px;
+      height: 100%;
+      clip-path: polygon(0 0, 100% 50%, 0 100%);
+      background: var(--field);
+      border-right: 1px solid var(--line);
+    }
+    .step.done { background: var(--accent-soft); }
+    .step.done + .step-arrow,
+    .step.done + .step-arrow::before { background: var(--accent-soft); }
+    .dot {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-weight: 950;
+    }
+    .step.done .dot { background: var(--accent); color: #fff; }
+    .step span { display: block; color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 2px; }
+    .status-message { font-weight: 800; }
+    .stage-track {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      padding: 10px 8px;
+    }
+    .stage-node {
+      position: relative;
+      min-width: 0;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+    }
+    .stage-node::before {
+      content: "";
+      position: absolute;
+      right: 50%;
+      left: -50%;
+      top: 50%;
+      height: 2px;
+      background: var(--line);
+      transform: translateY(-50%);
+    }
+    .stage-node:first-child::before { display: none; }
+    .stage-node.done::before,
+    .stage-node.current::before { background: color-mix(in srgb, var(--accent) 62%, var(--line)); }
+    .stage-dot {
+      position: relative;
+      z-index: 1;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      color: var(--muted);
+      box-shadow: 0 0 0 4px var(--field);
+    }
+    .stage-dot svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      stroke-width: 2.3;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .stage-node.done .stage-dot {
+      border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .stage-node.current .stage-dot {
+      width: 34px;
+      height: 34px;
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 0 5px var(--accent-soft);
+    }
+    .stage-popover {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      z-index: 50;
+      min-width: 156px;
+      max-width: min(320px, calc(100vw - 28px));
+      display: grid;
+      gap: 2px;
+      border: 0;
+      border-radius: 18px;
+      background: rgba(17,24,32,.94);
+      color: #fff;
+      padding: 10px 13px;
+      line-height: 1.25;
+      text-align: left;
+      box-shadow: 0 12px 28px rgba(17,24,32,.28);
+      transform: translate(-50%, calc(-100% - 14px));
+      pointer-events: none;
+    }
+    .stage-popover::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -6px;
+      width: 12px;
+      height: 12px;
+      background: rgba(17,24,32,.94);
+      transform: translateX(-50%) rotate(45deg);
+    }
+    .stage-popover b { font-size: 13px; }
+    .stage-popover span {
+      color: rgba(255,255,255,.78);
+      font-size: 11px;
+    }
+    .invite-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 12px; align-items: start; }
+    .venue-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      padding: 10px;
+    }
+    .venue-photo {
+      min-height: 120px;
+      border-radius: 8px;
+      display: grid;
+      place-items: end start;
+      padding: 12px;
+      color: #fff;
+      font-weight: 950;
+      background:
+        linear-gradient(135deg, rgba(17,24,32,.18), rgba(17,24,32,.68)),
+        var(--venue-image, linear-gradient(135deg, #8f3f25, #1e5965));
+      background-position: center;
+      background-size: cover;
+    }
+    .venue-photo span {
+      border-radius: 999px;
+      background: rgba(17,24,32,.58);
+      padding: 6px 10px;
+      backdrop-filter: blur(4px);
+    }
+    .venue-photo.no-photo {
+      background:
+        linear-gradient(135deg, rgba(17,24,32,.18), rgba(17,24,32,.68)),
+        linear-gradient(135deg, #8f3f25, #1e5965);
+    }
+    .member-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: var(--field);
+    }
+    .member-row.selected { border-color: rgba(22,119,128,.45); background: var(--accent-soft); }
+    .message-preview {
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      padding: 12px;
+      line-height: 1.42;
+      font-size: 14px;
+    }
+    .sent-group {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .closed-dates {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .closed-dates summary {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px;
+      color: var(--muted);
+      font-weight: 950;
+      cursor: pointer;
+      list-style: none;
+    }
+    .closed-dates summary::-webkit-details-marker { display: none; }
+    .closed-dates summary::after {
+      content: "⌄";
+      color: var(--accent);
+      font-size: 20px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+    .closed-dates[open] summary::after { transform: rotate(180deg); }
+    .closed-dates-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 10px 10px;
+    }
+    .quick-dates {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 0;
+    }
+    .date-shortcut {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--surface-2) 72%, var(--field));
+      color: var(--text);
+      padding: 5px 6px;
+      display: grid;
+      gap: 1px;
+      place-items: center;
+      text-align: center;
+      line-height: 1.1;
+    }
+    .date-shortcut b {
+      font-size: 15px;
+      font-weight: 950;
+    }
+    .date-shortcut span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .date-shortcut.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .hidden { display: none !important; }
+
+    /* Unified LOFT HALL internship shell */
+    :root {
+      --bg: #f5f5f7;
+      --surface: rgba(255, 255, 255, .88);
+      --surface-2: rgba(255, 255, 255, .68);
+      --text: #111116;
+      --muted: #6f7078;
+      --line: rgba(17, 17, 22, .09);
+      --accent: #6d5dfc;
+      --accent-soft: rgba(109, 93, 252, .12);
+      --ok: #16865d;
+      --warn: #a86718;
+      --bad: #c74444;
+      --field: #fff;
+      --shadow-soft: 0 16px 44px rgba(13, 13, 18, .08);
+      --shadow-lift: 0 22px 62px rgba(13, 13, 18, .13);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0b0e;
+        --surface: rgba(23, 23, 28, .88);
+        --surface-2: rgba(30, 30, 37, .72);
+        --text: #f5f5f7;
+        --muted: #9b9ca5;
+        --line: rgba(255, 255, 255, .09);
+        --accent: #8b7cff;
+        --accent-soft: rgba(139, 124, 255, .15);
+        --ok: #45c995;
+        --warn: #e1b15f;
+        --bad: #ff7979;
+        --field: #17171c;
+        --shadow-soft: 0 18px 48px rgba(0, 0, 0, .30);
+        --shadow-lift: 0 24px 64px rgba(0, 0, 0, .40);
+      }
+    }
+    body {
+      min-height: 100dvh;
+      overscroll-behavior: none;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: -18vh -24vw auto;
+      height: 52vh;
+      background: radial-gradient(circle at 55% 22%, var(--accent-soft), transparent 58%);
+      pointer-events: none;
+    }
+    .app {
+      position: relative;
+      width: min(100%, 760px);
+      padding: max(18px, env(safe-area-inset-top)) 16px calc(34px + env(safe-area-inset-bottom));
+    }
+    .top { margin-bottom: 16px; }
+    .top .head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: start;
+      gap: 14px;
+    }
+    h1 {
+      font-size: clamp(38px, 9vw, 58px);
+      line-height: .94;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+    h2 { font-size: 22px; font-weight: 850; }
+    h3 { font-weight: 850; }
+    .lead { max-width: 520px; margin-top: 12px; font-size: 15px; }
+    .panel, .card, .date-card, .stat, .closed-dates, .sent-group {
+      border-radius: 24px;
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(18px);
+    }
+    .panel { padding: 18px; margin-bottom: 14px; }
+    .card, .date-card { padding: 15px; }
+    .shift-card { border-radius: 24px; box-shadow: var(--shadow-soft); }
+    .shift-header {
+      padding: 16px;
+      background: linear-gradient(145deg, var(--accent-soft), transparent 70%);
+    }
+    .shift-body { padding: 14px; }
+    .date-summary, .status-hero, .notice, .metric, .status-date, .venue-card,
+    .member-row, .message-preview, .timeline, .stage-track, .date-shortcut {
+      border-radius: 16px;
+    }
+    input, select, textarea {
+      min-height: 50px;
+      border-radius: 16px;
+      font-weight: 650;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    .tab, .subtab, .secondary, .danger, .quiet, .primary {
+      border-radius: 16px;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .primary {
+      box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+    .primary:active,
+    .secondary:active,
+    .danger:active,
+    .quiet:active,
+    .subtab:active {
+      transform: scale(.985);
+    }
+    .quiet {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 12px;
+      text-decoration: none;
+    }
+    .home-link {
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+    }
+    .tools { align-items: center; }
+    .pill, .badge, .count {
+      min-height: 28px;
+      border-radius: 999px;
+    }
+    .date-card.selected, .member-row.selected {
+      box-shadow: var(--shadow-lift);
+    }
+    .venue-photo { border-radius: 18px; min-height: 150px; }
+    @media (max-width: 720px) {
+      .app { padding: 16px 12px 28px; }
+      h1 { font-size: 30px; }
+      .tabs, .grid { grid-template-columns: 1fr; }
+      .subtabs, .stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .subtab { min-height: 48px; }
+      .stat { padding: 9px 6px; }
+      .stat b { font-size: 21px; }
+      .stat span { font-size: 11px; }
+      .shift-header { grid-template-columns: 1fr; padding: 13px; }
+      .shift-body { padding: 11px; gap: 11px; }
+      .shift-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .metric { min-height: 46px; padding: 6px 4px; }
+      .metric b { font-size: 17px; }
+      .metric span { font-size: 10px; }
+      .candidate-actions { grid-template-columns: 1fr; }
+      .status-hero-title { grid-template-columns: 1fr; }
+      .status-date b { font-size: 20px; }
+      .choice-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .choice-grid select { padding-left: 10px; padding-right: 34px; }
+      .choice-grid label { font-size: 12px; }
+      .invite-layout { grid-template-columns: 1fr; }
+      .timeline { grid-template-columns: 1fr; }
+      .step-arrow { display: none; }
+      .step + .step { border-top: 1px solid var(--line); }
+      .stage-track { padding: 8px 6px; }
+      .stage-node { height: 30px; }
+      .stage-dot { width: 26px; height: 26px; box-shadow: 0 0 0 3px var(--field); }
+      .stage-dot svg { width: 13px; height: 13px; }
+      .stage-node.current .stage-dot {
+        width: 30px;
+        height: 30px;
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+      .head, .date-head, .candidate-head { align-items: stretch; }
+      .pill { align-self: flex-start; }
+      .top .head { grid-template-columns: 1fr; }
+      .tools { justify-content: stretch; }
+      .tools .quiet { flex: 1 1 auto; }
+      h1 { font-size: clamp(34px, 11vw, 44px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div class="head">
+        <div>
+          <h1>Запись на стажировку</h1>
+          <p class="lead">Кандидат выбирает дату или очередь, рекрут подтверждает выход и ведет итог стажировки.</p>
+        </div>
+        <div class="tools">
+          <a class="quiet home-link" href="/">Центр стажировки</a>
+          <button class="quiet" id="recruiterCabinetBtn" type="button">Кабинет рекрута</button>
+          <button class="quiet" id="clearBtn" type="button">Очистить все</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="traineeView">
+      <section class="panel">
+        <h2>Перед записью</h2>
+        <div class="notice">
+          <b>Стажировка длится 6-8 часов, оплата 1000 руб.</b><br>
+          Расписание может меняться, поэтому дату подтверждает рекрут. Если ни одна дата не подходит, можно встать в общую очередь.
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Мои данные</h2>
+        <div class="form">
+          <label>ФИО
+            <input id="traineeName" placeholder="Например: Иванов Иван">
+          </label>
+          <div class="choice-grid">
+            <label>Обучение
+              <select id="traineeTraining">
+                <option value="passed">Да</option>
+                <option value="not_passed">Нет</option>
+              </select>
+            </label>
+            <label>Стажировка
+              <select id="traineeAttempt">
+                <option value="first">Первая</option>
+                <option value="repeat">Повторная</option>
+              </select>
+            </label>
+          </div>
+          <label>Ограничения
+            <textarea id="traineeLimits" placeholder="Например: могу после 17:00, не могу 29.06"></textarea>
+          </label>
+          <div class="notice" id="telegramConnect"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head">
+          <h2>Доступные даты</h2>
+          <span class="pill ok" id="openDatesCount">0 открыто</span>
+        </div>
+        <div class="date-list" id="publicDates"></div>
+        <button class="secondary" id="queueBtn" type="button">Встать в общую очередь</button>
+      </section>
+
+      <section class="panel">
+        <h2>Мой статус</h2>
+        <div id="myStatus"></div>
+      </section>
+    </section>
+
+    <section id="recruiterView" class="hidden">
+      <section class="panel" id="gate">
+        <h2>Кабинет рекрута</h2>
+        <label>Код доступа
+          <input id="recruiterCode" placeholder="1998">
+        </label>
+        <button class="primary" id="unlockBtn" type="button">Войти</button>
+      </section>
+
+      <div id="recruiterWorkspace" class="hidden">
+        <section class="stats">
+          <div class="stat"><b id="statPending">0</b><span>ждут решения</span></div>
+          <div class="stat"><b id="statConfirmed">0</b><span>подтверждены</span></div>
+          <div class="stat"><b id="statFeedback">0</b><span>ждут итог</span></div>
+          <div class="stat"><b id="statQueue">0</b><span>в очереди</span></div>
+        </section>
+
+        <nav class="subtabs" aria-label="Разделы рекрута">
+          <button class="subtab active" data-section="dates" type="button">Даты</button>
+          <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
+          <button class="subtab" data-section="groups" type="button">Группы</button>
+          <button class="subtab" data-section="create" type="button">Создать дату</button>
+        </nav>
+
+        <section id="datesSection">
+          <div class="date-list" id="recruiterDates"></div>
+        </section>
+
+        <section id="candidatesSection" class="hidden">
+          <section class="panel">
+            <label>Этап
+              <select id="candidateFilter">
+                <option value="active">На стажировке и после</option>
+                <option value="all">Все кандидаты</option>
+                <option value="invited">Приглашение отправлено</option>
+                <option value="feedback">Ждет фидбек</option>
+                <option value="passed">Прошел</option>
+                <option value="failed">Не прошел</option>
+                <option value="noshow">Не вышел</option>
+              </select>
+            </label>
+          </section>
+          <div class="list" id="candidateList"></div>
+        </section>
+
+        <section id="groupsSection" class="hidden">
+          <section class="panel">
+            <h2>Приглашения на стажировку</h2>
+            <p class="meta">Соберите мини-группу: выберите дату, площадку, ссылку на рабочую группу и кандидатов. В прототипе кнопка отмечает приглашение как отправленное.</p>
+            <div class="invite-layout">
+              <div class="form">
+                <div class="grid">
+                  <label>Дата стажировки
+                    <select id="groupShift"></select>
+                  </label>
+                  <label>Площадка
+                    <select id="groupVenue"></select>
+                  </label>
+                </div>
+                <label>Ссылка на рабочую группу
+                  <input id="groupLink" placeholder="https://t.me/+...">
+                </label>
+                <div class="venue-card" id="venueCard"></div>
+                <h3>Кого пригласить</h3>
+                <div class="list" id="groupMembers"></div>
+                <button class="primary" id="sendInvitesBtn" type="button">Отправить приглашения</button>
+              </div>
+              <div class="form">
+                <h3>Сообщение стажеру</h3>
+                <div class="message-preview" id="invitePreview"></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <h2>Отправленные группы</h2>
+            <div class="list" id="sentGroups"></div>
+          </section>
+        </section>
+
+        <section id="createSection" class="hidden">
+          <section class="panel">
+            <h2>Новая дата</h2>
+            <div class="grid">
+              <label>Дата
+                <input id="newDate" type="date">
+                <div class="quick-dates" id="quickDates"></div>
+              </label>
+              <label>Количество мест
+                <input id="newSeats" type="number" min="1" max="30" value="4">
+              </label>
+            </div>
+            <button class="primary" id="createDateBtn" type="button">Создать дату</button>
+          </section>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    const KEY = "internship-booking-app";
+    const PROFILE_KEY = `${KEY}-profile`;
+    const TELEGRAM_BOT_USERNAME = window.__TELEGRAM_BOT_USERNAME__ || "";
+    const tgApp = window.Telegram?.WebApp || null;
+    const telegramLinkingIds = new Set();
+    const telegramLinkErrors = new Map();
+    const stagePopoverTimers = new Map();
+    const statusNames = {
+      pending: "Ждет решения",
+      queue: "В очереди",
+      confirmed: "Выход подтвержден",
+      invited: "Приглашение отправлено",
+      feedback: "Ждет фидбек",
+      passed: "Прошел",
+      failed: "Не прошел",
+      noshow: "Не вышел"
+    };
+    const statusPill = {
+      pending: "new",
+      queue: "wait",
+      confirmed: "ok",
+      invited: "ok",
+      feedback: "wait",
+      passed: "ok",
+      failed: "bad",
+      noshow: "bad"
+    };
+    const trainingNames = { passed: "Обучение пройдено", not_passed: "Без обучения" };
+    const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
+    const venues = [
+      { id: "loft1", name: "LOFT#1", address: "ул. Ленинская Слобода, 26, стр. 35", photo: "assets/venues/loft1.jpg" },
+      { id: "loft2", name: "LOFT#2", address: "ул. Ленинская Слобода, 26с11", photo: "assets/venues/loft2.jpg" },
+      { id: "loft3", name: "LOFT#3", address: "ул. Ленинская Слобода, 26с15", photo: "assets/venues/loft3.jpg" },
+      { id: "loft4", name: "LOFT#4", address: "2-й Кожуховский проезд, 29к6", photo: "assets/venues/loft4.jpg" },
+      { id: "loft5_contrabanda", name: "LOFT#5 CONTRABANDA", address: "ул. Ленинская Слобода, 26, стр. 23", photo: "assets/venues/loft5-contrabanda.jpg" },
+      { id: "loft5_small", name: "LOFT#5 SMALL", address: "ул. Ленинская Слобода, 26, стр. 23", photo: "assets/venues/loft5-small.jpg" },
+      { id: "loft8", name: "LOFT#8", address: "ул. Волочаевская, 48, стр. 1", photo: "assets/venues/loft8.jpg" },
+      { id: "loft10", name: "LOFT#10 (TAU)", address: "Рязанский проспект, 8а, ст10", photo: "assets/venues/loft10.JPG" },
+      { id: "birch", name: "THE BIRCH", address: "Солнечногорский район, поселок Жуково", photo: "assets/venues/birch.jpg" },
+      { id: "metelitsa", name: "МЕТЕЛИЦА", address: "улица Новый Арбат, дом 21", photo: "assets/venues/metelitsa.jpg" }
+    ];
+
+    let role = "trainee";
+    let section = "dates";
+    let unlocked = localStorage.getItem(`${KEY}-unlocked`) === "yes";
+    let state = load();
+
+    const fields = {
+      traineeName: document.getElementById("traineeName"),
+      traineeTraining: document.getElementById("traineeTraining"),
+      traineeAttempt: document.getElementById("traineeAttempt"),
+      traineeLimits: document.getElementById("traineeLimits"),
+      recruiterCode: document.getElementById("recruiterCode"),
+      candidateFilter: document.getElementById("candidateFilter"),
+      newDate: document.getElementById("newDate"),
+      newSeats: document.getElementById("newSeats"),
+      groupShift: document.getElementById("groupShift"),
+      groupVenue: document.getElementById("groupVenue"),
+      groupLink: document.getElementById("groupLink")
+    };
+
+    if (tgApp) {
+      tgApp.ready();
+      tgApp.expand();
+    }
+
+    fillProfile();
+    render();
+
+    function seed() {
+      return {
+        profile: defaultProfile(),
+        shifts: [
+          { id: 1, date: "2026-06-28", seats: 4, open: true },
+          { id: 2, date: "2026-06-30", seats: 3, open: true },
+          { id: 3, date: "2026-07-02", seats: 5, open: true }
+        ],
+        applications: [
+          { id: 101, shiftId: 1, name: "Петрова Алина", training: "passed", attempt: "first", limits: "Могу после 14:00.", status: "pending", comment: "" },
+          { id: 102, shiftId: 2, name: "Смирнов Никита", training: "not_passed", attempt: "repeat", limits: "Без ограничений.", status: "confirmed", comment: "Подтвержден.", inviteGroupId: null, venueId: null, groupLink: "" },
+          { id: 103, shiftId: null, name: "Козлова Мария", training: "passed", attempt: "first", limits: "Готова на ближайшую дату.", status: "queue", comment: "" }
+        ],
+        inviteDraft: { shiftId: 1, venueId: "loft1", link: "", memberIds: [] },
+        inviteGroups: []
+      };
+    }
+
+    function load() {
+      const localProfile = loadProfile();
+      const source = window.__SERVER_STATE__ || JSON.parse(localStorage.getItem(KEY) || "null") || seed();
+      const loaded = normalizeState(source);
+      loaded.profile = { ...localProfile, activeAppId: localProfile.activeAppId || null };
+      return loaded;
+    }
+
+    function loadProfile() {
+      const raw = localStorage.getItem(PROFILE_KEY);
+      if (!raw) return defaultProfile();
+      try {
+        return { ...defaultProfile(), ...JSON.parse(raw) };
+      } catch {
+        return defaultProfile();
+      }
+    }
+
+    function normalizeState(source) {
+      const fallback = seed();
+      const loaded = {
+        profile: defaultProfile(),
+        shifts: Array.isArray(source.shifts) ? source.shifts.map(normalizeShift) : fallback.shifts,
+        applications: Array.isArray(source.applications) ? source.applications.map(normalizeApplication) : fallback.applications,
+        inviteDraft: source.inviteDraft || fallback.inviteDraft,
+        inviteGroups: Array.isArray(source.inviteGroups) ? source.inviteGroups : []
+      };
+      loaded.profile.activeAppId = loaded.profile.activeAppId || null;
+      loaded.inviteDraft = loaded.inviteDraft || { shiftId: loaded.shifts[0]?.id || null, venueId: "loft1", link: "", memberIds: [] };
+      loaded.inviteGroups = loaded.inviteGroups || [];
+      return loaded;
+    }
+
+    function normalizeShift(shift) {
+      return {
+        id: shift.id,
+        date: shift.date,
+        seats: Number(shift.seats || 1),
+        open: typeof shift.open === "boolean" ? shift.open : !["closed", "done", "canceled", "full"].includes(shift.status)
+      };
+    }
+
+    function normalizeApplication(app) {
+      return {
+        ...app,
+        status: normalizeStatus(app.status),
+        comment: app.comment ?? app.recruiterComment ?? "",
+        limits: app.limits || "",
+        inviteGroupId: app.inviteGroupId ?? null,
+        venueId: app.venueId ?? null,
+        groupLink: app.groupLink || "",
+        telegramCode: app.telegramCode || "",
+        telegramChatId: app.telegramChatId || "",
+        telegramUserId: app.telegramUserId || "",
+        telegramUsername: app.telegramUsername || ""
+      };
+    }
+
+    function defaultProfile() {
+      return { name: "", training: "passed", attempt: "first", limits: "", telegramCode: "", activeAppId: null };
+    }
+
+    function getTelegramCode() {
+      if (!state.profile.telegramCode) {
+        state.profile.telegramCode = `tg${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+        save();
+      }
+      return state.profile.telegramCode;
+    }
+
+    function normalizeStatus(status) {
+      const map = {
+        new: "pending",
+        waiting: "invited",
+        report: "feedback"
+      };
+      return map[status] || status || "pending";
+    }
+
+    function save() {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
+      const payload = { shifts: state.shifts, applications: state.applications, inviteGroups: state.inviteGroups };
+      if (window.__SERVER_STATE__) {
+        fetch("/api/state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).catch(error => console.error("Не удалось сохранить данные на сервере", error));
+        return;
+      }
+      localStorage.setItem(KEY, JSON.stringify({ ...payload, inviteDraft: state.inviteDraft }));
+    }
+
+    function fillProfile() {
+      fields.traineeName.value = state.profile.name || "";
+      fields.traineeTraining.value = state.profile.training || "passed";
+      fields.traineeAttempt.value = state.profile.attempt || "first";
+      fields.traineeLimits.value = state.profile.limits || "";
+    }
+
+    function syncProfile() {
+      const activeId = state.profile.activeAppId || null;
+      state.profile = {
+        name: fields.traineeName.value.trim(),
+        training: fields.traineeTraining.value,
+        attempt: fields.traineeAttempt.value,
+        limits: fields.traineeLimits.value.trim(),
+        telegramCode: state.profile.telegramCode || "",
+        activeAppId: activeId
+      };
+      const app = currentApplication();
+      if (app && ["pending", "queue"].includes(app.status)) {
+        app.name = state.profile.name;
+        app.training = state.profile.training;
+        app.attempt = state.profile.attempt;
+        app.limits = state.profile.limits;
+        app.telegramCode = state.profile.telegramCode || app.telegramCode || "";
+      }
+      save();
+    }
+
+    function render() {
+      document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.role === role));
+      document.getElementById("traineeView").classList.toggle("hidden", role !== "trainee");
+      document.getElementById("recruiterView").classList.toggle("hidden", role !== "recruiter");
+      document.getElementById("recruiterCabinetBtn").textContent = role === "recruiter" ? "К форме записи" : "Кабинет рекрута";
+      document.getElementById("gate").classList.toggle("hidden", unlocked);
+      document.getElementById("recruiterWorkspace").classList.toggle("hidden", !unlocked);
+      renderTrainee();
+      renderRecruiter();
+    }
+
+    function currentApplication() {
+      const active = state.applications.find(app => String(app.id) === String(state.profile.activeAppId));
+      if (active) return active;
+      if (!state.profile.name) return null;
+      const editable = [...state.applications].reverse().find(app => {
+        return app.name.toLowerCase() === state.profile.name.toLowerCase() && ["pending", "queue"].includes(app.status);
+      });
+      if (editable) {
+        state.profile.activeAppId = editable.id;
+        save();
+        return editable;
+      }
+      return [...state.applications].reverse().find(app => app.name.toLowerCase() === state.profile.name.toLowerCase()) || null;
+    }
+
+    function freeSeats(shift) {
+      return Math.max(Number(shift.seats) - state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed"].includes(app.status)).length, 0);
+    }
+
+    function openShifts() {
+      return state.shifts.filter(shift => shift.open && freeSeats(shift) > 0).sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    function renderTrainee() {
+      const current = currentApplication();
+      const dates = openShifts();
+      const openCount = dates.length;
+      const currentShift = current?.shiftId ? state.shifts.find(shift => shift.id === current.shiftId) : null;
+      if (currentShift && !dates.some(shift => shift.id === currentShift.id)) dates.unshift(currentShift);
+      document.getElementById("openDatesCount").textContent = `${openCount} открыто`;
+      document.getElementById("publicDates").innerHTML = dates.length ? dates.map(shift => {
+        const isCurrentShift = current && current.shiftId === shift.id;
+        const selected = isCurrentShift && current.status !== "queue";
+        const locked = current && !["pending", "queue"].includes(current.status);
+        const canChange = current && ["pending", "queue"].includes(current.status);
+        const buttonText = selected
+          ? ["passed", "failed", "noshow"].includes(current.status) ? "Стажировка по этой дате завершена" : current.status === "pending" ? "Заявка отправлена на эту дату" : "Вы записаны на эту дату"
+          : locked ? "У вас уже есть запись" : canChange ? "Перезаписаться сюда" : "Выбрать дату";
+        return `
+          <article class="date-card ${selected ? "selected" : locked ? "locked" : ""}">
+            <div class="date-head">
+              <div>
+                <div class="date-title">${formatDate(shift.date)}</div>
+                <p class="meta">Свободно мест: <b>${freeSeats(shift)}</b></p>
+              </div>
+              <span class="pill ${selected ? "ok" : "ok"}">${selected ? "Ваша дата" : "Доступно"}</span>
+            </div>
+            ${selected ? `
+              <div class="date-summary">
+                <div class="date-mark">✓</div>
+                <div>
+                  <b>${current.status === "pending" ? "Вы выбрали эту дату" : "Вы записаны на эту дату"}</b>
+                  <span>${statusNames[current.status]}. Подробности ниже в блоке “Мой статус”.</span>
+                </div>
+              </div>
+            ` : ""}
+            <button class="primary" data-book="${shift.id}" type="button" ${selected || locked ? "disabled" : ""}>${buttonText}</button>
+          </article>
+        `;
+      }).join("") : `<div class="empty">Открытых дат пока нет.</div>`;
+
+      document.getElementById("myStatus").innerHTML = current ? renderMyStatus(current) : `
+        <div class="notice">Заполните данные и выберите дату. Если даты не подходят, встаньте в общую очередь.</div>
+      `;
+      renderTelegramConnect(current);
+    }
+
+    function renderTelegramConnect(current) {
+      const target = document.getElementById("telegramConnect");
+      if (!target) return;
+      if (!current) {
+        target.innerHTML = tgApp
+          ? `<b>Telegram-уведомления</b><br>Вы открыли форму внутри Telegram. После выбора даты уведомления подключатся автоматически.`
+          : `<b>Telegram-уведомления</b><br>Откройте эту форму из основного бота${TELEGRAM_BOT_USERNAME ? ` @${escapeHtml(TELEGRAM_BOT_USERNAME)}` : ""}, чтобы уведомления подключились автоматически.`;
+        return;
+      }
+      if (current.telegramChatId) {
+        target.innerHTML = `<b>Telegram подключен.</b><br>Уведомления о подтверждении и приглашении будут приходить в личные сообщения.`;
+        return;
+      }
+      const linkError = telegramLinkErrors.get(String(current.id));
+      if (linkError) {
+        target.innerHTML = `<b>Telegram не подключился.</b><br>${escapeHtml(linkError)}<br><button class="quiet" data-retry-telegram="${current.id}" type="button" style="margin-top:8px">Повторить</button>`;
+        return;
+      }
+      if (tgApp?.initData) {
+        linkCurrentApplicationToTelegram(current);
+        target.innerHTML = `<b>Telegram-уведомления</b><br>Привязываем вашу заявку к основному боту...`;
+        return;
+      }
+      target.innerHTML = `<b>Telegram-уведомления</b><br>Для автоматических ЛС откройте запись внутри основного бота${TELEGRAM_BOT_USERNAME ? ` @${escapeHtml(TELEGRAM_BOT_USERNAME)}` : ""}.`;
+    }
+
+    function linkCurrentApplicationToTelegram(app) {
+      if (!window.__SERVER_STATE__ || !tgApp?.initData || !app?.id || app.telegramChatId || telegramLinkingIds.has(String(app.id))) return;
+      const appId = String(app.id);
+      telegramLinkingIds.add(appId);
+      telegramLinkErrors.delete(appId);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      fetch("/api/telegram/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: app.id, initData: tgApp.initData }),
+        signal: controller.signal
+      })
+        .then(async response => {
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.ok) throw new Error(telegramLinkErrorText(result.error || response.status));
+          return result;
+        })
+        .then(result => {
+          if (!result.application) throw new Error("Сервер не вернул данные заявки. Попробуйте еще раз.");
+          Object.assign(app, result.application);
+          telegramLinkErrors.delete(appId);
+          save();
+          renderTrainee();
+        })
+        .catch(error => {
+          const message = error.name === "AbortError"
+            ? "Сервер долго не отвечает. Проверьте интернет и попробуйте еще раз."
+            : error.message || "Не удалось привязать Telegram. Попробуйте еще раз.";
+          telegramLinkErrors.set(appId, message);
+          console.error("Не удалось привязать Telegram", error);
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+          telegramLinkingIds.delete(appId);
+          renderTrainee();
+        });
+    }
+
+    function telegramLinkErrorText(error) {
+      const map = {
+        telegram_token_missing: "На сервере не найден TELEGRAM_BOT_TOKEN в .env.",
+        telegram_init_data_missing: "Telegram не передал данные мини-приложения. Откройте форму именно из кнопки Web App в основном боте.",
+        telegram_auth_failed: "Telegram не подтвердил данные мини-приложения. Проверьте, что в .env стоит токен именно основного бота.",
+        application_not_found: "Сервер не нашел эту заявку. Обновите форму и выберите дату еще раз."
+      };
+      return map[error] || "Сервер не смог привязать Telegram. Попробуйте еще раз.";
+    }
+
+    function renderMyStatus(app) {
+      const shift = state.shifts.find(item => item.id === app.shiftId);
+      const statusText = {
+        pending: "Заявка отправлена. Рекрут еще не подтвердил выход.",
+        queue: "Вы в общей очереди. Рекрут поставит вас на подходящую дату.",
+        confirmed: "Выход подтвержден. Ожидайте приглашение в рабочую группу.",
+        invited: "Вам отправлено приглашение на стажировку. Перейдите в рабочую группу и напишите, что выходите.",
+        feedback: "Стажировка прошла, сейчас ждем обратную связь от наставника.",
+        passed: "Стажировка пройдена. Команда свяжется с вами по следующим шагам.",
+        failed: "По итогам стажировки сейчас не продолжаем работу. Спасибо, что вышли.",
+        noshow: "Отмечено, что вы не вышли на стажировку."
+      };
+      const statusLead = {
+        pending: "Вы выбрали дату, заявка ждёт подтверждения.",
+        queue: "Вы в очереди, даты пока нет.",
+        confirmed: "Вы записаны, выход подтверждён.",
+        invited: "Вы записаны, приглашение отправлено.",
+        feedback: "Стажировка прошла, ждём итог.",
+        passed: "Стажировка успешно пройдена.",
+        failed: "Стажировка завершена без продолжения.",
+        noshow: "Выход на стажировку не состоялся."
+      };
+      return `
+        <article class="card">
+          <div class="status-hero">
+            <div class="status-hero-title">
+              <div>
+                <h3>${escapeHtml(app.name)}</h3>
+                <p class="meta">${escapeHtml(statusLead[app.status] || "Статус заявки обновлен.")}</p>
+              </div>
+              <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
+            </div>
+            <div class="status-date">
+              <span>${shift ? "Дата стажировки" : "Текущий этап"}</span>
+              <b>${shift ? formatDate(shift.date) : "Общая очередь"}</b>
+            </div>
+          </div>
+          <div class="notice status-message">${escapeHtml(statusText[app.status] || "Статус заявки обновлен.")}</div>
+          ${["pending", "queue"].includes(app.status) ? `<div class="meta">Данные заявки можно изменить выше в блоке “Мои данные”. Изменения сохраняются автоматически до решения рекрута.</div>` : ""}
+          ${renderStageTrack(app)}
+          ${app.status === "invited" ? renderTraineeInvite(app) : ""}
+          ${app.comment ? `<div class="notice">Комментарий рекрута: ${escapeHtml(app.comment)}</div>` : ""}
+          ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
+          ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в очередь заново</button>` : ""}
+        </article>
+      `;
+    }
+
+    function stageItems() {
+      return [
+        { title: "Встал в очередь", hint: "Заявка есть в системе, но дата стажировки еще не закреплена.", icon: "list" },
+        { title: "Заявка на рассмотрении", hint: "Рекрут видит заявку и проверяет возможность выхода на выбранную дату.", icon: "clock" },
+        { title: "Заявка принята", hint: "Выход подтвержден. Дальше рекрут отправит детали стажировки.", icon: "check" },
+        { title: "Информация направлена", hint: "Отправлены площадка, ссылка на рабочую группу и важные инструкции.", icon: "send" },
+        { title: "День стажировки", hint: "Кандидат выходит на стажировку по согласованной дате.", icon: "calendar" },
+        { title: "Обратная связь наставника", hint: "Стажировка прошла, команда собирает обратную связь от наставника.", icon: "chat" },
+        { title: "Итог стажировки", hint: "Финальный результат зафиксирован: прошел, не прошел или не вышел.", icon: "flag" }
+      ];
+    }
+
+    function stageNumber(app) {
+      const shift = state.shifts.find(item => item.id === app.shiftId);
+      if (app.status === "invited" && shift && isTodayOrPast(shift.date)) return 5;
+      const map = {
+        queue: 1,
+        pending: 2,
+        confirmed: 3,
+        invited: 4,
+        feedback: 6,
+        passed: 7,
+        failed: 7,
+        noshow: 7
+      };
+      return map[app.status] || 2;
+    }
+
+    function isTodayOrPast(value) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const date = new Date(`${value}T00:00:00`);
+      return date <= today;
+    }
+
+    function renderStageTrack(app) {
+      const current = stageNumber(app);
+      const stages = stageItems();
+      return `
+        <div class="stage-track" aria-label="Этапы заявки">
+          ${stages.map((item, index) => {
+            const number = index + 1;
+            const stateClass = number < current ? "done" : number === current ? "current" : "";
+            return `
+              <button class="stage-node ${stateClass}" data-stage="${number}" data-stage-app="${app.id}" type="button" aria-label="${escapeHtml(item.title)}">
+                <span class="stage-dot">${stageIcon(item.icon)}</span>
+              </button>
+            `;
+          }).join("")}
+        </div>
+        <div class="stage-popover hidden" id="stageInfo-${app.id}"></div>
+      `;
+    }
+
+    function showStagePopover(button, appId, item) {
+      const info = document.getElementById(`stageInfo-${appId}`);
+      if (!info || !item) return;
+      document.querySelectorAll(".stage-popover").forEach(popover => {
+        if (popover !== info) popover.classList.add("hidden");
+      });
+      const rect = button.getBoundingClientRect();
+      const left = Math.min(Math.max(rect.left + rect.width / 2, 86), window.innerWidth - 86);
+      const top = Math.max(rect.top - 4, 72);
+      info.innerHTML = `<b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.hint)}</span>`;
+      info.style.left = `${left}px`;
+      info.style.top = `${top}px`;
+      info.classList.remove("hidden");
+      clearTimeout(stagePopoverTimers.get(String(appId)));
+      stagePopoverTimers.set(String(appId), setTimeout(() => {
+        info.classList.add("hidden");
+      }, 2600));
+    }
+
+    function stageIcon(name) {
+      const icons = {
+        list: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>`,
+        clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>`,
+        check: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>`,
+        send: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4 18-7z"/></svg>`,
+        calendar: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v4M17 3v4M4 9h16M6 5h12a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg>`,
+        chat: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H8l-3 3V6z"/><path d="M8 10h8M8 13h5"/></svg>`,
+        flag: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4h10l-1 4 1 4H6"/></svg>`
+      };
+      return icons[name] || icons.check;
+    }
+
+    function renderTraineeInvite(app) {
+      const venue = venueById(app.venueId);
+      const shift = state.shifts.find(item => item.id === app.shiftId);
+      if (!venue) return "";
+      return `
+        <div class="notice">
+          <b>${escapeHtml(venue.name)}</b><br>
+          ${escapeHtml(venue.address)}<br>
+          ${shift ? `Дата: ${formatDate(shift.date)}<br>` : ""}
+          ${app.groupLink ? `<a href="${escapeHtml(app.groupLink)}" target="_blank" rel="noopener">Перейти в рабочую группу</a>` : "Ссылка на рабочую группу будет отправлена рекрутом."}
+        </div>
+      `;
+    }
+
+    function renderRecruiter() {
+      if (!unlocked) return;
+      document.querySelectorAll(".subtab").forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
+      ["dates", "candidates", "groups", "create"].forEach(id => {
+        document.getElementById(`${id}Section`).classList.toggle("hidden", id !== section);
+      });
+      document.getElementById("statPending").textContent = state.applications.filter(app => app.status === "pending").length;
+      document.getElementById("statConfirmed").textContent = state.applications.filter(app => ["confirmed", "invited"].includes(app.status)).length;
+      document.getElementById("statFeedback").textContent = state.applications.filter(app => app.status === "feedback").length;
+      document.getElementById("statQueue").textContent = state.applications.filter(app => app.status === "queue").length;
+      renderRecruiterDates();
+      renderCandidates();
+      renderInviteGroups();
+      renderQuickDates();
+    }
+
+    function renderRecruiterDates() {
+      const queue = state.applications.filter(app => app.status === "queue");
+      const renderShift = shift => {
+        const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
+        const booked = state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed", "failed", "noshow"].includes(app.status));
+        return `
+          <article class="date-card shift-card">
+            <div class="shift-header">
+              <div class="shift-title">
+                <div class="date-title">${formatDate(shift.date)}</div>
+                <div class="shift-metrics">
+                  <div class="metric"><b>${freeSeats(shift)}</b><span>свободно</span></div>
+                  <div class="metric"><b>${apps.length}</b><span>ждут</span></div>
+                  <div class="metric"><b>${booked.length}</b><span>записаны</span></div>
+                </div>
+              </div>
+              <span class="pill ${shift.open ? "ok" : "bad"}">${shift.open ? "Открыта" : "Закрыта"}</span>
+            </div>
+            <div class="shift-body">
+              <div class="section-title"><span>Новые заявки</span><b class="count">${apps.length}</b></div>
+              <div class="list">
+                ${apps.length ? apps.map(renderPendingCandidate).join("") : `<div class="empty tight">Новых заявок на эту дату нет.</div>`}
+              </div>
+              <div class="section-title"><span>Записаны на дату</span><b class="count">${booked.length}</b></div>
+              <div class="list">
+                ${booked.length ? booked.map(renderBookedCandidate).join("") : `<div class="empty tight">Подтвержденных кандидатов пока нет.</div>`}
+              </div>
+              ${queue.length && shift.open ? `
+                <div class="notice">
+                  <b>Очередь без даты</b>
+                  <div class="compact-actions" style="margin-top:8px">
+                    ${queue.map(app => `<button class="quiet" data-assign="${app.id}" data-shift="${shift.id}" type="button">${escapeHtml(app.name)}</button>`).join("")}
+                  </div>
+                </div>
+              ` : ""}
+              <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.open ? "Закрыть дату" : "Открыть дату"}</button>
+            </div>
+          </article>
+        `;
+      };
+      const openShiftsList = state.shifts.filter(shift => shift.open);
+      const closedShiftsList = state.shifts.filter(shift => !shift.open);
+      document.getElementById("recruiterDates").innerHTML = `
+        ${openShiftsList.length ? openShiftsList.map(renderShift).join("") : `<div class="panel empty">Открытых дат пока нет.</div>`}
+        ${closedShiftsList.length ? `
+          <details class="closed-dates">
+            <summary>Закрытые даты <span class="count">${closedShiftsList.length}</span></summary>
+            <div class="closed-dates-body">
+              ${closedShiftsList.map(renderShift).join("")}
+            </div>
+          </details>
+        ` : ""}
+      `;
+    }
+
+    function renderPendingCandidate(app) {
+      return `
+        <article class="card">
+          <div class="candidate-head">
+            <div>
+              <div class="name">${escapeHtml(app.name)}</div>
+              <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
+            </div>
+            <span class="pill new">Новая</span>
+          </div>
+          <div class="badges">
+            ${badge(app.training === "passed", trainingNames[app.training])}
+            ${badge(app.attempt === "first", attemptNames[app.attempt])}
+          </div>
+          <div class="candidate-actions">
+            <button class="primary" data-status="confirmed" data-id="${app.id}" type="button">Подтвердить стажировку</button>
+            <button class="secondary" data-return-queue="${app.id}" type="button">Вернуть в очередь</button>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderBookedCandidate(app) {
+      const venue = venueById(app.venueId);
+      return `
+        <article class="card">
+          <div class="candidate-head">
+            <div>
+              <div class="name">${escapeHtml(app.name)}</div>
+              <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
+            </div>
+            <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
+          </div>
+          ${venue ? `<p class="meta">Площадка: <b>${escapeHtml(venue.name)}</b>, ${escapeHtml(venue.address)}</p>` : ""}
+          <div class="badges">
+            ${badge(app.training === "passed", trainingNames[app.training])}
+            ${badge(app.attempt === "first", attemptNames[app.attempt])}
+          </div>
+          <div class="candidate-actions">
+            ${app.status !== "confirmed" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
+            <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderInviteGroups() {
+      const draft = ensureInviteDraft();
+      const shiftOptions = state.shifts.map(shift => `<option value="${shift.id}" ${String(draft.shiftId) === String(shift.id) ? "selected" : ""}>${formatDate(shift.date)}</option>`).join("");
+      const venueOptions = venues.map(venue => `<option value="${venue.id}" ${draft.venueId === venue.id ? "selected" : ""}>${venue.name}</option>`).join("");
+      fields.groupShift.innerHTML = shiftOptions || `<option value="">Нет дат</option>`;
+      fields.groupVenue.innerHTML = venueOptions;
+      fields.groupLink.value = draft.link || "";
+
+      const venue = venueById(draft.venueId) || venues[0];
+      document.getElementById("venueCard").innerHTML = `
+        <div class="venue-photo ${venue.photo ? "" : "no-photo"}" style="${venue.photo ? `--venue-image: url('${escapeHtml(venue.photo)}')` : ""}">
+          <span>${escapeHtml(venue.name)}</span>
+        </div>
+        <div><b>${escapeHtml(venue.name)}</b></div>
+        <div class="meta">${escapeHtml(venue.address)}</div>
+      `;
+
+      const candidates = state.applications.filter(app => {
+        return String(app.shiftId) === String(draft.shiftId) && ["confirmed", "invited"].includes(app.status);
+      });
+      draft.memberIds = draft.memberIds.filter(id => candidates.some(app => String(app.id) === String(id)));
+      document.getElementById("groupMembers").innerHTML = candidates.length ? candidates.map(app => {
+        const selected = draft.memberIds.some(id => String(id) === String(app.id));
+        return `
+          <article class="member-row ${selected ? "selected" : ""}">
+            <div>
+              <b>${escapeHtml(app.name)}</b>
+              <div class="meta">${statusNames[app.status]}${app.venueId ? `, уже: ${escapeHtml(venueById(app.venueId)?.name || "")}` : ""}</div>
+            </div>
+            <button class="${selected ? "secondary" : "quiet"}" data-toggle-member="${app.id}" type="button">${selected ? "Убрать" : "Добавить"}</button>
+          </article>
+        `;
+      }).join("") : `<div class="empty">На выбранную дату нет подтвержденных кандидатов.</div>`;
+
+      document.getElementById("invitePreview").innerHTML = composeInviteMessage(venue, draft.link);
+      document.getElementById("sendInvitesBtn").disabled = !draft.memberIds.length || !draft.link.trim();
+
+      document.getElementById("sentGroups").innerHTML = state.inviteGroups.length ? state.inviteGroups.slice().reverse().map(group => {
+        const groupVenue = venueById(group.venueId);
+        const groupShift = state.shifts.find(shift => shift.id === group.shiftId);
+        const names = group.memberIds.map(id => state.applications.find(app => String(app.id) === String(id))?.name).filter(Boolean).join(", ");
+        return `
+          <article class="sent-group">
+            <div class="head">
+              <div>
+                <b>${escapeHtml(groupVenue?.name || "Площадка")}</b>
+                <div class="meta">${groupShift ? formatDate(groupShift.date) : "без даты"} · ${escapeHtml(names || "нет кандидатов")}</div>
+              </div>
+              <span class="pill ok">Отправлено</span>
+            </div>
+            <div class="meta">${escapeHtml(group.link)}</div>
+          </article>
+        `;
+      }).join("") : `<div class="empty">Пока нет отправленных групп.</div>`;
+      save();
+    }
+
+    function renderCandidates() {
+      const filter = fields.candidateFilter.value;
+      const active = ["confirmed", "invited", "feedback", "passed", "failed", "noshow"];
+      const apps = state.applications
+        .filter(app => filter === "all" || (filter === "active" ? active.includes(app.status) : app.status === filter))
+        .sort((a, b) => b.id - a.id);
+      document.getElementById("candidateList").innerHTML = apps.length ? apps.map(app => {
+        const shift = state.shifts.find(item => item.id === app.shiftId);
+        const showAfterActions = ["confirmed", "invited", "feedback"].includes(app.status);
+        const isFinal = ["passed", "failed", "noshow"].includes(app.status);
+        return `
+          <article class="card">
+            <div class="candidate-head">
+              <div>
+                <div class="name">${escapeHtml(app.name)}</div>
+                <p class="meta">${shift ? `Дата: ${formatDate(shift.date)}` : "Очередь без даты"}<br>Ограничения: ${escapeHtml(app.limits || "нет")}</p>
+              </div>
+              <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
+            </div>
+            <div class="badges">
+              ${badge(app.training === "passed", trainingNames[app.training])}
+              ${badge(app.attempt === "first", attemptNames[app.attempt])}
+            </div>
+            <label>Комментарий
+              <textarea data-comment="${app.id}" placeholder="Внутренний комментарий рекрута">${escapeHtml(app.comment || "")}</textarea>
+            </label>
+            ${showAfterActions ? `
+              <div class="compact-actions">
+                ${["confirmed", "invited"].includes(app.status) ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Запросить фидбек</button>` : ""}
+                <button class="secondary" data-status="passed" data-id="${app.id}" type="button">Прошел</button>
+                <button class="danger" data-status="failed" data-id="${app.id}" type="button">Не прошел</button>
+                <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
+              </div>
+            ` : ""}
+            ${isFinal ? `
+              <div class="compact-actions">
+                <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Откатить к фидбеку</button>
+                <button class="quiet" data-status="confirmed" data-id="${app.id}" type="button">Откатить к подтвержден</button>
+              </div>
+            ` : ""}
+          </article>
+        `;
+      }).join("") : `<div class="panel empty">Кандидатов на этом этапе нет.</div>`;
+    }
+
+    function createApplication(type, shiftId) {
+      syncProfile();
+      if (!state.profile.name) {
+        fields.traineeName.focus();
+        return;
+      }
+      const current = currentApplication();
+      const canUpdateCurrent = current && ["pending", "queue"].includes(current.status);
+      const canReapply = current && ["failed", "noshow"].includes(current.status);
+      if (current && !canUpdateCurrent && !canReapply) return;
+      const payload = {
+        shiftId: type === "queue" ? null : shiftId,
+        name: state.profile.name,
+        training: state.profile.training,
+        attempt: state.profile.attempt,
+        limits: state.profile.limits,
+        telegramCode: getTelegramCode(),
+        status: type === "queue" ? "queue" : "pending",
+        comment: ""
+      };
+      if (canUpdateCurrent) {
+        Object.assign(current, payload);
+        state.profile.activeAppId = current.id;
+      } else {
+        const created = { id: Date.now(), ...payload };
+        state.applications.push(created);
+        state.profile.activeAppId = created.id;
+      }
+      save();
+      render();
+      document.getElementById("myStatus").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function setStatus(id, status) {
+      const app = state.applications.find(item => String(item.id) === String(id));
+      if (!app) return;
+      app.status = status;
+      save();
+      if (status === "confirmed") notifyApplication(app, composeConfirmedMessage(app));
+      if (status === "feedback") notifyApplication(app, composeFeedbackRequestedMessage());
+      if (status === "passed") notifyApplication(app, composePassedMessage());
+      if (status === "failed") notifyApplication(app, composeFailedMessage());
+      if (status === "noshow") notifyApplication(app, composeNoShowMessage());
+      render();
+    }
+
+    function composeConfirmedMessage(app) {
+      const shift = state.shifts.find(item => item.id === app.shiftId);
+      return `<b>🎉 Ваша запись на стажировку подтверждена!</b>
+
+${shift ? `<b>📅 Дата стажировки: ${escapeHtml(formatLongDate(shift.date))}.</b>\n` : ""}
+В ближайшее время вас добавят в рабочую группу. После этого вы получите всю необходимую информацию о стажировке, включая место проведения, подготовку к смене и дальнейшие инструкции.
+
+Пожалуйста, ожидайте приглашение.`;
+    }
+
+    function composeFeedbackRequestedMessage() {
+      return `✅ Стажировка завершена.
+Спасибо за участие! Сейчас мы ожидаем обратную связь от вашего наставника.
+После проверки вы получите уведомление с результатом стажировки.`;
+    }
+
+    function composePassedMessage() {
+      return `🎉 Поздравляем!
+Вы успешно прошли стажировку и рекомендованы к дальнейшей работе в LOFT HALL.
+В ближайшее время с вами свяжется рекрутер и расскажет о следующих шагах.`;
+    }
+
+    function composeFailedMessage() {
+      return `❌ К сожалению, стажировка не пройдена.
+Не расстраивайтесь — вы можете пройти стажировку повторно.
+Для этого снова встаньте в очередь на стажировку или запишитесь на удобную дату через бота.`;
+    }
+
+    function composeNoShowMessage() {
+      return `⚠️ Вы не вышли на стажировку.
+Если вы всё ещё хотите пройти стажировку в LOFT HALL, пожалуйста, снова встаньте в очередь или запишитесь на новую дату через бота.
+Если не сможете выйти в следующий раз, обязательно предупредите заранее.`;
+    }
+
+    function notifyApplication(app, text, photo = "", photoCaption = "") {
+      if (!window.__SERVER_STATE__ || !app?.id || !text) return;
+      fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: app.id, text, photo, photoCaption })
+      }).catch(error => console.error("Не удалось отправить Telegram-уведомление", error));
+    }
+
+    function ensureInviteDraft() {
+      state.inviteDraft = state.inviteDraft || { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [] };
+      if (!state.inviteDraft.shiftId && state.shifts.length) state.inviteDraft.shiftId = state.shifts[0].id;
+      if (!state.inviteDraft.venueId) state.inviteDraft.venueId = venues[0].id;
+      state.inviteDraft.memberIds = state.inviteDraft.memberIds || [];
+      return state.inviteDraft;
+    }
+
+    function venueById(id) {
+      return venues.find(venue => venue.id === id) || null;
+    }
+
+    function composeInviteMessage(venue, link) {
+      return `<b>🎉 Ваша заявка на стажировку одобрена!</b>
+
+Вы записаны на стажировку в ${escapeHtml(formatVenueNameForMessage(venue.name))}.
+
+📍 Адрес: ${escapeHtml(venue.address)}.
+
+Пожалуйста, перейдите по ссылке ниже и напишите в рабочую группу, что выходите на стажировку.
+
+${escapeHtml(link || "Ссылка на рабочую группу будет здесь")}
+
+До смены необходимо:
+
+• изучить техническое задание мероприятия;
+• ознакомиться с меню;
+• повторить этапы обслуживания и изучить историю площадки в боте LOFT HELPER.
+
+Вся информация о мероприятии появится в рабочей группе не позднее чем за день до смены.
+
+Во время стажировки за вами будет закреплён опытный наставник, который поможет освоиться и ответит на все вопросы.
+
+❗️Не забудьте о внешнем виде — вы представляете компанию LOFT HALL.
+
+Если по какой-либо причине вы не сможете выйти на стажировку, пожалуйста, сообщите об этом заранее, чтобы мы смогли предложить место другому кандидату.
+
+Условия стажировки:
+• время выхода сообщает менеджер;
+• продолжительность — 6 часов;
+• оплата — 1000 ₽.
+
+Желаем успешной стажировки! 🚀
+
+#стажировка`;
+    }
+
+    function formatDate(value) {
+      return new Date(`${value}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", weekday: "short" });
+    }
+
+    function formatLongDate(value) {
+      return new Date(`${value}T12:00:00`).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", weekday: "long" });
+    }
+
+    function formatVenueNameForMessage(name) {
+      return String(name || "").replace(/LOFT#(\d+)/g, "LOFT #$1");
+    }
+
+    function toDateInputValue(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function shortDate(value) {
+      const date = new Date(`${value}T12:00:00`);
+      return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+    }
+
+    function renderQuickDates() {
+      const target = document.getElementById("quickDates");
+      if (!target) return;
+      const labels = ["завтра", "послезавтра", "через 3 дня"];
+      const today = new Date();
+      const dates = labels.map((label, index) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() + index + 1);
+        const value = toDateInputValue(date);
+        return { label, value };
+      });
+      target.innerHTML = dates.map(item => `
+        <button class="date-shortcut ${fields.newDate.value === item.value ? "active" : ""}" data-quick-date="${item.value}" type="button">
+          <b>${shortDate(item.value)}</b>
+          <span>${item.label}</span>
+        </button>
+      `).join("");
+    }
+
+    function badge(active, label) {
+      return `<span class="badge ${active ? "good" : ""}">${escapeHtml(label)}</span>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[char]);
+    }
+
+    document.addEventListener("click", event => {
+      if (event.target.id === "recruiterCabinetBtn") {
+        role = role === "recruiter" ? "trainee" : "recruiter";
+        render();
+        return;
+      }
+      const subtab = event.target.closest("[data-section]");
+      if (subtab) {
+        section = subtab.dataset.section;
+        render();
+        return;
+      }
+      const book = event.target.closest("[data-book]");
+      if (book) {
+        createApplication("date", Number(book.dataset.book));
+        return;
+      }
+      if (event.target.id === "queueBtn") {
+        createApplication("queue", null);
+        return;
+      }
+      const cancel = event.target.closest("[data-cancel]");
+      if (cancel) {
+        state.applications = state.applications.filter(app => String(app.id) !== String(cancel.dataset.cancel));
+        if (String(state.profile.activeAppId) === String(cancel.dataset.cancel)) state.profile.activeAppId = null;
+        save();
+        render();
+        return;
+      }
+      const reapplyQueue = event.target.closest("[data-reapply-queue]");
+      if (reapplyQueue) {
+        createApplication("queue", null);
+        return;
+      }
+      const status = event.target.closest("[data-status]");
+      if (status) {
+        setStatus(status.dataset.id, status.dataset.status);
+        return;
+      }
+      const retryTelegram = event.target.closest("[data-retry-telegram]");
+      if (retryTelegram) {
+        telegramLinkErrors.delete(String(retryTelegram.dataset.retryTelegram));
+        renderTrainee();
+        return;
+      }
+      const stage = event.target.closest("[data-stage]");
+      if (stage) {
+        const item = stageItems()[Number(stage.dataset.stage) - 1];
+        showStagePopover(stage, stage.dataset.stageApp, item);
+        return;
+      }
+      const member = event.target.closest("[data-toggle-member]");
+      if (member) {
+        const draft = ensureInviteDraft();
+        const id = Number(member.dataset.toggleMember);
+        if (draft.memberIds.some(item => String(item) === String(id))) {
+          draft.memberIds = draft.memberIds.filter(item => String(item) !== String(id));
+        } else {
+          draft.memberIds.push(id);
+        }
+        save();
+        renderInviteGroups();
+        return;
+      }
+      const returnQueue = event.target.closest("[data-return-queue]");
+      if (returnQueue) {
+        const app = state.applications.find(item => String(item.id) === String(returnQueue.dataset.returnQueue));
+        if (!app) return;
+        app.shiftId = null;
+        app.status = "queue";
+        save();
+        render();
+        return;
+      }
+      const assign = event.target.closest("[data-assign]");
+      if (assign) {
+        const app = state.applications.find(item => String(item.id) === String(assign.dataset.assign));
+        if (!app) return;
+        app.shiftId = Number(assign.dataset.shift);
+        app.status = "pending";
+        save();
+        render();
+        return;
+      }
+      const toggle = event.target.closest("[data-toggle-shift]");
+      if (toggle) {
+        const shift = state.shifts.find(item => String(item.id) === String(toggle.dataset.toggleShift));
+        if (!shift) return;
+        if (shift.open && !confirm("Точно закрыть эту дату? Она уйдет в список закрытых дат.")) return;
+        shift.open = !shift.open;
+        save();
+        render();
+        return;
+      }
+      if (event.target.id === "unlockBtn") {
+        if (fields.recruiterCode.value.trim() !== "1998") {
+          fields.recruiterCode.focus();
+          return;
+        }
+        unlocked = true;
+        localStorage.setItem(`${KEY}-unlocked`, "yes");
+        render();
+        return;
+      }
+      if (event.target.id === "createDateBtn") {
+        if (!fields.newDate.value) {
+          fields.newDate.focus();
+          return;
+        }
+        state.shifts.push({ id: Date.now(), date: fields.newDate.value, seats: Math.max(Number(fields.newSeats.value || 1), 1), open: true });
+        fields.newDate.value = "";
+        fields.newSeats.value = 4;
+        section = "dates";
+        save();
+        render();
+        return;
+      }
+      const quickDate = event.target.closest("[data-quick-date]");
+      if (quickDate) {
+        fields.newDate.value = quickDate.dataset.quickDate;
+        renderQuickDates();
+        return;
+      }
+      if (event.target.id === "sendInvitesBtn") {
+        const draft = ensureInviteDraft();
+        if (!draft.memberIds.length || !draft.link.trim()) return;
+        const group = {
+          id: Date.now(),
+          shiftId: Number(draft.shiftId),
+          venueId: draft.venueId,
+          link: draft.link.trim(),
+          memberIds: [...draft.memberIds],
+          sentAt: new Date().toISOString()
+        };
+        state.inviteGroups.push(group);
+        const venue = venueById(group.venueId);
+        group.memberIds.forEach(id => {
+          const app = state.applications.find(item => String(item.id) === String(id));
+          if (!app) return;
+          app.status = "invited";
+          app.inviteGroupId = group.id;
+          app.venueId = group.venueId;
+          app.groupLink = group.link;
+          if (venue) notifyApplication(app, composeInviteMessage(venue, group.link), venue.photo, venue.name);
+        });
+        draft.memberIds = [];
+        draft.link = "";
+        save();
+        render();
+        return;
+      }
+      if (event.target.id === "demoBtn") {
+        state = seed();
+        unlocked = false;
+        localStorage.removeItem(`${KEY}-unlocked`);
+        save();
+        fillProfile();
+        render();
+        return;
+      }
+      if (event.target.id === "clearBtn") {
+        state = {
+          profile: { name: "", training: "passed", attempt: "first", limits: "", activeAppId: null },
+          shifts: [],
+          applications: [],
+          inviteDraft: { shiftId: null, venueId: "loft1", link: "", memberIds: [] },
+          inviteGroups: []
+        };
+        unlocked = false;
+        localStorage.removeItem(`${KEY}-unlocked`);
+        save();
+        fillProfile();
+        render();
+      }
+    });
+
+    document.addEventListener("input", event => {
+      if ([fields.traineeName, fields.traineeTraining, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
+        syncProfile();
+        renderTrainee();
+        return;
+      }
+      const comment = event.target.closest("[data-comment]");
+      if (comment) {
+        const app = state.applications.find(item => String(item.id) === String(comment.dataset.comment));
+        if (!app) return;
+        app.comment = comment.value;
+        save();
+      }
+      if ([fields.groupShift, fields.groupVenue, fields.groupLink].includes(event.target)) {
+        const draft = ensureInviteDraft();
+        draft.shiftId = fields.groupShift.value ? Number(fields.groupShift.value) : null;
+        draft.venueId = fields.groupVenue.value;
+        draft.link = fields.groupLink.value.trim();
+        if (event.target === fields.groupShift) draft.memberIds = [];
+        save();
+        renderInviteGroups();
+      }
+      if (event.target === fields.newDate) {
+        renderQuickDates();
+      }
+    });
+
+    fields.candidateFilter.addEventListener("change", renderCandidates);
+    [fields.groupShift, fields.groupVenue].forEach(field => {
+      field.addEventListener("change", () => {
+        const draft = ensureInviteDraft();
+        draft.shiftId = fields.groupShift.value ? Number(fields.groupShift.value) : null;
+        draft.venueId = fields.groupVenue.value;
+        draft.memberIds = [];
+        save();
+        renderInviteGroups();
+      });
+    });
+    document.addEventListener("dblclick", event => event.preventDefault(), { passive: false });
+    document.addEventListener("gesturestart", event => event.preventDefault(), { passive: false });
+  </script>
+</body>
+</html>

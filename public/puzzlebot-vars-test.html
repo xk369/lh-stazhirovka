@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#f7f4ef">
+  <title>PB Vars Test</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?62"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ef;
+      --ink: #161616;
+      --muted: #68615a;
+      --line: rgba(22, 22, 22, .12);
+      --panel: rgba(255, 255, 255, .88);
+      --accent: #0d7a64;
+      --warn: #9d5a00;
+      --bad: #a52929;
+      --shadow: 0 18px 46px rgba(36, 30, 24, .11);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #131313;
+      --ink: #f3efe8;
+      --muted: #b5aaa0;
+      --line: rgba(255, 255, 255, .14);
+      --panel: rgba(31, 31, 31, .9);
+      --accent: #64d8be;
+      --warn: #ffc266;
+      --bad: #ff8b8b;
+      --shadow: 0 18px 46px rgba(0, 0, 0, .26);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(13, 122, 100, .12), transparent 260px),
+        var(--bg);
+      color: var(--ink);
+    }
+    .app {
+      width: min(760px, 100%);
+      margin: 0 auto;
+      padding: max(18px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    }
+    header {
+      padding: 14px 0 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.42;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 0 4px rgba(157, 90, 0, .12);
+      flex: 0 0 auto;
+    }
+    .status.ok .dot {
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(13, 122, 100, .14);
+    }
+    .status.bad .dot {
+      background: var(--bad);
+      box-shadow: 0 0 0 4px rgba(165, 41, 41, .14);
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .pill {
+      align-self: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .rows {
+      display: grid;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: minmax(112px, .8fr) minmax(0, 1.2fr);
+      gap: 12px;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--line);
+      min-height: 44px;
+      align-items: center;
+    }
+    .row:last-child { border-bottom: 0; }
+    .key {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .value {
+      font-size: 14px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .empty {
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .footer {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    @media (max-width: 520px) {
+      h1 { font-size: 24px; }
+      .row { grid-template-columns: 1fr; gap: 5px; }
+      .card-head { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Проверка переменных</h1>
+      <p class="lead" id="helloText">Откройте страницу из PuzzleBot-кнопки Mini App.</p>
+      <div class="status" id="launchStatus"><span class="dot"></span><span>Проверяем запуск</span></div>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <div class="card-head">
+          <h2>Итоговый профиль</h2>
+          <span class="pill" id="profileSource">ожидание</span>
+        </div>
+        <div class="rows" id="profileRows"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Параметры PuzzleBot из ссылки</h2>
+          <span class="pill" id="queryCount">0</span>
+        </div>
+        <div class="rows" id="queryRows"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Проверенные данные Telegram</h2>
+          <span class="pill" id="telegramBadge">initData</span>
+        </div>
+        <div class="rows" id="telegramRows"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Сырые данные</h2>
+          <span class="pill">debug</span>
+        </div>
+        <div class="rows" id="rawRows"></div>
+      </article>
+    </section>
+
+    <p class="footer">URL для кнопки: /puzzlebot-vars-test с query-параметрами из переменных PuzzleBot.</p>
+  </main>
+
+  <script>
+    (() => {
+      const tg = window.Telegram?.WebApp;
+      const $ = selector => document.querySelector(selector);
+
+      function setTheme(theme) {
+        const resolved = theme || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.dataset.theme = resolved;
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#131313' : '#f7f4ef');
+      }
+
+      function safeText(value) {
+        if (value === undefined || value === null || value === '') return '—';
+        if (typeof value === 'boolean') return value ? 'Да' : 'Нет';
+        if (typeof value === 'object') return JSON.stringify(value, null, 2);
+        return String(value);
+      }
+
+      function row(key, value, options = {}) {
+        const isEmpty = value === undefined || value === null || value === '';
+        return `<div class="row"><div class="key">${escapeHtml(key)}</div><div class="value ${options.mono ? 'mono' : ''} ${isEmpty ? 'empty' : ''}">${escapeHtml(safeText(value))}</div></div>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[char]));
+      }
+
+      function readParams() {
+        const params = new URLSearchParams(location.search);
+        const result = {};
+        for (const [key, value] of params.entries()) {
+          result[key] = value;
+        }
+        return result;
+      }
+
+      function firstValue(source, keys) {
+        for (const key of keys) {
+          const value = source[key];
+          if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+        }
+        return '';
+      }
+
+      function normalizeUsername(value) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        return text.startsWith('@') ? text : `@${text}`;
+      }
+
+      function buildPuzzleProfile(params) {
+        const registeredFio = firstValue(params, [
+          'registered_fio',
+          'registration_fio',
+          'anketa_fio',
+          'fio',
+          'FIO',
+          'Fio_registr_in_bot',
+          'fio_registr_in_bot'
+        ]);
+        return {
+          firstName: firstValue(params, ['first_name', 'firstName', 'FIRST_NAME_TEXT', 'FIRST_NAME']),
+          lastName: firstValue(params, ['last_name', 'lastName', 'LAST_NAME_TEXT', 'LAST_NAME']),
+          registeredFio,
+          fullName: registeredFio || firstValue(params, ['full_name', 'fullName', 'FIRST_AND_LAST_NAME_TEXT', 'FIRST_AND_LAST_NAME', 'FULL_NAME']),
+          username: normalizeUsername(firstValue(params, ['username', 'telegram', 'USERNAME_TEXT', 'USERNAME'])),
+          userId: firstValue(params, ['user_id', 'userId', 'USER_ID_TEXT', 'USER_ID']),
+          categories: firstValue(params, ['categories', 'category', 'CATEGORIES_NAMES', 'CATEGORY_NAME']),
+          startPayload: firstValue(params, ['startapp', 'payload', 'WEB_PAGES_START_PAYLOAD', 'START_PAYLOAD'])
+        };
+      }
+
+      function buildTelegramProfile(payload) {
+        const user = payload?.user || {};
+        return {
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          fullName: [user.firstName, user.lastName].filter(Boolean).join(' '),
+          username: normalizeUsername(user.username || ''),
+          userId: user.id ? String(user.id) : '',
+          languageCode: user.languageCode || '',
+          isPremium: user.isPremium
+        };
+      }
+
+      function mergeProfile(puzzle, telegram) {
+        return {
+          firstName: puzzle.firstName || telegram.firstName,
+          lastName: puzzle.lastName || telegram.lastName,
+          registeredFio: puzzle.registeredFio,
+          fullName: puzzle.fullName || [puzzle.firstName || telegram.firstName, puzzle.lastName || telegram.lastName].filter(Boolean).join(' ') || telegram.fullName,
+          username: puzzle.username || telegram.username,
+          userId: puzzle.userId || telegram.userId,
+          categories: puzzle.categories,
+          startPayload: puzzle.startPayload,
+          languageCode: telegram.languageCode,
+          isPremium: telegram.isPremium
+        };
+      }
+
+      function renderQuery(params) {
+        const entries = Object.entries(params);
+        $('#queryCount').textContent = `${entries.length}`;
+        $('#queryRows').innerHTML = entries.length
+          ? entries.map(([key, value]) => row(key, value)).join('')
+          : row('query', '');
+      }
+
+      function renderTelegram(payload, error) {
+        if (error) {
+          $('#telegramBadge').textContent = 'ошибка';
+          $('#telegramRows').innerHTML = row('error', error.message || error) + row('code', error.code || '');
+          return;
+        }
+        $('#telegramBadge').textContent = payload?.ok ? 'проверено' : 'нет данных';
+        const user = payload?.user || {};
+        $('#telegramRows').innerHTML = [
+          row('id', user.id),
+          row('firstName', user.firstName),
+          row('lastName', user.lastName),
+          row('username', normalizeUsername(user.username)),
+          row('languageCode', user.languageCode),
+          row('isPremium', user.isPremium),
+          row('allowsWriteToPm', user.allowsWriteToPm),
+          row('authDate', payload?.authDate),
+          row('queryId', payload?.queryId)
+        ].join('');
+      }
+
+      function renderProfile(profile, source) {
+        $('#profileSource').textContent = source;
+        $('#profileRows').innerHTML = [
+          row('Анкетное ФИО', profile.registeredFio),
+          row('ФИО', profile.fullName),
+          row('Имя', profile.firstName),
+          row('Фамилия', profile.lastName),
+          row('Telegram', profile.username),
+          row('Telegram ID', profile.userId),
+          row('Категории', profile.categories),
+          row('Mini App payload', profile.startPayload),
+          row('Язык Telegram', profile.languageCode),
+          row('Premium', profile.isPremium)
+        ].join('');
+        const name = profile.firstName || profile.fullName || profile.username || '';
+        $('#helloText').textContent = name ? `Привет, ${name}. Данные ниже пришли из ссылки и Telegram.` : 'Данные ниже пришли из ссылки и Telegram.';
+      }
+
+      function renderRaw(params, telegramPayload) {
+        $('#rawRows').innerHTML = [
+          row('location.search', location.search, { mono: true }),
+          row('Telegram.WebApp.initDataUnsafe.user', tg?.initDataUnsafe?.user || '', { mono: true }),
+          row('server.rawUser', telegramPayload?.rawUser || '', { mono: true })
+        ].join('');
+      }
+
+      function setStatus(kind, text) {
+        const el = $('#launchStatus');
+        el.className = `status ${kind}`;
+        el.querySelector('span:last-child').textContent = text;
+      }
+
+      async function loadTelegramDebug() {
+        const initData = tg?.initData || '';
+        if (!initData) {
+          const error = { message: 'Нет initData. Страница открыта не как Telegram Mini App.' };
+          renderTelegram(null, error);
+          setStatus('bad', error.message);
+          return null;
+        }
+        const response = await fetch('/api/debug/telegram-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ initData })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          renderTelegram(null, payload);
+          setStatus('bad', payload.error || 'Telegram не подтвердил запуск.');
+          return null;
+        }
+        renderTelegram(payload);
+        setStatus('ok', 'Telegram запуск подтверждён');
+        return payload;
+      }
+
+      async function main() {
+        try {
+          tg?.ready();
+          tg?.expand();
+          setTheme(tg?.colorScheme);
+          tg?.onEvent?.('themeChanged', () => setTheme(tg.colorScheme));
+        } catch (_) {
+          setTheme();
+        }
+
+        const params = readParams();
+        const puzzleProfile = buildPuzzleProfile(params);
+        renderQuery(params);
+        const telegramPayload = await loadTelegramDebug();
+        const telegramProfile = buildTelegramProfile(telegramPayload);
+        const merged = mergeProfile(puzzleProfile, telegramProfile);
+        const source = Object.values(puzzleProfile).some(Boolean) ? 'PuzzleBot + Telegram' : 'Telegram';
+        renderProfile(merged, source);
+        renderRaw(params, telegramPayload);
+      }
+
+      main().catch(error => {
+        console.error(error);
+        setStatus('bad', error?.message || 'Ошибка загрузки');
+      });
+    })();
+  </script>
+</body>
+</html>

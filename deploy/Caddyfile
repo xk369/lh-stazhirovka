@@ -1,0 +1,9 @@
+internship-copy.77.110.122.36.sslip.io {
+    encode zstd gzip
+    reverse_proxy loft-internship-unified:3000
+}
+
+quiz.77.110.122.36.sslip.io {
+    encode zstd gzip
+    reverse_proxy loft-evgeniy-training-quiz:3000
+}
