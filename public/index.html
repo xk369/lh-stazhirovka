@@ -919,7 +919,7 @@
       margin: 0;
       font-size: 18px;
       font-weight: 850;
-      letter-spacing: -.02em
+      letter-spacing: 0
     }
 
     .hall-picker-subtitle {
@@ -1098,29 +1098,34 @@
       --surface-tint: rgba(109, 93, 252, .055);
     }
 
-    .home-mode { overflow: hidden; }
+    .home-mode { overflow: auto; }
     .home-mode .app,
-    .home-mode .shell { height: 100dvh; min-height: 100dvh; }
-    .home-mode .shell { display: flex; flex-direction: column; padding-bottom: var(--safe-bottom); }
+    .home-mode .shell { min-height: 100dvh; }
+    .home-mode .app { overflow: visible; }
+    .home-mode .shell { display: flex; flex-direction: column; padding-bottom: max(16px, var(--safe-bottom)); }
     .home-mode .topbar { margin-bottom: 0; flex: 0 0 auto; }
 
     .home-screen {
       flex: 1;
-      min-height: 0;
+      min-height: auto;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 20px 0 28px;
+      gap: 28px;
+      padding: clamp(14px, 3vh, 28px) 0 clamp(18px, 4vh, 34px);
     }
 
     .home-copy { text-align: center; margin: 0 auto; max-width: 560px; }
     .home-copy .eyebrow { margin-bottom: 12px; }
-    .home-copy h1 { margin: 0 auto; font-size: clamp(40px, 10vw, 62px); line-height: .93; letter-spacing: -.045em; }
+    .home-copy h1 { margin: 0 auto; font-size: clamp(40px, 10vw, 62px); line-height: .93; letter-spacing: 0; }
     .home-copy .lead { margin: 16px auto 0; max-width: 460px; font-size: 15px; line-height: 1.45; }
 
-    .role-grid { width: min(100%, 620px); margin: 30px auto 0; gap: 14px; }
+    .role-grid { width: min(100%, 620px); margin: 0 auto; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .role-card {
-      min-height: 210px;
+      min-height: clamp(150px, 24vh, 196px);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      align-items: stretch;
       padding: 20px;
       border-radius: 26px;
       box-shadow: var(--shadow-soft);
@@ -1134,12 +1139,12 @@
     .role-card:before { content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; background:linear-gradient(145deg,var(--accent-soft),transparent 55%); opacity:.72; }
     .role-card:after { width:180px; height:180px; right:-78px; bottom:-85px; }
     .role-index { display:inline-flex; align-items:center; min-height:26px; padding:0 9px; border-radius:999px; background:var(--panel-strong); border:1px solid var(--line); font-size:10px; letter-spacing:.08em; }
-    .role-content { position:absolute; left:20px; right:58px; bottom:20px; z-index:2; display:grid; gap:7px; }
-    .role-name { position:static; font-size:25px; letter-spacing:-.025em; }
+    .role-content { position:relative; left:auto; right:auto; bottom:auto; z-index:2; align-self:end; display:grid; gap:7px; padding-right:52px; min-width:0; }
+    .role-name { position:static; font-size:25px; letter-spacing:0; }
     .role-description { color:var(--muted); font-size:12px; font-weight:650; line-height:1.35; }
     .role-arrow { width:42px; height:42px; border-radius:15px; box-shadow:inset 0 0 0 1px rgba(109,93,252,.08); }
     .role-card[href] { color: inherit; text-decoration: none; }
-    .booking-card { grid-column: 1 / -1; min-height: 154px; }
+    .booking-card { grid-column: 1 / -1; min-height: clamp(126px, 18vh, 154px); }
     .booking-card .role-name { font-size: 28px; }
 
     .card { box-shadow: var(--shadow-soft); }
@@ -1199,14 +1204,14 @@
     .floating .primary { box-shadow:0 12px 32px rgba(17,17,22,.15); }
 
     @media(max-width:560px) {
-      .home-screen { padding:8px 0 18px; }
+      .home-screen { justify-content:flex-start; gap:18px; padding:10px 0 22px; }
       .home-copy h1 { font-size:clamp(38px,12vw,48px); }
       .home-copy .lead { max-width:330px; font-size:14px; }
-      .role-grid { margin-top:24px; grid-template-columns:1fr; gap:12px; }
+      .role-grid { grid-template-columns:1fr; gap:12px; }
       .role-card { min-height:132px; padding:17px; }
       .booking-card { min-height:132px; }
       .booking-card .role-name { font-size:21px; }
-      .role-content { left:17px; right:62px; bottom:16px; gap:4px; }
+      .role-content { gap:4px; padding-right:52px; }
       .role-name { font-size:21px; }
       .role-description { font-size:11px; }
       .role-arrow { top:16px; right:16px; }
@@ -1223,7 +1228,7 @@
       .home-copy .eyebrow { margin-bottom:8px; }
       .home-copy h1 { font-size:38px; }
       .home-copy .lead { margin-top:11px; font-size:13px; }
-      .role-grid { margin-top:17px; gap:9px; }
+      .role-grid { gap:9px; }
       .role-card { min-height:110px; }
       .role-description { display:none; }
     }
@@ -1233,7 +1238,7 @@
     .review-screen{padding-bottom:34px}
     .review-screen .page-head{position:relative;align-items:flex-start;margin-bottom:22px;padding:2px 0 4px}
     .review-screen .page-head>div:last-child{min-width:0;flex:1}
-    .review-screen .page-head h2{font-size:clamp(30px,6vw,42px);letter-spacing:-.035em;line-height:.98}
+    .review-screen .page-head h2{font-size:clamp(30px,6vw,42px);letter-spacing:0;line-height:.98}
     .review-screen .page-head .lead{max-width:560px;margin-top:12px;font-size:14px;line-height:1.5}
     .review-readiness{display:flex;align-items:center;gap:10px;margin:0 0 18px 56px;padding:13px 15px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:var(--shadow-soft);color:var(--muted)}
     .review-readiness-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:12px;background:var(--line);font-size:16px;font-weight:900}
@@ -1249,7 +1254,7 @@
     .review-screen .summary-grid{margin:0;gap:10px}
     .review-screen .summary-stat{position:relative;overflow:hidden;min-height:112px;padding:17px;border-radius:21px;box-shadow:var(--shadow-soft);isolation:isolate}
     .review-screen .summary-stat:after{content:"";position:absolute;z-index:-1;width:88px;height:88px;right:-35px;bottom:-40px;border-radius:50%;background:currentColor;opacity:.055}
-    .review-screen .summary-stat strong{font-size:30px;line-height:1;letter-spacing:-.04em}
+    .review-screen .summary-stat strong{font-size:30px;line-height:1;letter-spacing:0}
     .review-screen .summary-stat span{margin-top:8px;font-size:11px;line-height:1.25}
     .summary-stat-good{color:var(--good)}.summary-stat-bad{color:var(--bad)}.summary-stat-neutral{color:var(--muted)}
     .summary-stat-good span,.summary-stat-bad span,.summary-stat-neutral span{color:var(--muted)}
@@ -1300,7 +1305,7 @@
     body.review-mode .shell{padding-bottom:calc(118px + var(--safe-bottom))}
     .review-screen{padding-bottom:0}
     .review-screen .review-page-head{margin-bottom:16px;padding-top:0}
-    .review-screen .review-page-head h2{font-size:clamp(30px,5.8vw,38px);line-height:1;letter-spacing:-.035em}
+    .review-screen .review-page-head h2{font-size:clamp(30px,5.8vw,38px);line-height:1;letter-spacing:0}
     .review-screen .review-page-head .lead{max-width:520px;margin-top:9px;font-size:13px;line-height:1.45}
 
     .review-overview{overflow:hidden;margin:0 0 12px;border-radius:22px;box-shadow:var(--shadow-soft)}
@@ -1388,7 +1393,7 @@
     .screen-toolbar .back{margin:0;width:46px;height:46px;min-width:46px;border-radius:15px}
     .screen-toolbar .role-pill{margin:0;padding:8px 13px;font-size:11px;letter-spacing:.095em}
     .screen-heading{max-width:590px}
-    .screen-heading h2{margin:0;font-size:clamp(36px,7vw,48px);font-weight:780;line-height:.98;letter-spacing:-.045em}
+    .screen-heading h2{margin:0;font-size:clamp(36px,7vw,48px);font-weight:780;line-height:.98;letter-spacing:0}
     .screen-heading .lead{max-width:520px;margin:12px 0 0;font-size:15px;line-height:1.48;color:var(--muted)}
 
     /* Checklist hero and progress */
@@ -1416,7 +1421,7 @@
     .review-screen .summary-stat,
     .review-screen .summary-stat:last-child{grid-column:auto!important;min-width:0;min-height:84px;padding:14px 16px;border:0;border-right:1px solid var(--content-border);border-radius:0;background:transparent;box-shadow:none}
     .review-screen .summary-stat:last-child{border-right:0}
-    .review-screen .summary-stat strong{font-size:28px;line-height:1;font-weight:760;letter-spacing:-.045em}
+    .review-screen .summary-stat strong{font-size:28px;line-height:1;font-weight:760;letter-spacing:0}
     .review-screen .summary-stat span{margin-top:7px;font-size:10.5px;line-height:1.2;color:var(--muted)}
 
     /* Issues remain the only clearly interactive content block */
@@ -1433,7 +1438,7 @@
     .review-details-divider{height:1px;margin:0 20px;background:var(--content-border)}
     .review-details-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:13px}
     .review-details-kicker{display:block;margin-bottom:5px;color:var(--muted);font-size:9px;font-weight:760;letter-spacing:.12em;text-transform:uppercase}
-    .review-details-head h3{margin:0;font-size:17px;font-weight:760;line-height:1.2;letter-spacing:-.02em}
+    .review-details-head h3{margin:0;font-size:17px;font-weight:760;line-height:1.2;letter-spacing:0}
     .review-details-number{flex:0 0 auto;color:var(--accent);font-size:10px;font-weight:800;letter-spacing:.08em}
 
     #reviewMeta.meta-list,#reviewSummary.meta-list{display:grid;gap:0}
@@ -1454,7 +1459,7 @@
     body.review-mode .shell{padding-bottom:calc(124px + var(--safe-bottom))}
     .review-actions{left:50%;bottom:max(7px,env(safe-area-inset-bottom));width:min(calc(100% - 28px),732px);padding:8px;border:1px solid var(--content-border);border-radius:20px;background:rgba(255,255,255,.945);box-shadow:0 18px 48px rgba(8,8,12,.22)}
     html[data-telegram-theme="dark"] .review-actions{background:rgba(22,22,27,.95)}
-    .review-actions .copy-report-button{min-height:56px;border-radius:15px;font-size:15px;font-weight:770;letter-spacing:-.01em}
+    .review-actions .copy-report-button{min-height:56px;border-radius:15px;font-size:15px;font-weight:770;letter-spacing:0}
     .review-actions-note{margin:1px 8px 2px;font-size:9px;line-height:1.3}
     .review-actions .send-status{margin:5px 0 0;padding:10px 12px;border-radius:12px;font-size:10px;line-height:1.35}
 
@@ -1533,7 +1538,7 @@
       max-width:none;
       font-size:clamp(30px,8vw,40px);
       line-height:1.02;
-      letter-spacing:-.04em;
+      letter-spacing:0;
     }
     .access-gate-card p{
       margin:14px auto 0;
@@ -1671,7 +1676,7 @@
       margin: 0 0 12px;
       font-size: 16px;
       font-weight: 850;
-      letter-spacing: -.01em
+      letter-spacing: 0
     }
 
     .mentor-growth-note {

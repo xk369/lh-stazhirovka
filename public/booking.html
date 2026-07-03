@@ -42,7 +42,7 @@
     html, body { touch-action: manipulation; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
-    button:disabled { cursor: not-allowed; opacity: .55; }
+    button:disabled { cursor: not-allowed; opacity: .55; pointer-events: none; }
     .app { width: min(100%, 840px); margin: 0 auto; padding: 18px 14px 34px; }
     .top { display: grid; gap: 12px; margin-bottom: 12px; }
     .tools { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
@@ -55,7 +55,7 @@
     .tabs, .subtabs, .grid, .stats, .actions, .date-list, .list, .form { display: grid; gap: 10px; }
     .tabs { grid-template-columns: 1fr 1fr; }
     .subtabs { grid-template-columns: repeat(4, 1fr); margin: 10px 0 12px; }
-    .grid { grid-template-columns: 1fr 1fr; }
+    .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .stats { grid-template-columns: repeat(4, 1fr); }
     .panel, .card, .date-card, .stat {
       background: var(--surface);
@@ -171,9 +171,10 @@
     .stat { padding: 10px 8px; text-align: center; }
     .stat b { display: block; font-size: 23px; line-height: 1.05; }
     .stat span { color: var(--muted); font-size: 12px; font-weight: 800; }
-    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 900; }
+    label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 13px; font-weight: 900; }
     input, select, textarea {
       width: 100%;
+      max-width: 100%;
       min-height: 48px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -182,6 +183,7 @@
       color: var(--text);
       outline: none;
     }
+    input[type="date"] { min-width: 0; }
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -195,9 +197,37 @@
       background-size: 6px 6px, 6px 6px;
       background-repeat: no-repeat;
     }
-    .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .choice-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .grid > *, .choice-grid > *, .quick-dates > * { min-width: 0; }
     textarea { min-height: 92px; resize: vertical; line-height: 1.42; }
     input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(22,119,128,.14); }
+    label.invalid { color: var(--bad); }
+    label.invalid input,
+    label.invalid select,
+    label.invalid textarea {
+      border-color: color-mix(in srgb, var(--bad) 68%, var(--line));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 13%, transparent);
+    }
+    .field-help,
+    .field-error {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+    .field-error:empty { display: none; }
+    .field-error { color: var(--bad); }
+    .form-status {
+      border: 1px solid color-mix(in srgb, var(--bad) 28%, var(--line));
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--bad) 8%, var(--surface));
+      color: var(--bad);
+      padding: 10px 12px;
+      line-height: 1.35;
+      font-size: 13px;
+      font-weight: 800;
+    }
     .tab, .subtab, .secondary, .danger, .quiet {
       min-height: 44px;
       border: 1px solid var(--line);
@@ -205,6 +235,24 @@
       background: var(--field);
       color: var(--muted);
       font-weight: 900;
+    }
+    .tab:not(:disabled):hover,
+    .subtab:not(:disabled):hover,
+    .secondary:not(:disabled):hover,
+    .danger:not(:disabled):hover,
+    .quiet:not(:disabled):hover,
+    .primary:not(:disabled):hover {
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+    }
+    .tab:focus-visible,
+    .subtab:focus-visible,
+    .secondary:focus-visible,
+    .danger:focus-visible,
+    .quiet:focus-visible,
+    .primary:focus-visible {
+      outline: 3px solid var(--accent-soft);
+      outline-offset: 2px;
     }
     .tab.active, .subtab.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .primary {
@@ -366,7 +414,7 @@
     .status-message { font-weight: 800; }
     .stage-track {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       align-items: center;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -798,26 +846,29 @@
       <section class="panel">
         <h2>Мои данные</h2>
         <div class="form">
-          <label>ФИО
-            <input id="traineeName" placeholder="Например: Иванов Иван">
+          <label data-field="traineeName">ФИО
+            <input id="traineeName" autocomplete="name" required aria-describedby="traineeNameError" placeholder="Например: Иванов Иван">
+            <span class="field-error" id="traineeNameError"></span>
           </label>
           <div class="choice-grid">
-            <label>Обучение
+            <label>Обучение в боте
               <select id="traineeTraining">
                 <option value="passed">Да</option>
                 <option value="not_passed">Нет</option>
               </select>
             </label>
-            <label>Стажировка
+            <label>Тип стажировки
               <select id="traineeAttempt">
                 <option value="first">Первая</option>
                 <option value="repeat">Повторная</option>
               </select>
             </label>
           </div>
-          <label>Ограничения
+          <label>Когда удобно выйти / ограничения
             <textarea id="traineeLimits" placeholder="Например: могу после 17:00, не могу 29.06"></textarea>
+            <span class="field-help">Если ограничений нет, можно оставить поле пустым.</span>
           </label>
+          <div class="form-status hidden" id="traineeFormStatus" role="status" aria-live="polite"></div>
           <div class="notice" id="telegramConnect"></div>
         </div>
       </section>
@@ -944,16 +995,49 @@
     const telegramLinkingIds = new Set();
     const telegramLinkErrors = new Map();
     const stagePopoverTimers = new Map();
-    const statusNames = {
-      pending: "Ждет решения",
-      queue: "В очереди",
-      confirmed: "Выход подтвержден",
-      invited: "Приглашение отправлено",
-      feedback: "Ждет фидбек",
-      passed: "Прошел",
-      failed: "Не прошел",
-      noshow: "Не вышел"
+    const statusMeta = {
+      pending: {
+        label: "Заявка отправлена",
+        lead: "Вы выбрали дату, заявка ждёт подтверждения.",
+        text: "Заявка отправлена. Рекрут проверит дату и подтвердит выход."
+      },
+      queue: {
+        label: "В очереди",
+        lead: "Вы в очереди, даты пока нет.",
+        text: "Вы в общей очереди. Рекрут поставит вас на подходящую дату."
+      },
+      confirmed: {
+        label: "Выход подтвержден",
+        lead: "Вы записаны, выход подтвержден.",
+        text: "Выход подтвержден. Ожидайте приглашение в рабочую группу."
+      },
+      invited: {
+        label: "Приглашение отправлено",
+        lead: "Вы записаны, приглашение отправлено.",
+        text: "Вам отправлено приглашение на стажировку. Перейдите в рабочую группу и напишите, что выходите."
+      },
+      feedback: {
+        label: "Ждем итог",
+        lead: "Стажировка прошла, ждём итог.",
+        text: "Стажировка прошла, сейчас ждём обратную связь от наставника."
+      },
+      passed: {
+        label: "Стажировка пройдена",
+        lead: "Стажировка успешно пройдена.",
+        text: "Стажировка пройдена. Команда свяжется с вами по следующим шагам."
+      },
+      failed: {
+        label: "Нужна повторная запись",
+        lead: "Стажировка завершена без продолжения.",
+        text: "По итогам стажировки сейчас не продолжаем работу. При желании можно записаться повторно."
+      },
+      noshow: {
+        label: "Выход не состоялся",
+        lead: "Выход на стажировку не состоялся.",
+        text: "Отмечено, что вы не вышли на стажировку. Можно выбрать новую дату или встать в очередь снова."
+      }
     };
+    const statusNames = Object.fromEntries(Object.entries(statusMeta).map(([status, meta]) => [status, meta.label]));
     const statusPill = {
       pending: "new",
       queue: "wait",
@@ -986,6 +1070,8 @@
 
     const fields = {
       traineeName: document.getElementById("traineeName"),
+      traineeNameError: document.getElementById("traineeNameError"),
+      traineeFormStatus: document.getElementById("traineeFormStatus"),
       traineeTraining: document.getElementById("traineeTraining"),
       traineeAttempt: document.getElementById("traineeAttempt"),
       traineeLimits: document.getElementById("traineeLimits"),
@@ -1103,6 +1189,10 @@
       return map[status] || status || "pending";
     }
 
+    function getStatusMeta(status) {
+      return statusMeta[status] || { label: "Статус обновлен", lead: "Статус заявки обновлен.", text: "Статус заявки обновлен." };
+    }
+
     function save() {
       localStorage.setItem(PROFILE_KEY, JSON.stringify(state.profile));
       const payload = { shifts: state.shifts, applications: state.applications, inviteGroups: state.inviteGroups };
@@ -1142,7 +1232,33 @@
         app.limits = state.profile.limits;
         app.telegramCode = state.profile.telegramCode || app.telegramCode || "";
       }
+      if (state.profile.name) clearTraineeValidation();
       save();
+    }
+
+    function setTraineeFormStatus(message) {
+      if (!fields.traineeFormStatus) return;
+      fields.traineeFormStatus.textContent = message || "";
+      fields.traineeFormStatus.classList.toggle("hidden", !message);
+    }
+
+    function clearTraineeValidation() {
+      fields.traineeName.closest("label")?.classList.remove("invalid");
+      fields.traineeName.removeAttribute("aria-invalid");
+      if (fields.traineeNameError) fields.traineeNameError.textContent = "";
+      setTraineeFormStatus("");
+    }
+
+    function validateTraineeProfile() {
+      clearTraineeValidation();
+      if (state.profile.name) return true;
+      fields.traineeName.closest("label")?.classList.add("invalid");
+      fields.traineeName.setAttribute("aria-invalid", "true");
+      if (fields.traineeNameError) fields.traineeNameError.textContent = "Укажите ФИО, чтобы рекрут понял, чья это заявка.";
+      setTraineeFormStatus("Заполните ФИО перед выбором даты или очереди.");
+      fields.traineeName.focus();
+      fields.traineeName.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
     }
 
     function render() {
@@ -1212,10 +1328,19 @@
                 </div>
               </div>
             ` : ""}
-            <button class="primary" data-book="${shift.id}" type="button" ${selected || locked ? "disabled" : ""}>${buttonText}</button>
+            <button class="primary" data-book="${shift.id}" type="button" ${selected || locked ? "disabled aria-disabled=\"true\"" : ""}>${buttonText}</button>
           </article>
         `;
       }).join("") : `<div class="empty">Открытых дат пока нет.</div>`;
+
+      const queueBtn = document.getElementById("queueBtn");
+      const queueLocked = current && !["pending", "queue", "failed", "noshow"].includes(current.status);
+      const isQueue = current?.status === "queue";
+      queueBtn.disabled = Boolean(queueLocked || isQueue);
+      queueBtn.setAttribute("aria-disabled", queueBtn.disabled ? "true" : "false");
+      queueBtn.textContent = isQueue
+        ? "Вы уже в общей очереди"
+        : queueLocked ? "У вас уже есть запись" : ["failed", "noshow"].includes(current?.status) ? "Встать в очередь заново" : "Встать в общую очередь";
 
       document.getElementById("myStatus").innerHTML = current ? renderMyStatus(current) : `
         <div class="notice">Заполните данные и выберите дату. Если даты не подходят, встаньте в общую очередь.</div>
@@ -1300,42 +1425,23 @@
 
     function renderMyStatus(app) {
       const shift = state.shifts.find(item => item.id === app.shiftId);
-      const statusText = {
-        pending: "Заявка отправлена. Рекрут еще не подтвердил выход.",
-        queue: "Вы в общей очереди. Рекрут поставит вас на подходящую дату.",
-        confirmed: "Выход подтвержден. Ожидайте приглашение в рабочую группу.",
-        invited: "Вам отправлено приглашение на стажировку. Перейдите в рабочую группу и напишите, что выходите.",
-        feedback: "Стажировка прошла, сейчас ждем обратную связь от наставника.",
-        passed: "Стажировка пройдена. Команда свяжется с вами по следующим шагам.",
-        failed: "По итогам стажировки сейчас не продолжаем работу. Спасибо, что вышли.",
-        noshow: "Отмечено, что вы не вышли на стажировку."
-      };
-      const statusLead = {
-        pending: "Вы выбрали дату, заявка ждёт подтверждения.",
-        queue: "Вы в очереди, даты пока нет.",
-        confirmed: "Вы записаны, выход подтверждён.",
-        invited: "Вы записаны, приглашение отправлено.",
-        feedback: "Стажировка прошла, ждём итог.",
-        passed: "Стажировка успешно пройдена.",
-        failed: "Стажировка завершена без продолжения.",
-        noshow: "Выход на стажировку не состоялся."
-      };
+      const meta = getStatusMeta(app.status);
       return `
         <article class="card">
           <div class="status-hero">
             <div class="status-hero-title">
               <div>
                 <h3>${escapeHtml(app.name)}</h3>
-                <p class="meta">${escapeHtml(statusLead[app.status] || "Статус заявки обновлен.")}</p>
+                <p class="meta">${escapeHtml(meta.lead)}</p>
               </div>
-              <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
+              <span class="pill ${statusPill[app.status]}">${escapeHtml(meta.label)}</span>
             </div>
             <div class="status-date">
               <span>${shift ? "Дата стажировки" : "Текущий этап"}</span>
               <b>${shift ? formatDate(shift.date) : "Общая очередь"}</b>
             </div>
           </div>
-          <div class="notice status-message">${escapeHtml(statusText[app.status] || "Статус заявки обновлен.")}</div>
+          <div class="notice status-message">${escapeHtml(meta.text)}</div>
           ${["pending", "queue"].includes(app.status) ? `<div class="meta">Данные заявки можно изменить выше в блоке “Мои данные”. Изменения сохраняются автоматически до решения рекрута.</div>` : ""}
           ${renderStageTrack(app)}
           ${app.status === "invited" ? renderTraineeInvite(app) : ""}
@@ -1348,30 +1454,28 @@
 
     function stageItems() {
       return [
-        { title: "Встал в очередь", hint: "Заявка есть в системе, но дата стажировки еще не закреплена.", icon: "list" },
-        { title: "Заявка на рассмотрении", hint: "Рекрут видит заявку и проверяет возможность выхода на выбранную дату.", icon: "clock" },
-        { title: "Заявка принята", hint: "Выход подтвержден. Дальше рекрут отправит детали стажировки.", icon: "check" },
-        { title: "Информация направлена", hint: "Отправлены площадка, ссылка на рабочую группу и важные инструкции.", icon: "send" },
-        { title: "День стажировки", hint: "Кандидат выходит на стажировку по согласованной дате.", icon: "calendar" },
-        { title: "Обратная связь наставника", hint: "Стажировка прошла, команда собирает обратную связь от наставника.", icon: "chat" },
-        { title: "Итог стажировки", hint: "Финальный результат зафиксирован: прошел, не прошел или не вышел.", icon: "flag" }
+        { title: "Заявка", hint: "Заявка есть в системе: выбрана дата или очередь.", icon: "file" },
+        { title: "Подтверждение", hint: "Рекрут проверяет дату и подтверждает выход на стажировку.", icon: "check" },
+        { title: "Приглашение", hint: "Рекрут отправляет площадку, ссылку на рабочую группу и инструкции.", icon: "send" },
+        { title: "Стажировка", hint: "Кандидат выходит на стажировку по согласованной дате.", icon: "calendar" },
+        { title: "Итог", hint: "Финальный результат зафиксирован: прошел, не прошел или не вышел.", icon: "flag" }
       ];
     }
 
     function stageNumber(app) {
       const shift = state.shifts.find(item => item.id === app.shiftId);
-      if (app.status === "invited" && shift && isTodayOrPast(shift.date)) return 5;
+      if (app.status === "invited" && shift && isTodayOrPast(shift.date)) return 4;
       const map = {
         queue: 1,
-        pending: 2,
-        confirmed: 3,
-        invited: 4,
-        feedback: 6,
-        passed: 7,
-        failed: 7,
-        noshow: 7
+        pending: 1,
+        confirmed: 2,
+        invited: 3,
+        feedback: 4,
+        passed: 5,
+        failed: 5,
+        noshow: 5
       };
-      return map[app.status] || 2;
+      return map[app.status] || 1;
     }
 
     function isTodayOrPast(value) {
@@ -1390,7 +1494,7 @@
             const number = index + 1;
             const stateClass = number < current ? "done" : number === current ? "current" : "";
             return `
-              <button class="stage-node ${stateClass}" data-stage="${number}" data-stage-app="${app.id}" type="button" aria-label="${escapeHtml(item.title)}">
+              <button class="stage-node ${stateClass}" data-stage="${number}" data-stage-app="${app.id}" type="button" aria-label="${escapeHtml(item.title)}" ${number === current ? "aria-current=\"step\"" : ""}>
                 <span class="stage-dot">${stageIcon(item.icon)}</span>
               </button>
             `;
@@ -1421,7 +1525,7 @@
 
     function stageIcon(name) {
       const icons = {
-        list: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>`,
+        file: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>`,
         clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>`,
         check: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6"/></svg>`,
         send: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4 18-7z"/></svg>`,
@@ -1563,8 +1667,28 @@
       `;
     }
 
+    function eligibleInviteCandidates(shiftId) {
+      if (!shiftId) return [];
+      return state.applications.filter(app => {
+        return String(app.shiftId) === String(shiftId) && ["confirmed", "invited"].includes(app.status);
+      });
+    }
+
+    function syncInviteDraftWithEligibleCandidates(draft) {
+      const hasSelectedShift = state.shifts.some(shift => String(shift.id) === String(draft.shiftId));
+      const selectedHasCandidates = hasSelectedShift && eligibleInviteCandidates(draft.shiftId).length;
+      if (selectedHasCandidates) return;
+      const shiftWithCandidates = state.shifts.find(shift => eligibleInviteCandidates(shift.id).length);
+      const nextShiftId = shiftWithCandidates?.id || state.shifts[0]?.id || null;
+      if (String(draft.shiftId || "") !== String(nextShiftId || "")) {
+        draft.shiftId = nextShiftId;
+        draft.memberIds = [];
+      }
+    }
+
     function renderInviteGroups() {
       const draft = ensureInviteDraft();
+      syncInviteDraftWithEligibleCandidates(draft);
       const shiftOptions = state.shifts.map(shift => `<option value="${shift.id}" ${String(draft.shiftId) === String(shift.id) ? "selected" : ""}>${formatDate(shift.date)}</option>`).join("");
       const venueOptions = venues.map(venue => `<option value="${venue.id}" ${draft.venueId === venue.id ? "selected" : ""}>${venue.name}</option>`).join("");
       fields.groupShift.innerHTML = shiftOptions || `<option value="">Нет дат</option>`;
@@ -1580,9 +1704,7 @@
         <div class="meta">${escapeHtml(venue.address)}</div>
       `;
 
-      const candidates = state.applications.filter(app => {
-        return String(app.shiftId) === String(draft.shiftId) && ["confirmed", "invited"].includes(app.status);
-      });
+      const candidates = eligibleInviteCandidates(draft.shiftId);
       draft.memberIds = draft.memberIds.filter(id => candidates.some(app => String(app.id) === String(id)));
       document.getElementById("groupMembers").innerHTML = candidates.length ? candidates.map(app => {
         const selected = draft.memberIds.some(id => String(id) === String(app.id));
@@ -1599,6 +1721,7 @@
 
       document.getElementById("invitePreview").innerHTML = composeInviteMessage(venue, draft.link);
       document.getElementById("sendInvitesBtn").disabled = !draft.memberIds.length || !draft.link.trim();
+      document.getElementById("sendInvitesBtn").setAttribute("aria-disabled", document.getElementById("sendInvitesBtn").disabled ? "true" : "false");
 
       document.getElementById("sentGroups").innerHTML = state.inviteGroups.length ? state.inviteGroups.slice().reverse().map(group => {
         const groupVenue = venueById(group.venueId);
@@ -1667,10 +1790,7 @@
 
     function createApplication(type, shiftId) {
       syncProfile();
-      if (!state.profile.name) {
-        fields.traineeName.focus();
-        return;
-      }
+      if (!validateTraineeProfile()) return;
       const current = currentApplication();
       const canUpdateCurrent = current && ["pending", "queue"].includes(current.status);
       const canReapply = current && ["failed", "noshow"].includes(current.status);
@@ -1702,6 +1822,13 @@
       const app = state.applications.find(item => String(item.id) === String(id));
       if (!app) return;
       app.status = status;
+      if (status === "confirmed" && app.shiftId) {
+        const draft = ensureInviteDraft();
+        if (String(draft.shiftId) !== String(app.shiftId)) {
+          draft.shiftId = app.shiftId;
+          draft.memberIds = [];
+        }
+      }
       save();
       if (status === "confirmed") notifyApplication(app, composeConfirmedMessage(app));
       if (status === "feedback") notifyApplication(app, composeFeedbackRequestedMessage());
