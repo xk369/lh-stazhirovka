@@ -176,6 +176,7 @@
     input, select, textarea {
       width: 100%;
       max-width: 100%;
+      min-width: 0;
       min-height: 48px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -302,6 +303,13 @@
     .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 25%, var(--line)); }
     .pill.wait { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 25%, var(--line)); }
     .pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 25%, var(--line)); }
+    .candidate-head .pill {
+      flex: 0 1 auto;
+      max-width: min(48%, 190px);
+      white-space: normal;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
     .badges, .compact-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .candidate-actions {
       display: grid;
@@ -558,6 +566,20 @@
       font-size: 11px;
     }
     .invite-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 12px; align-items: start; }
+    .invite-layout > *,
+    .invite-layout .form,
+    .venue-card,
+    .message-preview,
+    .member-row,
+    .sent-group {
+      min-width: 0;
+      max-width: 100%;
+    }
+    #groupLink {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .venue-card {
       display: grid;
       gap: 8px;
@@ -565,6 +587,7 @@
       border-radius: 8px;
       background: var(--surface-2);
       padding: 10px;
+      overflow: hidden;
     }
     .venue-photo {
       min-height: 120px;
@@ -593,7 +616,7 @@
     }
     .member-row {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
       border: 1px solid var(--line);
@@ -604,6 +627,7 @@
     .member-row.selected { border-color: rgba(22,119,128,.45); background: var(--accent-soft); }
     .message-preview {
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--field);
@@ -1107,6 +1131,12 @@
       }
       .head, .date-head, .candidate-head { align-items: stretch; }
       .pill { align-self: flex-start; }
+      .candidate-head .pill {
+        max-width: 154px;
+        padding-left: 8px;
+        padding-right: 8px;
+        font-size: 10.5px;
+      }
       .top .head { grid-template-columns: 1fr; }
       .tools { justify-content: stretch; }
       .tools .quiet { flex: 1 1 auto; }
@@ -1462,10 +1492,14 @@
     }
 
     function normalizeShift(shift) {
+      const bookedSeats = shift.bookedSeats;
+      const remainingSeats = shift.remainingSeats;
       return {
         id: shift.id,
         date: shift.date,
         seats: Number(shift.seats || 1),
+        bookedSeats: bookedSeats !== null && bookedSeats !== undefined && Number.isFinite(Number(bookedSeats)) ? Number(bookedSeats) : null,
+        remainingSeats: remainingSeats !== null && remainingSeats !== undefined && Number.isFinite(Number(remainingSeats)) ? Number(remainingSeats) : null,
         open: typeof shift.open === "boolean" ? shift.open : !["closed", "done", "canceled", "full"].includes(shift.status)
       };
     }
@@ -1753,7 +1787,11 @@
     }
 
     function freeSeats(shift) {
-      return Math.max(Number(shift.seats) - state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed"].includes(app.status)).length, 0);
+      if (shift.remainingSeats !== null && shift.remainingSeats !== undefined && Number.isFinite(Number(shift.remainingSeats))) {
+        return Math.max(Number(shift.remainingSeats), 0);
+      }
+      const seatHoldingStatuses = ["pending", "confirmed", "invited", "feedback", "passed", "failed", "noshow"];
+      return Math.max(Number(shift.seats) - state.applications.filter(app => String(app.shiftId) === String(shift.id) && seatHoldingStatuses.includes(app.status)).length, 0);
     }
 
     function openShifts() {
@@ -1900,17 +1938,11 @@
     }
 
     function renderMentorReportBadges(app) {
-      const badges = [];
-      if (app.mentorReport) badges.push(badge(true, "Отчёт наставника получен"));
-      const delivery = mentorCommentDeliveryText(app);
-      if (delivery) badges.push(badge(app.mentorCommentDeliveryStatus === "sent", delivery));
-      return badges.join("");
+      return "";
     }
 
     function renderMentorReportNotice(app) {
-      if (!app.mentorReport) return "";
-      const delivery = mentorCommentDeliveryText(app);
-      return `<div class="notice">Отчёт наставника получен.${delivery ? ` ${escapeHtml(delivery)}.` : ""}</div>`;
+      return "";
     }
 
     function renderMyStatus(app) {
@@ -2174,6 +2206,7 @@
 
     function renderBookedCandidate(app) {
       const venue = venueById(app.venueId);
+      const canManageAttendance = ["confirmed", "invited", "feedback"].includes(app.status);
       return `
         <article class="card">
           <div class="candidate-head">
@@ -2190,10 +2223,12 @@
             ${renderMentorReportBadges(app)}
           </div>
           ${renderCandidateStage(app, "recruiter-booked")}
-          <div class="candidate-actions">
-            ${app.status !== "confirmed" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
-            <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
-          </div>
+          ${canManageAttendance ? `
+            <div class="candidate-actions">
+              ${app.status !== "confirmed" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
+              <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
+            </div>
+          ` : ""}
         </article>
       `;
     }
@@ -2305,8 +2340,6 @@
             ${showAfterActions ? `
               <div class="compact-actions">
                 ${["confirmed", "invited"].includes(app.status) ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Запросить фидбек</button>` : ""}
-                <button class="secondary" data-status="passed" data-id="${app.id}" type="button">Прошел</button>
-                <button class="danger" data-status="failed" data-id="${app.id}" type="button">Не прошел</button>
                 <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
               </div>
             ` : ""}
@@ -2512,6 +2545,19 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[char]);
     }
+
+    function isEditableElement(element) {
+      return Boolean(element?.matches?.('input, textarea, select, [contenteditable="true"]'));
+    }
+
+    function blurFocusedFieldOnOutsideTap(event) {
+      const active = document.activeElement;
+      if (!isEditableElement(active)) return;
+      if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      active.blur();
+    }
+
+    document.addEventListener("pointerdown", blurFocusedFieldOnOutsideTap, { passive: true });
 
     document.addEventListener("click", async event => {
       try {
@@ -2725,7 +2771,14 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
         draft.link = fields.groupLink.value.trim();
         if (event.target === fields.groupShift) draft.memberIds = [];
         saveLocalSnapshot();
-        renderInviteGroups();
+        if (event.target === fields.groupLink) {
+          const venue = venueById(draft.venueId) || venues[0];
+          document.getElementById("invitePreview").innerHTML = composeInviteMessage(venue, draft.link);
+          document.getElementById("sendInvitesBtn").disabled = !draft.memberIds.length || !draft.link.trim();
+          document.getElementById("sendInvitesBtn").setAttribute("aria-disabled", document.getElementById("sendInvitesBtn").disabled ? "true" : "false");
+        } else {
+          renderInviteGroups();
+        }
       }
       if (event.target === fields.newDate) {
         renderQuickDates();

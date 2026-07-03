@@ -2093,7 +2093,13 @@
       }
       function focusedEditor() {
         const active = document.activeElement;
-        return active?.matches?.('.comment-input, [data-summary-input]') ? active : null;
+        return active?.matches?.('input, textarea, select, .comment-input, [data-summary-input]') ? active : null;
+      }
+      function blurFocusedFieldOnOutsideTap(event) {
+        const active = focusedEditor();
+        if (!active) return;
+        if (event.target.closest('input, textarea, select, .comment-input, [data-summary-input]')) return;
+        active.blur();
       }
       function keepFocusedFieldVisible() {
         const active = focusedEditor();
@@ -2335,13 +2341,12 @@
           if (field.field_key === 'hall') return renderHallField(field, id, value);
           const autocomplete = /firstName$/i.test(field.field_key) ? 'given-name' : /lastName$/i.test(field.field_key) ? 'family-name' : 'off';
           const isTelegram = /telegram/i.test(field.field_key);
-          const readonly = state.role === 'mentor' && field.field_key === 'traineeTelegram';
           const helper = isTelegram
-            ? readonly
-              ? '<span class="field-help">Подтягивается из заявки стажёра.</span>'
+            ? state.role === 'mentor' && field.field_key === 'traineeTelegram'
+              ? '<span class="field-help">Подтягивается из заявки стажёра, при необходимости можно поправить вручную.</span>'
               : '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>'
             : '';
-          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}" ${readonly ? 'readonly aria-readonly="true"' : ''}>${helper}<span class="error">Заполните поле</span></label>`
+          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}">${helper}<span class="error">Заполните поле</span></label>`
         }).join('');
       }
       function fillProfile() { renderProfileFields() }
@@ -2714,6 +2719,8 @@
       }
       function resetDraft() { if (!state.role) return; if (!confirm('Сбросить текущий черновик?')) return; [draftKey(state.role), ...legacyDraftKeys(state.role)].forEach(key => localStorage.removeItem(key)); loadDraft(state.role); fillProfile(); renderChecklist(); setScreen('home'); state.role = null; $('#resetBtn').hidden = true; showToast('Черновик сброшен') }
 
+      document.addEventListener('pointerdown', blurFocusedFieldOnOutsideTap, { passive: true });
+
       document.addEventListener('click', e => {
         const hallOpen = e.target.closest('[data-hall-open]');
         if (hallOpen) { openHallPicker(); return }
@@ -2786,7 +2793,7 @@
       $('#sendBtn').addEventListener('click', sendAndCloseReport); $('#resetBtn').addEventListener('click', resetDraft);
       document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#hallPicker').hidden) closeHallPicker() });
       document.addEventListener('focusin', e => {
-        if (!e.target.matches?.('.comment-input, [data-summary-input]')) return;
+        if (!e.target.matches?.('input, textarea, select, .comment-input, [data-summary-input]')) return;
         document.body.classList.add('keyboard-open');
         scheduleFocusedFieldVisibility();
       });

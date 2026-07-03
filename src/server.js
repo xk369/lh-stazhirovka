@@ -44,6 +44,15 @@ const BOOKING_STATUSES = new Set([
 ]);
 const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
 const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
+const SEAT_HOLDING_STATUSES = new Set([
+  'pending',
+  'confirmed',
+  'invited',
+  'feedback',
+  'passed',
+  'failed',
+  'noshow'
+]);
 const FINAL_BOOKING_STATUSES = new Set(['passed', 'failed', 'noshow']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
@@ -489,22 +498,66 @@ function attachActorToApplication(application, actor) {
   };
 }
 
+function shiftSeatUsage(state, shiftId) {
+  return state.applications.filter(application =>
+    String(application.shiftId) === String(shiftId) &&
+    SEAT_HOLDING_STATUSES.has(normalizeLegacyStatus(application.status))
+  ).length;
+}
+
+function shiftSeatUsageExcludingApplication(state, shiftId, applicationId) {
+  return state.applications.filter(application =>
+    String(application.id) !== String(applicationId) &&
+    String(application.shiftId) === String(shiftId) &&
+    SEAT_HOLDING_STATUSES.has(normalizeLegacyStatus(application.status))
+  ).length;
+}
+
+function ensureShiftHasFreeSeat(state, shiftId, applicationId) {
+  if (shiftId === null || shiftId === undefined) return;
+  const shift = requireShift(state, shiftId);
+  const seats = Number(shift.seats) || 0;
+  const usedSeats = shiftSeatUsageExcludingApplication(state, shiftId, applicationId);
+  if (usedSeats >= seats) {
+    throw new BookingValidationError('На выбранную дату больше нет свободных мест.');
+  }
+}
+
+function shiftWithPublicAvailability(state, shift) {
+  const bookedSeats = shiftSeatUsage(state, shift.id);
+  const seats = Number(shift.seats) || 0;
+  return {
+    ...shift,
+    bookedSeats,
+    remainingSeats: Math.max(seats - bookedSeats, 0)
+  };
+}
+
+function shiftsWithPublicAvailability(state) {
+  return state.shifts.map(shift => shiftWithPublicAvailability(state, shift));
+}
+
 function publicBookingState(state) {
   return {
     version: normalizeStateVersion(state?.version),
     updatedAt: normalizeUpdatedAt(state?.updatedAt),
-    shifts: state.shifts.map(shift => ({ ...shift })),
+    shifts: shiftsWithPublicAvailability(state),
     applications: [],
     inviteGroups: []
   };
 }
 
 function bookingStateForActor(state, actor) {
-  if (actor.role === 'recruiter') return state;
+  if (actor.role === 'recruiter') {
+    return {
+      ...state,
+      shifts: shiftsWithPublicAvailability(state)
+    };
+  }
   return {
     version: normalizeStateVersion(state?.version),
     updatedAt: normalizeUpdatedAt(state?.updatedAt),
-    shifts: state.shifts.map(shift => ({ ...shift })),
+    shifts: shiftsWithPublicAvailability(state),
     applications: state.applications
       .filter(application => applicationBelongsToActor(application, actor))
       .map(application => ({ ...application })),
@@ -528,6 +581,7 @@ function applicationHasInviteGroup(application) {
 
 function applicationCanReceiveMentorReport(application) {
   return (
+    !application?.mentorReport &&
     applicationHasInviteGroup(application) &&
     MENTOR_REPORT_TRAINEE_STATUSES.has(normalizeLegacyStatus(application?.status))
   );
@@ -602,9 +656,7 @@ function composeMentorCommentMessage(application, comment) {
     '<b>Комментарий наставника для проработки</b>',
     application?.name ? `<b>Стажёр:</b> ${escapeTelegramHtml(application.name)}` : '',
     '',
-    escapeTelegramHtml(comment),
-    '',
-    'Пожалуйста, проработайте эти пункты перед следующей сменой.'
+    escapeTelegramHtml(comment)
   ];
   return lines.filter((line, index) => line || lines[index - 1]).join('\n').trim();
 }
@@ -642,19 +694,27 @@ async function sendMentorCommentToTrainee(application, comment, now = new Date()
   }
 }
 
+function bookingStatusFromMentorDecision(decision, fallbackStatus) {
+  const cleanDecision = String(decision || '').trim();
+  if (cleanDecision === 'Стажировка пройдена') return 'passed';
+  if (cleanDecision === 'Требуется повторная стажировка') return 'failed';
+  return fallbackStatus;
+}
+
 function applyMentorReportResultToBookingState(state, reportResult, now = new Date()) {
   const next = mutableStateCopy(normalizeBookingState(state));
   const { index, application } = requireApplication(next, reportResult.applicationId);
 
-  if (!applicationHasInviteGroup(application)) {
-    throw new BookingValidationError('application is not linked to an invite group.');
+  if (!applicationCanReceiveMentorReport(application)) {
+    throw new BookingValidationError('application cannot receive mentor report.');
   }
 
   const delivery = reportResult.traineeMessage || {};
   const deliveryStatus = String(delivery.status || '').trim();
-  const status = FINAL_BOOKING_STATUSES.has(normalizeLegacyStatus(application.status))
-    ? normalizeLegacyStatus(application.status)
-    : 'feedback';
+  const currentStatus = normalizeLegacyStatus(application.status);
+  const status = FINAL_BOOKING_STATUSES.has(currentStatus)
+    ? currentStatus
+    : bookingStatusFromMentorDecision(reportResult.mentorDecision, 'feedback');
 
   next.applications[index] = {
     ...application,
@@ -745,6 +805,9 @@ function applyUpsertTraineeApplication(state, command, actor) {
   );
   const next = mutableStateCopy(state);
   const index = findApplicationIndex(next, incoming.id);
+  if (incoming.shiftId !== null) {
+    ensureShiftHasFreeSeat(next, incoming.shiftId, incoming.id);
+  }
 
   if (index < 0) {
     next.applications.push(incoming);
@@ -812,6 +875,7 @@ function applyAssignShift(state, command, actor) {
   requireShift(state, shiftId);
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
+  ensureShiftHasFreeSeat(next, shiftId, application.id);
   next.applications[index] = {
     ...application,
     shiftId,
