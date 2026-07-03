@@ -1166,6 +1166,17 @@
     .field-label em,
     .comment-label em { font-style:normal; font-size:10px; font-weight:760; color:var(--accent); background:var(--accent-soft); border-radius:999px; padding:4px 7px; white-space:nowrap; }
     .field-help { display:block; margin:7px 3px 0; color:var(--muted); font-size:11px; line-height:1.35; }
+    .input[readonly] { color:var(--muted); background:var(--surface-tint); }
+    .trainee-select-wrap { display:grid; gap:10px; }
+    .trainee-select-control { position:relative; }
+    .trainee-select-control:after { content:"⌄"; position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; font-size:16px; font-weight:800; }
+    .trainee-select { appearance:none; -webkit-appearance:none; padding-right:42px; }
+    .trainee-preview { display:grid; gap:7px; padding:12px 13px; border:1px solid var(--line); border-radius:15px; background:var(--surface-tint); font-size:12px; line-height:1.35; }
+    .trainee-preview strong { color:var(--text); font-size:13px; }
+    .trainee-preview span { color:var(--muted); }
+    .trainee-preview .trainee-status { display:inline-flex; width:max-content; max-width:100%; padding:5px 8px; border-radius:999px; background:var(--panel-strong); color:var(--accent); font-size:10px; font-weight:820; text-transform:uppercase; letter-spacing:.04em; }
+    .trainee-preview.warning { border-color:rgba(199,68,68,.24); background:rgba(199,68,68,.07); }
+    .trainee-preview.warning .trainee-status { color:var(--bad); background:rgba(199,68,68,.12); }
 
     .section-list { gap:14px; }
     .section { border-radius:22px; box-shadow:var(--shadow-soft); }
@@ -1957,7 +1968,7 @@
       const state = {
         screen: 'home', role: null, items: [], profileFields: [], summaryFields: [], profile: { date: '' }, answers: {},
         summary: {}, openedSections: new Set(), isSubmitting: false, hallPickerLoft: HALL_GROUPS[0].loft,
-        launchProfile: {}
+        launchProfile: {}, mentorTrainees: [], mentorTraineesStatus: 'idle', mentorTraineesError: ''
       };
       const $ = s => document.querySelector(s);
       const $$ = s => [...document.querySelectorAll(s)];
@@ -2138,13 +2149,20 @@
           }
           if (field.role === 'mentor' && field.field_key === 'traineeFio') {
             return [
-              { ...field, id: `${field.id}-first-name`, field_key: 'traineeFirstName', label: 'Имя стажёра', placeholder: 'Введите имя', item_order: 4 },
-              { ...field, id: `${field.id}-last-name`, field_key: 'traineeLastName', label: 'Фамилия стажёра', placeholder: 'Введите фамилию', item_order: 5 }
+              {
+                ...field,
+                id: `${field.id}-application`,
+                field_key: 'traineeApplicationId',
+                label: 'Стажёр из записи на стажировку',
+                answer_type: 'trainee_select',
+                placeholder: '',
+                item_order: 4
+              }
             ];
           }
           const orderShifts = field.role === 'trainee'
             ? { telegram: 3, date: 4 }
-            : { telegram: 3, traineeTelegram: 6, date: 7, hall: 8 };
+            : { telegram: 3, traineeTelegram: 5, date: 6, hall: 7 };
           return [{ ...field, item_order: orderShifts[field.field_key] || field.item_order }];
         });
       }
@@ -2163,6 +2181,69 @@
       function roleProfileFields() { return state.profileFields.filter(x => x.role === state.role) }
       function roleSummaryFields() {
         return state.summaryFields.filter(x => x.role === state.role && x.field_key !== 'mentorUnmasteredComments')
+      }
+      function selectedMentorTrainee() {
+        const selectedId = String(state.profile.traineeApplicationId || '');
+        return state.mentorTrainees.find(item => String(item.applicationId) === selectedId) || null;
+      }
+      function traineeOptionLabel(trainee) {
+        const parts = [
+          trainee.name,
+          trainee.date ? formatDate(trainee.date) : '',
+          trainee.statusLabel || ''
+        ].filter(Boolean);
+        return parts.join(' · ');
+      }
+      function applyMentorTraineeProfile(trainee, options = {}) {
+        if (!trainee) return;
+        const name = splitPersonName(trainee.name);
+        state.profile.traineeApplicationId = String(trainee.applicationId);
+        state.profile.traineeFio = trainee.name || '';
+        state.profile.traineeFirstName = trainee.firstName || name.firstName || '';
+        state.profile.traineeLastName = trainee.lastName || name.lastName || '';
+        state.profile.traineeTelegram = trainee.telegramUsername || '';
+        state.profile.date = trainee.date || state.profile.date || today();
+        state.profile.bookingStatus = trainee.status || '';
+        state.profile.bookingStatusLabel = trainee.statusLabel || '';
+        state.profile.bookingVenueId = trainee.venueId || '';
+        state.profile.mentorReportAlreadySent = Boolean(trainee.mentorReport);
+        if (options.save !== false) saveDraft();
+      }
+      function mentorTraineeWarning(trainee) {
+        if (!trainee) return '';
+        if (!trainee.telegramChatAvailable) return 'Telegram стажёра не подключён к заявке.';
+        if (trainee.mentorReport) return 'По этому стажёру уже есть отправленный отчёт наставника.';
+        return '';
+      }
+      async function loadMentorTrainees() {
+        if (state.role !== 'mentor') return;
+        const initData = tg?.initData || '';
+        state.mentorTraineesStatus = 'loading';
+        state.mentorTraineesError = '';
+        fillProfile();
+        try {
+          const response = await fetch('/api/report/trainees', {
+            headers: { 'x-telegram-init-data': initData }
+          });
+          let payload = {};
+          try { payload = await response.json(); } catch (_) { }
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload?.error || 'Не удалось загрузить список стажёров.');
+          }
+          if (state.role !== 'mentor') return;
+          state.mentorTrainees = Array.isArray(payload.trainees) ? payload.trainees : [];
+          state.mentorTraineesStatus = 'ready';
+          const selected = selectedMentorTrainee();
+          if (selected) applyMentorTraineeProfile(selected, { save: false });
+        } catch (error) {
+          if (state.role !== 'mentor') return;
+          console.error(error);
+          state.mentorTrainees = [];
+          state.mentorTraineesStatus = 'error';
+          state.mentorTraineesError = error?.message || 'Не удалось загрузить список стажёров.';
+        }
+        if (state.role !== 'mentor') return;
+        fillProfile();
       }
       function migrateLegacyProfile(profile) {
         const next = { ...(profile || {}) };
@@ -2193,7 +2274,15 @@
         applyLaunchProfileToCurrentRole();
       }
       function saveDraft() { if (!state.role) return; try { localStorage.setItem(draftKey(state.role), JSON.stringify({ profile: state.profile, answers: state.answers, summary: state.summary, savedAt: new Date().toISOString() })) } catch (_) { } }
-      function setRole(role) { state.role = role; loadDraft(role); setRoleLabels(); fillProfile(); setScreen('profile'); haptic() }
+      function setRole(role) {
+        state.role = role;
+        loadDraft(role);
+        setRoleLabels();
+        fillProfile();
+        setScreen('profile');
+        if (role === 'mentor') loadMentorTrainees();
+        haptic();
+      }
       function setRoleLabels() { $('#profileRole').textContent = roleLabels[state.role]; $('#checklistRole').textContent = roleLabels[state.role]; $('#reviewRole').textContent = roleLabels[state.role] }
       function hallValue(loft, hall) { return `${loft} ${hall}` }
       function parseHallValue(value) {
@@ -2211,20 +2300,72 @@
         const subtitle = selected.hall ? selected.loft : 'Нажмите, чтобы открыть список';
         return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><input type="hidden" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" value="${escapeHtml(value)}"><button class="hall-select" type="button" data-hall-open><span class="hall-select-value"><strong>${escapeHtml(display)}</strong><span>${escapeHtml(subtitle)}</span></span><span class="hall-select-icon">⌄</span></button><span class="error">Выберите зал</span></label>`;
       }
+      function renderMentorTraineeField(field, id, value) {
+        const selected = selectedMentorTrainee();
+        const loading = state.mentorTraineesStatus === 'loading';
+        const disabled = loading || state.mentorTraineesStatus === 'error' || !state.mentorTrainees.length;
+        const emptyLabel = loading
+          ? 'Загружаем приглашённых стажёров…'
+          : state.mentorTraineesStatus === 'error'
+            ? 'Не удалось загрузить список'
+            : state.mentorTrainees.length
+              ? 'Выберите стажёра'
+              : 'Нет приглашённых стажёров';
+        const options = [
+          `<option value="">${escapeHtml(emptyLabel)}</option>`,
+          ...state.mentorTrainees.map(trainee => `<option value="${escapeHtml(trainee.applicationId)}" ${String(value) === String(trainee.applicationId) ? 'selected' : ''}>${escapeHtml(traineeOptionLabel(trainee))}</option>`)
+        ].join('');
+        const warning = mentorTraineeWarning(selected);
+        const staleSelection = value && !selected && state.mentorTraineesStatus === 'ready';
+        const preview = selected
+          ? `<div class="trainee-preview ${warning ? 'warning' : ''}"><strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml([selected.date ? formatDate(selected.date) : '', selected.telegramUsername || 'Telegram не указан'].filter(Boolean).join(' · '))}</span><span class="trainee-status">${escapeHtml(selected.statusLabel || 'Приглашён')}</span>${warning ? `<span>${escapeHtml(warning)}</span>` : ''}</div>`
+          : staleSelection
+            ? `<div class="trainee-preview warning"><strong>Выбранный стажёр больше недоступен</strong><span>Проверьте, что он ещё находится на этапе приглашения или ожидания фидбека.</span></div>`
+            : '';
+        const helper = state.mentorTraineesError
+          ? `<span class="field-help">${escapeHtml(state.mentorTraineesError)}</span>`
+          : '<span class="field-help">В списке только стажёры, которым рекрут уже отправил приглашение в рабочую группу.</span>';
+        return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><span class="trainee-select-wrap"><span class="trainee-select-control"><select class="input trainee-select" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" ${disabled ? 'disabled' : ''}>${options}</select></span>${preview}</span>${helper}<span class="error">Выберите стажёра из списка</span></label>`;
+      }
       function renderProfileFields() {
         $('#profileFields').innerHTML = roleProfileFields().map(field => {
           const id = `profile-${field.field_key}`;
           const value = state.profile[field.field_key] ?? (field.field_key === 'date' ? today() : '');
+          if (field.field_key === 'traineeApplicationId') return renderMentorTraineeField(field, id, value);
           if (field.field_key === 'hall') return renderHallField(field, id, value);
           const autocomplete = /firstName$/i.test(field.field_key) ? 'given-name' : /lastName$/i.test(field.field_key) ? 'family-name' : 'off';
           const isTelegram = /telegram/i.test(field.field_key);
-          const helper = isTelegram ? '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>' : '';
-          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}">${helper}<span class="error">Заполните поле</span></label>`
+          const readonly = state.role === 'mentor' && field.field_key === 'traineeTelegram';
+          const helper = isTelegram
+            ? readonly
+              ? '<span class="field-help">Подтягивается из заявки стажёра.</span>'
+              : '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>'
+            : '';
+          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}" ${readonly ? 'readonly aria-readonly="true"' : ''}>${helper}<span class="error">Заполните поле</span></label>`
         }).join('');
       }
       function fillProfile() { renderProfileFields() }
       function validateProfile() {
-        let ok = true; roleProfileFields().forEach(field => { const input = document.querySelector(`[data-profile-key="${CSS.escape(field.field_key)}"]`); let value = (input?.value || '').trim(); if (/telegram/i.test(field.field_key) && value && !value.startsWith('@')) value = '@' + value; state.profile[field.field_key] = value; input?.closest('.field')?.classList.toggle('invalid', field.required && !value); if (field.required && !value) ok = false }); saveDraft(); return ok;
+        let ok = true;
+        roleProfileFields().forEach(field => {
+          const input = document.querySelector(`[data-profile-key="${CSS.escape(field.field_key)}"]`);
+          let value = (input?.value || '').trim();
+          if (field.field_key === 'traineeApplicationId') {
+            state.profile[field.field_key] = value;
+            const selected = selectedMentorTrainee();
+            const invalid = field.required && !selected;
+            input?.closest('.field')?.classList.toggle('invalid', invalid);
+            if (selected) applyMentorTraineeProfile(selected, { save: false });
+            if (invalid) ok = false;
+            return;
+          }
+          if (/telegram/i.test(field.field_key) && value && !value.startsWith('@')) value = '@' + value;
+          state.profile[field.field_key] = value;
+          input?.closest('.field')?.classList.toggle('invalid', field.required && !value);
+          if (field.required && !value) ok = false;
+        });
+        saveDraft();
+        return ok;
       }
       function renderHallPicker() {
         const selected = parseHallValue(state.profile.hall);
@@ -2287,7 +2428,7 @@
           return `<div class="card review-card decision-card" data-summary-card="${escapeHtml(field.field_key)}"><div class="decision-head"><div><p class="eyebrow">Финальное решение</p><p class="review-title">${escapeHtml(field.label)}</p></div><span class="decision-status ${value ? 'is-set' : ''}">${value ? 'Выбрано' : 'Выберите вариант'}</span></div><div class="choice-stack decision-options" data-summary-field="${escapeHtml(field.field_key)}">${field.options.map((option, index) => `<button type="button" class="choice decision-option ${index === 0 ? 'decision-positive' : 'decision-negative'} ${value === option ? 'selected' : ''}" data-summary-choice="${escapeHtml(field.field_key)}" data-value="${escapeHtml(option)}" aria-pressed="${value === option}"><span class="decision-icon">${index === 0 ? '✓' : '↻'}</span><span>${escapeHtml(option)}</span><span class="decision-check">✓</span></button>`).join('')}</div></div>`;
         }
         if (field.field_key === 'mentorRecommendations') {
-          return `<div class="card review-card final-text-card mentor-growth-card" data-summary-card="${escapeHtml(field.field_key)}"><label class="field"><span class="field-label"><span>Что нужно подтянуть</span></span><p class="mentor-growth-note"><span class="mentor-growth-note-icon">!</span><span>Укажите только зоны роста стажёра и навыки, которые требуют дополнительной проработки. Не пишите про форму, пунктуальность и другие общие моменты.</span></p><textarea class="textarea" data-summary-input="${escapeHtml(field.field_key)}" placeholder="Опишите, что стажёру необходимо проработать и в чём были трудности во время стажировки">${escapeHtml(value)}</textarea></label></div>`;
+          return `<div class="card review-card final-text-card mentor-growth-card" data-summary-card="${escapeHtml(field.field_key)}"><label class="field"><span class="field-label"><span>Комментарий для проработки стажёру</span></span><p class="mentor-growth-note"><span class="mentor-growth-note-icon">!</span><span>Пишите только конкретные зоны роста и навыки, которые стажёру нужно дополнительно проработать.</span></p><textarea class="textarea" data-summary-input="${escapeHtml(field.field_key)}" placeholder="Опишите, что стажёру необходимо проработать и в чём были трудности во время стажировки">${escapeHtml(value)}</textarea></label></div>`;
         }
         return `<div class="card review-card final-text-card" data-summary-card="${escapeHtml(field.field_key)}"><label class="field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><textarea class="textarea" data-summary-input="${escapeHtml(field.field_key)}" placeholder="${escapeHtml(field.placeholder)}">${escapeHtml(value)}</textarea></label></div>`;
       }
@@ -2390,6 +2531,15 @@
           if(hint) hint.textContent='Сначала заполните пункты и поля, отмеченные в блоке выше.';
         }
       }
+      function profileDisplayValue(field) {
+        if (field.field_key === 'traineeApplicationId') {
+          const selected = selectedMentorTrainee();
+          return selected ? traineeOptionLabel(selected) : state.profile.traineeFio || '—';
+        }
+        const raw = state.profile[field.field_key];
+        if (field.field_key === 'date') return formatDate(raw);
+        return raw || (/telegram/i.test(field.field_key) ? 'Не указан' : '—');
+      }
       function prepareReview() {
         const items=roleItems();
         const yes=items.filter(i=>state.answers[i.id]?.status==='yes').length;
@@ -2397,9 +2547,7 @@
         const empty=items.length-yes-no;
         $('#yesCount').textContent=yes; $('#noCount').textContent=no; $('#emptyCount').textContent=empty;
         const meta=[['Роль',roleLabels[state.role]],...roleProfileFields().map(field=>{
-          const raw=state.profile[field.field_key];
-          const value=field.field_key==='date'?formatDate(raw):(raw||(/telegram/i.test(field.field_key)?'Не указан':'—'));
-          return [field.label.replace(/\s*\(необязательно\)\s*/i,''),value];
+          return [field.label.replace(/\s*\(необязательно\)\s*/i,''),profileDisplayValue(field)];
         })];
         $('#reviewMeta').innerHTML=meta.map(([label,value])=>`<div class="meta-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
         const missingItems=items.filter(i=>i.required&&!state.answers[i.id]?.status);
@@ -2422,6 +2570,7 @@
       }
       function validateReport() {
         if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
+        if (state.role === 'mentor' && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка приглашённых.', 'error'); return false }
         const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
         const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
         return true;
@@ -2448,7 +2597,10 @@
             body: JSON.stringify({
               initData: tg?.initData || '',
               role: state.role,
-              reportText: reportText()
+              reportText: reportText(),
+              applicationId: state.role === 'mentor' ? state.profile.traineeApplicationId : undefined,
+              mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
+              mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined
             }),
             signal: controller.signal
           });
@@ -2484,10 +2636,13 @@
           btn.classList.add('is-loading');
           btn.innerHTML = '<span>Отправляем…</span>';
           showStatus('Отправляем отчёт в рабочую группу…', 'warn');
-          await postReport();
+          const result = await postReport();
           sent = true;
           clearCurrentDraft();
-          showStatus('Отчёт успешно отправлен в рабочую группу.', 'ok');
+          const traineeWarning = result?.traineeMessage && !result.traineeMessage.ok
+            ? ' Личный комментарий стажёру не отправлен: Telegram не подключён или временно недоступен.'
+            : '';
+          showStatus(`Отчёт успешно отправлен в рабочую группу.${traineeWarning}`, 'ok');
           haptic('heavy');
           try { tg?.HapticFeedback?.notificationOccurred('success') } catch (_) { }
           const closeMiniApp = () => {
@@ -2496,9 +2651,9 @@
           };
           try {
             if (tg?.showAlert) {
-              tg.showAlert('Отчёт успешно отправлен.', closeMiniApp);
+              tg.showAlert(`Отчёт успешно отправлен.${traineeWarning ? '\n' + traineeWarning.trim() : ''}`, closeMiniApp);
             } else {
-              window.alert('Отчёт успешно отправлен.');
+              window.alert(`Отчёт успешно отправлен.${traineeWarning ? '\n' + traineeWarning.trim() : ''}`);
               closeMiniApp();
             }
           } catch (_) {
@@ -2607,8 +2762,24 @@
         }
         const summary = e.target.closest('[data-summary-choice]'); if (summary) { setSummaryChoice(summary.dataset.summaryChoice, summary.dataset.value) }
       });
+      function handleProfileFieldChange(e) {
+        const key = e.target.dataset.profileKey;
+        if (!key) return;
+        if (key === 'traineeApplicationId') {
+          state.profile[key] = e.target.value;
+          const selected = selectedMentorTrainee();
+          if (selected) applyMentorTraineeProfile(selected);
+          e.target.closest('.field')?.classList.remove('invalid');
+          fillProfile();
+          return;
+        }
+        state.profile[key] = e.target.value;
+        e.target.closest('.field')?.classList.remove('invalid');
+        saveDraft();
+      }
       $('#profileForm').addEventListener('submit', e => { e.preventDefault(); if (!validateProfile()) return; fillProfile(); renderChecklist(); setScreen('checklist') });
-      $('#profileForm').addEventListener('input', e => { const key = e.target.dataset.profileKey; if (key) { state.profile[key] = e.target.value; e.target.closest('.field')?.classList.remove('invalid'); saveDraft() } });
+      $('#profileForm').addEventListener('input', handleProfileFieldChange);
+      $('#profileForm').addEventListener('change', handleProfileFieldChange);
       $('#sectionList').addEventListener('input', e => { const id = e.target.dataset.comment; if (id) { state.answers[id] = { ...(state.answers[id] || {}), comment: e.target.value }; saveDraft() } });
       $('#finalFields').addEventListener('input', e => { const key = e.target.dataset.summaryInput; if (key) { state.summary[key] = e.target.value; saveDraft() } });
       $('#reviewBtn').addEventListener('click', prepareReview);

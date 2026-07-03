@@ -27,12 +27,15 @@ BOT_TOKEN=токен_бота_из_BotFather
 TRAINEE_CHAT_ID=-100...
 MENTOR_CHAT_ID=-100...        # в тестовой копии поставить ID тестовой группы
 TELEGRAM_BOT_USERNAME=LOFT_HELPER_V2_BOT
+RECRUITER_TELEGRAM_IDS=1294774551,6774493976,1711587497
 DATA_DIR=./data
 TELEGRAM_POLLING=no
 INIT_DATA_TTL_SECONDS=86400
 HOST=0.0.0.0
 PORT=3000
 ```
+
+`RECRUITER_TELEGRAM_IDS` — Telegram user ID пользователей, которым разрешён полный кабинет рекрута и запись общего state.
 
 `TELEGRAM_POLLING=no` оставляем, если бот подключён к PuzzleBot. Для Web App-привязки Telegram кандидата polling не нужен.
 
@@ -137,9 +140,10 @@ https://ваш-домен/booking
 ## API
 
 - `POST /api/auth/telegram` — проверка запуска через Telegram для отчётов.
+- `GET /api/report/trainees` — список приглашённых стажёров для отчёта наставника.
 - `POST /api/report` — отправка отчёта стажёра или наставника.
-- `GET /api/state` — состояние записи.
-- `POST /api/state` — сохранение дат, заявок и групп записи.
+- `GET /api/state` — состояние записи с `version/updatedAt`; полный state отдаётся только рекрутерам из `RECRUITER_TELEGRAM_IDS`.
+- `POST /api/state` — командное изменение state с `action` и `baseVersion`; устаревшая версия отклоняется `409 BOOKING_VERSION_CONFLICT`.
 - `POST /api/telegram/link` — привязка заявки к Telegram user id.
 - `POST /api/notify` — личное уведомление кандидата.
 - `GET /api/health` и `GET /health` — health check.
