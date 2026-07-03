@@ -9,3 +9,11 @@ services:
       - "127.0.0.1:3500:3000"
     volumes:
       - ./data:/app/data
+    networks:
+      - default
+      - loft-hall-internship
+
+networks:
+  loft-hall-internship:
+    external: true
+    name: loft-hall-internship_default
