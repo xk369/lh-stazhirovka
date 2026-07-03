@@ -42,7 +42,8 @@
     html, body { touch-action: manipulation; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
-    button:disabled { cursor: not-allowed; opacity: .55; pointer-events: none; }
+    button:disabled,
+    button[aria-disabled="true"] { cursor: not-allowed; opacity: 1; }
     .app { width: min(100%, 840px); margin: 0 auto; padding: 18px 14px 34px; overflow-x: clip; }
     .top { display: grid; gap: 12px; margin-bottom: 12px; }
     .tools { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
@@ -285,11 +286,13 @@
     .pill {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       min-height: 26px;
       border-radius: 999px;
       padding: 5px 9px;
       font-size: 12px;
       font-weight: 900;
+      line-height: 1.1;
       white-space: nowrap;
       background: var(--surface-2);
       color: var(--muted);
@@ -317,6 +320,9 @@
       overflow-wrap: anywhere;
     }
     .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       min-height: 28px;
       border: 1px solid var(--line);
       border-radius: 999px;
@@ -324,6 +330,8 @@
       color: var(--muted);
       font-size: 12px;
       font-weight: 900;
+      line-height: 1.1;
+      white-space: nowrap;
       background: var(--surface-2);
     }
     .badge.good { color: var(--ok); background: color-mix(in srgb, var(--ok) 7%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 23%, var(--line)); }
@@ -499,6 +507,17 @@
       box-shadow: 0 12px 28px rgba(17,24,32,.28);
       transform: translate(-50%, calc(-100% - 14px));
       pointer-events: none;
+      animation: stagePopoverIn .18s ease-in-out both;
+    }
+    @keyframes stagePopoverIn {
+      from {
+        opacity: 0;
+        transform: translate(-50%, calc(-100% - 7px)) scale(.98);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, calc(-100% - 14px)) scale(1);
+      }
     }
     .stage-popover::after {
       content: "";
@@ -509,6 +528,24 @@
       height: 12px;
       background: rgba(17,24,32,.94);
       transform: translateX(-50%) rotate(45deg);
+    }
+    .stage-popover.below {
+      transform: translate(-50%, 12px);
+      animation: stagePopoverBelowIn .18s ease-in-out both;
+    }
+    .stage-popover.below::after {
+      top: -6px;
+      bottom: auto;
+    }
+    @keyframes stagePopoverBelowIn {
+      from {
+        opacity: 0;
+        transform: translate(-50%, 5px) scale(.98);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, 12px) scale(1);
+      }
     }
     .stage-popover b { font-size: 13px; }
     .stage-popover span {
@@ -674,6 +711,29 @@
       --field: #fff;
       --shadow-soft: 0 16px 44px rgba(13, 13, 18, .08);
       --shadow-lift: 0 22px 62px rgba(13, 13, 18, .13);
+      --button-primary-bg: var(--accent);
+      --button-primary-hover: color-mix(in srgb, var(--accent) 88%, #fff);
+      --button-primary-active: color-mix(in srgb, var(--accent) 80%, #111116);
+      --button-primary-text: #fff;
+      --button-secondary-bg: var(--accent-soft);
+      --button-secondary-hover: color-mix(in srgb, var(--accent-soft) 74%, #fff);
+      --button-secondary-active: color-mix(in srgb, var(--accent-soft) 82%, var(--accent));
+      --button-danger-bg: color-mix(in srgb, var(--bad) 9%, var(--surface));
+      --button-danger-hover: color-mix(in srgb, var(--bad) 14%, var(--surface));
+      --button-danger-active: color-mix(in srgb, var(--bad) 20%, var(--surface));
+      --button-quiet-bg: var(--field);
+      --button-quiet-hover: color-mix(in srgb, var(--accent-soft) 52%, var(--field));
+      --button-quiet-active: color-mix(in srgb, var(--accent-soft) 78%, var(--field));
+      --button-disabled-bg: color-mix(in srgb, var(--muted) 10%, var(--surface-2));
+      --button-disabled-text: color-mix(in srgb, var(--muted) 72%, var(--surface));
+      --button-disabled-border: color-mix(in srgb, var(--muted) 16%, var(--line));
+      --button-focus-ring: color-mix(in srgb, var(--accent) 20%, transparent);
+      --tag-height: 28px;
+      --tag-padding-x: 10px;
+      --tag-font-size: 11px;
+      --stage-dot-size: 30px;
+      --stage-dot-current-size: 34px;
+      --stage-line: color-mix(in srgb, var(--accent) 58%, var(--line));
       font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
     }
     @media (prefers-color-scheme: dark) {
@@ -754,19 +814,136 @@
       border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
       box-shadow: 0 0 0 4px var(--accent-soft);
     }
-    .tab, .subtab, .secondary, .danger, .quiet, .primary {
+    .tab, .subtab, .secondary, .danger, .quiet, .primary, .date-shortcut {
       border-radius: 16px;
-      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+      transition:
+        transform .18s ease,
+        box-shadow .18s ease,
+        border-color .18s ease,
+        background-color .18s ease,
+        color .18s ease,
+        opacity .18s ease;
     }
     .primary {
+      border: 1px solid transparent;
+      background: var(--button-primary-bg);
+      color: var(--button-primary-text);
       box-shadow: 0 14px 34px color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+    .secondary {
+      color: var(--accent);
+      background: var(--button-secondary-bg);
+      border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+    }
+    .danger {
+      color: var(--bad);
+      background: var(--button-danger-bg);
+      border-color: color-mix(in srgb, var(--bad) 25%, var(--line));
+    }
+    .quiet, .subtab, .tab {
+      background: var(--button-quiet-bg);
+      border-color: var(--line);
+    }
+    .subtab.active, .tab.active {
+      color: var(--accent);
+      background: var(--button-secondary-bg);
+      border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .date-shortcut {
+      transition:
+        transform .18s ease,
+        border-color .18s ease,
+        background-color .18s ease,
+        box-shadow .18s ease;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      .primary:not(:disabled):not([aria-disabled="true"]):hover {
+        background: var(--button-primary-hover);
+        box-shadow: var(--shadow-lift);
+      }
+      .secondary:not(:disabled):not([aria-disabled="true"]):hover,
+      .subtab:not(:disabled):not([aria-disabled="true"]):hover,
+      .tab:not(:disabled):not([aria-disabled="true"]):hover,
+      .date-shortcut:not(:disabled):not([aria-disabled="true"]):hover {
+        background: var(--button-secondary-hover);
+        border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+      }
+      .danger:not(:disabled):not([aria-disabled="true"]):hover {
+        background: var(--button-danger-hover);
+        border-color: color-mix(in srgb, var(--bad) 36%, var(--line));
+      }
+      .quiet:not(:disabled):not([aria-disabled="true"]):hover {
+        background: var(--button-quiet-hover);
+        color: var(--accent);
+      }
+      .stage-node:not(:disabled):hover .stage-dot {
+        border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+        color: var(--accent);
+      }
     }
     .primary:active,
     .secondary:active,
     .danger:active,
     .quiet:active,
-    .subtab:active {
-      transform: scale(.985);
+    .subtab:active,
+    .tab:active,
+    .date-shortcut:active {
+      transform: translateY(1px) scale(.985);
+      box-shadow: none;
+    }
+    .primary:not(:disabled):not([aria-disabled="true"]):active {
+      background: var(--button-primary-active);
+    }
+    .secondary:not(:disabled):not([aria-disabled="true"]):active,
+    .subtab:not(:disabled):not([aria-disabled="true"]):active,
+    .tab:not(:disabled):not([aria-disabled="true"]):active,
+    .date-shortcut:not(:disabled):not([aria-disabled="true"]):active {
+      background: var(--button-secondary-active);
+    }
+    .danger:not(:disabled):not([aria-disabled="true"]):active {
+      background: var(--button-danger-active);
+    }
+    .quiet:not(:disabled):not([aria-disabled="true"]):active {
+      background: var(--button-quiet-active);
+    }
+    .primary:focus-visible,
+    .secondary:focus-visible,
+    .danger:focus-visible,
+    .quiet:focus-visible,
+    .subtab:focus-visible,
+    .tab:focus-visible,
+    .date-shortcut:focus-visible,
+    .stage-node:focus-visible {
+      outline: 3px solid var(--button-focus-ring);
+      outline-offset: 2px;
+    }
+    button:disabled,
+    button[aria-disabled="true"],
+    .date-shortcut:disabled {
+      background: var(--button-disabled-bg);
+      border-color: var(--button-disabled-border);
+      color: var(--button-disabled-text);
+      box-shadow: none;
+      filter: saturate(.72);
+      transform: none;
+    }
+    .primary:disabled,
+    .primary[aria-disabled="true"] {
+      background: var(--button-disabled-bg);
+      color: var(--button-disabled-text);
+    }
+    .date-card.selected .primary:disabled,
+    .date-card.selected .primary[aria-disabled="true"] {
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+      color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+    }
+    .date-card.locked .primary:disabled,
+    .date-card.locked .primary[aria-disabled="true"] {
+      background: var(--button-disabled-bg);
+      color: var(--button-disabled-text);
+      border: 1px solid var(--button-disabled-border);
     }
     .quiet {
       display: inline-flex;
@@ -801,8 +978,89 @@
       overflow-wrap: anywhere;
     }
     .pill, .badge, .count {
-      min-height: 28px;
+      min-height: var(--tag-height);
       border-radius: 999px;
+      padding: 0 var(--tag-padding-x);
+      font-size: var(--tag-font-size);
+      line-height: 1.1;
+      font-weight: 860;
+      max-width: 100%;
+      white-space: nowrap;
+    }
+    .pill, .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .count {
+      min-width: var(--tag-height);
+    }
+    .stage-track {
+      gap: 0;
+      border-radius: 18px;
+    }
+    .stage-node {
+      border-radius: 999px;
+      transition: transform .18s ease, color .18s ease;
+    }
+    .stage-node:active {
+      transform: translateY(1px) scale(.96);
+    }
+    .stage-dot {
+      width: var(--stage-dot-size);
+      height: var(--stage-dot-size);
+      transition:
+        width .18s ease,
+        height .18s ease,
+        color .18s ease,
+        border-color .18s ease,
+        background-color .18s ease,
+        box-shadow .18s ease,
+        transform .18s ease;
+    }
+    .stage-node.done::before,
+    .stage-node.current::before {
+      background: var(--stage-line);
+    }
+    .stage-node.current .stage-dot {
+      width: var(--stage-dot-current-size);
+      height: var(--stage-dot-current-size);
+    }
+    .candidate-stage {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+    .candidate-stage-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+    .stage-track.compact-stage-track {
+      width: min(100%, 280px);
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      padding: 7px 6px;
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--field) 86%, var(--surface-2));
+    }
+    .stage-track.compact-stage-track .stage-node {
+      height: 28px;
+    }
+    .stage-track.compact-stage-track .stage-dot {
+      width: 24px;
+      height: 24px;
+      box-shadow: 0 0 0 3px var(--field);
+    }
+    .stage-track.compact-stage-track .stage-dot svg {
+      width: 12px;
+      height: 12px;
+      stroke-width: 2.4;
+    }
+    .stage-track.compact-stage-track .stage-node.current .stage-dot {
+      width: 28px;
+      height: 28px;
+      box-shadow: 0 0 0 4px var(--accent-soft);
     }
     .date-card.selected, .member-row.selected {
       box-shadow: var(--shadow-lift);
@@ -1038,6 +1296,7 @@
     const telegramLinkingIds = new Set();
     const telegramLinkErrors = new Map();
     const stagePopoverTimers = new Map();
+    let activeStageInfoId = "";
     const statusMeta = {
       pending: {
         label: "Заявка отправлена",
@@ -1528,42 +1787,78 @@
       return date <= today;
     }
 
-    function renderStageTrack(app) {
+    function renderStageTrack(app, options = {}) {
+      const scope = options.scope || "trainee";
+      const compact = Boolean(options.compact);
+      const label = options.label || "Этапы заявки";
+      const popoverId = `stageInfo-${scope}-${app.id}`;
       const current = stageNumber(app);
       const stages = stageItems();
       return `
-        <div class="stage-track" aria-label="Этапы заявки">
+        <div class="stage-track ${compact ? "compact-stage-track" : ""}" aria-label="${escapeHtml(label)}">
           ${stages.map((item, index) => {
             const number = index + 1;
             const stateClass = number < current ? "done" : number === current ? "current" : "";
             return `
-              <button class="stage-node ${stateClass}" data-stage="${number}" data-stage-app="${app.id}" type="button" aria-label="${escapeHtml(item.title)}" ${number === current ? "aria-current=\"step\"" : ""}>
+              <button class="stage-node ${stateClass}" data-stage-index="${number}" data-stage-app="${app.id}" data-stage-info="${popoverId}" type="button" aria-label="${escapeHtml(item.title)}" aria-describedby="${popoverId}" aria-expanded="false" ${number === current ? "aria-current=\"step\"" : ""}>
                 <span class="stage-dot">${stageIcon(item.icon)}</span>
               </button>
             `;
           }).join("")}
         </div>
-        <div class="stage-popover hidden" id="stageInfo-${app.id}"></div>
+        <div class="stage-popover hidden" id="${popoverId}"></div>
       `;
     }
 
-    function showStagePopover(button, appId, item) {
-      const info = document.getElementById(`stageInfo-${appId}`);
-      if (!info || !item) return;
+    function renderCandidateStage(app, scope) {
+      return `
+        <div class="candidate-stage">
+          <span class="candidate-stage-label">Этап кандидата</span>
+          ${renderStageTrack(app, { scope, compact: true, label: "Этап кандидата" })}
+        </div>
+      `;
+    }
+
+    function hideStagePopovers(exceptId = "") {
       document.querySelectorAll(".stage-popover").forEach(popover => {
-        if (popover !== info) popover.classList.add("hidden");
+        if (exceptId && popover.id === exceptId) return;
+        popover.classList.add("hidden");
+        popover.classList.remove("below");
       });
+      document.querySelectorAll("[data-stage-info]").forEach(button => {
+        if (exceptId && button.dataset.stageInfo === exceptId) return;
+        button.setAttribute("aria-expanded", "false");
+      });
+      if (!exceptId || activeStageInfoId !== exceptId) activeStageInfoId = "";
+    }
+
+    function showStagePopover(button, item, options = {}) {
+      const info = document.getElementById(button.dataset.stageInfo);
+      if (!info || !item) return;
+      if (options.toggle && activeStageInfoId === info.id && !info.classList.contains("hidden")) {
+        hideStagePopovers();
+        return;
+      }
+      hideStagePopovers(info.id);
       const rect = button.getBoundingClientRect();
       const left = Math.min(Math.max(rect.left + rect.width / 2, 86), window.innerWidth - 86);
-      const top = Math.max(rect.top - 4, 72);
+      const showBelow = rect.top < 96;
+      const top = showBelow
+        ? Math.min(rect.bottom + 2, window.innerHeight - 92)
+        : Math.max(rect.top - 4, 86);
       info.innerHTML = `<b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.hint)}</span>`;
       info.style.left = `${left}px`;
       info.style.top = `${top}px`;
+      info.classList.toggle("below", showBelow);
       info.classList.remove("hidden");
-      clearTimeout(stagePopoverTimers.get(String(appId)));
-      stagePopoverTimers.set(String(appId), setTimeout(() => {
-        info.classList.add("hidden");
-      }, 2600));
+      button.setAttribute("aria-expanded", "true");
+      activeStageInfoId = info.id;
+      clearTimeout(stagePopoverTimers.get(info.id));
+      if (options.temporary) {
+        stagePopoverTimers.set(info.id, setTimeout(() => {
+          hideStagePopovers();
+        }, 2600));
+      }
     }
 
     function stageIcon(name) {
@@ -1678,6 +1973,7 @@
             ${badge(app.training === "passed", trainingNames[app.training])}
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
           </div>
+          ${renderCandidateStage(app, "recruiter-pending")}
           <div class="candidate-actions">
             <button class="primary" data-status="confirmed" data-id="${app.id}" type="button">Подтвердить стажировку</button>
             <button class="secondary" data-return-queue="${app.id}" type="button">Вернуть в очередь</button>
@@ -1702,6 +1998,7 @@
             ${badge(app.training === "passed", trainingNames[app.training])}
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
           </div>
+          ${renderCandidateStage(app, "recruiter-booked")}
           <div class="candidate-actions">
             ${app.status !== "confirmed" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
             <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
@@ -1809,6 +2106,7 @@
               ${badge(app.training === "passed", trainingNames[app.training])}
               ${badge(app.attempt === "first", attemptNames[app.attempt])}
             </div>
+            ${renderCandidateStage(app, "recruiter-list")}
             <label>Комментарий
               <textarea data-comment="${app.id}" placeholder="Внутренний комментарий рекрута">${escapeHtml(app.comment || "")}</textarea>
             </label>
@@ -2023,6 +2321,8 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
     }
 
     document.addEventListener("click", event => {
+      const clickedStage = event.target.closest("[data-stage-index]");
+      if (!clickedStage && !event.target.closest(".stage-popover")) hideStagePopovers();
       if (event.target.id === "recruiterCabinetBtn") {
         role = role === "recruiter" ? "trainee" : "recruiter";
         render();
@@ -2067,10 +2367,10 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
         renderTrainee();
         return;
       }
-      const stage = event.target.closest("[data-stage]");
+      const stage = event.target.closest("[data-stage-index]");
       if (stage) {
-        const item = stageItems()[Number(stage.dataset.stage) - 1];
-        showStagePopover(stage, stage.dataset.stageApp, item);
+        const item = stageItems()[Number(stage.dataset.stageIndex) - 1];
+        showStagePopover(stage, item, { toggle: true });
         return;
       }
       const member = event.target.closest("[data-toggle-member]");
@@ -2196,6 +2496,26 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
         fillProfile();
         render();
       }
+    });
+
+    document.addEventListener("pointerover", event => {
+      if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
+      const stage = event.target.closest("[data-stage-index]");
+      if (!stage) return;
+      const item = stageItems()[Number(stage.dataset.stageIndex) - 1];
+      showStagePopover(stage, item, { temporary: true });
+    });
+
+    document.addEventListener("pointerout", event => {
+      if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
+      const stage = event.target.closest("[data-stage-index]");
+      if (!stage || stage.contains(event.relatedTarget)) return;
+      const infoId = stage.dataset.stageInfo;
+      clearTimeout(stagePopoverTimers.get(infoId));
+      stagePopoverTimers.set(infoId, setTimeout(() => {
+        const popover = document.getElementById(infoId);
+        if (popover && activeStageInfoId === infoId) hideStagePopovers();
+      }, 180));
     });
 
     document.addEventListener("input", event => {
