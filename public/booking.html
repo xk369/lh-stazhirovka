@@ -46,7 +46,14 @@
     button[aria-disabled="true"] { cursor: not-allowed; opacity: 1; }
     .app { width: min(100%, 840px); margin: 0 auto; padding: 18px 14px 34px; overflow-x: clip; }
     .top { display: grid; gap: 12px; margin-bottom: 12px; }
-    .tools { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+    .tools {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: max-content;
+      justify-content: end;
+      align-items: center;
+      gap: 8px;
+    }
     h1 { margin: 0; font-size: 32px; line-height: 1.06; letter-spacing: 0; }
     h2 { margin: 0; font-size: 21px; line-height: 1.18; letter-spacing: 0; }
     h3 { margin: 0; font-size: 17px; line-height: 1.25; letter-spacing: 0; }
@@ -55,7 +62,7 @@
     .meta { font-size: 14px; }
     .tabs, .subtabs, .grid, .stats, .actions, .date-list, .list, .form { display: grid; gap: 10px; }
     .tabs { grid-template-columns: 1fr 1fr; }
-    .subtabs { grid-template-columns: repeat(4, 1fr); margin: 10px 0 12px; }
+    .subtabs { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin: 10px 0 12px; }
     .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .stats { grid-template-columns: repeat(4, 1fr); }
     .panel, .card, .date-card, .stat {
@@ -438,20 +445,18 @@
     .stage-track {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
-      align-items: stretch;
+      align-items: center;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--field);
-      padding: 10px 8px 9px;
+      padding: 10px 8px;
     }
     .stage-node {
       position: relative;
       min-width: 0;
-      min-height: 54px;
+      height: 34px;
       display: grid;
-      grid-template-rows: 34px auto;
-      place-items: start center;
-      gap: 5px;
+      place-items: center;
       border: 0;
       background: transparent;
       color: var(--muted);
@@ -462,9 +467,10 @@
       position: absolute;
       right: 50%;
       left: -50%;
-      top: 17px;
+      top: 50%;
       height: 2px;
       background: var(--line);
+      transform: translateY(-50%);
     }
     .stage-node:first-child::before { display: none; }
     .stage-node.done::before,
@@ -504,93 +510,66 @@
       color: #fff;
       box-shadow: 0 0 0 5px var(--accent-soft);
     }
-    .stage-label {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      max-width: 100%;
-      display: block;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 850;
-      line-height: 1.08;
-      text-align: center;
-      white-space: normal;
-      overflow-wrap: anywhere;
-      hyphens: auto;
-      padding: 0 2px;
-      transition: color .18s ease, transform .18s ease;
-    }
-    .stage-node.done .stage-label {
-      color: color-mix(in srgb, var(--accent) 78%, var(--text));
-    }
-    .stage-node.current .stage-label {
-      color: var(--text);
-      transform: translateY(1px);
-    }
     .stage-popover {
       position: fixed;
       left: 50%;
       top: 50%;
       z-index: 50;
-      min-width: 156px;
-      max-width: min(320px, calc(100vw - 28px));
+      width: min(348px, calc(100vw - 24px));
       display: grid;
-      gap: 2px;
-      border: 0;
-      border-radius: 18px;
-      background: rgba(17,24,32,.94);
-      color: #fff;
-      padding: 10px 13px;
-      line-height: 1.25;
+      gap: 7px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--surface) 96%, var(--field));
+      color: var(--text);
+      padding: 12px 13px;
+      line-height: 1.32;
       text-align: left;
-      box-shadow: 0 12px 28px rgba(17,24,32,.28);
-      transform: translate(-50%, calc(-100% - 14px));
+      box-shadow: var(--shadow-lift);
+      transform: translate(-50%, calc(-100% - 12px));
       pointer-events: none;
       animation: stagePopoverIn .18s ease-in-out both;
     }
     @keyframes stagePopoverIn {
       from {
         opacity: 0;
-        transform: translate(-50%, calc(-100% - 7px)) scale(.98);
+        transform: translate(-50%, calc(-100% - 6px)) scale(.98);
       }
       to {
         opacity: 1;
-        transform: translate(-50%, calc(-100% - 14px)) scale(1);
+        transform: translate(-50%, calc(-100% - 12px)) scale(1);
       }
     }
-    .stage-popover::after {
-      content: "";
-      position: absolute;
-      left: 50%;
-      bottom: -6px;
-      width: 12px;
-      height: 12px;
-      background: rgba(17,24,32,.94);
-      transform: translateX(-50%) rotate(45deg);
-    }
     .stage-popover.below {
-      transform: translate(-50%, 12px);
+      transform: translate(-50%, 10px);
       animation: stagePopoverBelowIn .18s ease-in-out both;
-    }
-    .stage-popover.below::after {
-      top: -6px;
-      bottom: auto;
     }
     @keyframes stagePopoverBelowIn {
       from {
         opacity: 0;
-        transform: translate(-50%, 5px) scale(.98);
+        transform: translate(-50%, 4px) scale(.98);
       }
       to {
         opacity: 1;
-        transform: translate(-50%, 12px) scale(1);
+        transform: translate(-50%, 10px) scale(1);
       }
     }
-    .stage-popover b { font-size: 13px; }
-    .stage-popover span {
-      color: rgba(255,255,255,.78);
+    .stage-popover .stage-kicker {
+      color: var(--accent);
       font-size: 11px;
+      font-weight: 950;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .stage-popover .stage-title {
+      font-size: 15px;
+      font-weight: 950;
+      line-height: 1.18;
+    }
+    .stage-popover .stage-text {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.38;
     }
     .invite-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 12px; align-items: start; }
     .invite-layout > *,
@@ -669,6 +648,120 @@
       padding: 10px;
       display: grid;
       gap: 8px;
+    }
+    .registry-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .registry-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .registry-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+      gap: 10px;
+    }
+    .registry-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .registry-summary .metric {
+      min-height: 58px;
+    }
+    .registry-table-wrap {
+      overflow: auto;
+      max-width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .registry-table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: collapse;
+      color: var(--text);
+      background: var(--surface);
+    }
+    .registry-table th,
+    .registry-table td {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.32;
+      font-size: 13px;
+    }
+    .registry-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 950;
+      text-transform: uppercase;
+    }
+    .registry-table tbody tr:last-child td { border-bottom: 0; }
+    .registry-table tbody tr:hover {
+      background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+    }
+    .registry-table .name-cell {
+      min-width: 170px;
+      font-weight: 950;
+    }
+    .registry-table .wide-cell {
+      min-width: 210px;
+    }
+    .registry-cards {
+      display: none;
+      gap: 10px;
+    }
+    .registry-card {
+      display: grid;
+      gap: 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 11px;
+    }
+    .registry-card-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+    }
+    .registry-card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .registry-field {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.28;
+      overflow-wrap: anywhere;
+    }
+    .registry-field span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .registry-empty {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      padding: 24px 12px;
+      text-align: center;
     }
     .closed-dates {
       border: 1px solid var(--line);
@@ -1006,8 +1099,29 @@
       align-items: center;
       justify-content: center;
       min-height: 40px;
-      padding: 0 12px;
+      padding: 0 13px;
       text-decoration: none;
+    }
+    .tool-button {
+      min-width: 116px;
+      min-height: 38px;
+      border-radius: 999px;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .tool-button.home-link {
+      min-width: 124px;
+    }
+    .tool-button.registry-tool {
+      min-width: 136px;
+    }
+    .tool-button.danger-tool {
+      min-width: 112px;
+      color: var(--bad);
+      background: color-mix(in srgb, var(--bad) 9%, var(--surface));
+      border-color: color-mix(in srgb, var(--bad) 24%, var(--line));
     }
     .home-link {
       color: var(--accent);
@@ -1101,12 +1215,10 @@
       background: color-mix(in srgb, var(--field) 86%, var(--surface-2));
     }
     .stage-track.compact-stage-track .stage-node {
-      min-height: 45px;
-      grid-template-rows: 28px auto;
-      gap: 4px;
+      height: 28px;
     }
     .stage-track.compact-stage-track .stage-node::before {
-      top: 14px;
+      top: 50%;
     }
     .stage-track.compact-stage-track .stage-dot {
       width: 24px;
@@ -1122,11 +1234,6 @@
       width: 28px;
       height: 28px;
       box-shadow: 0 0 0 4px var(--accent-soft);
-    }
-    .stage-track.compact-stage-track .stage-label {
-      font-size: 9px;
-      line-height: 1.05;
-      padding: 0 1px;
     }
     .date-card.selected, .member-row.selected {
       box-shadow: var(--shadow-lift);
@@ -1154,12 +1261,23 @@
       .choice-grid select { padding-left: 10px; padding-right: 34px; }
       .choice-grid label { font-size: 12px; }
       .invite-layout { grid-template-columns: 1fr; }
+      .registry-head { grid-template-columns: 1fr; }
+      .registry-actions { justify-content: stretch; }
+      .registry-actions .quiet,
+      .registry-actions .secondary {
+        flex: 1 1 150px;
+      }
+      .registry-controls { grid-template-columns: 1fr; }
+      .registry-summary { grid-template-columns: 1fr 1fr; }
+      .registry-table-wrap { display: none; }
+      .registry-cards { display: grid; }
+      .registry-card-grid { grid-template-columns: 1fr; }
       .timeline { grid-template-columns: 1fr; }
       .step-arrow { display: none; }
       .step + .step { border-top: 1px solid var(--line); }
       .stage-track { padding: 8px 6px; }
-      .stage-node { min-height: 48px; grid-template-rows: 30px auto; gap: 4px; }
-      .stage-node::before { top: 15px; }
+      .stage-node { height: 30px; }
+      .stage-node::before { top: 50%; }
       .stage-dot { width: 26px; height: 26px; box-shadow: 0 0 0 3px var(--field); }
       .stage-dot svg { width: 13px; height: 13px; }
       .stage-node.current .stage-dot {
@@ -1167,7 +1285,6 @@
         height: 30px;
         box-shadow: 0 0 0 4px var(--accent-soft);
       }
-      .stage-label { font-size: 9.5px; line-height: 1.04; padding: 0 1px; }
       .head, .date-head, .candidate-head { align-items: stretch; }
       .pill { align-self: flex-start; }
       .candidate-head .pill {
@@ -1177,8 +1294,17 @@
         font-size: 10.5px;
       }
       .top .head { grid-template-columns: 1fr; }
-      .tools { justify-content: stretch; }
-      .tools .quiet { flex: 1 1 auto; }
+      .tools {
+        grid-auto-flow: row;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        justify-content: stretch;
+      }
+      .tool-button {
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        padding: 0 10px;
+      }
       h1 { font-size: clamp(34px, 11vw, 44px); }
     }
     @media (max-width: 390px) {
@@ -1202,10 +1328,10 @@
           <p class="lead">Кандидат выбирает дату или предварительную запись, рекрут подтверждает выход и ведет итог стажировки.</p>
         </div>
         <div class="tools">
-          <a class="quiet home-link" href="/" data-home-link>← Главное меню</a>
-          <button class="quiet" id="recruiterCabinetBtn" type="button">Кабинет рекрута</button>
-          <button class="quiet hidden" id="exportTraineesBtn" type="button">Экспорт стажеров</button>
-          <button class="quiet hidden" id="clearBtn" type="button">Очистить все</button>
+          <a class="quiet tool-button home-link" href="/" data-home-link>Главное меню</a>
+          <button class="quiet tool-button" id="recruiterCabinetBtn" type="button">Кабинет рекрута</button>
+          <button class="quiet tool-button registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
+          <button class="quiet tool-button danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
         </div>
       </div>
     </header>
@@ -1290,6 +1416,7 @@
           <button class="subtab active" data-section="dates" type="button">Даты</button>
           <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
           <button class="subtab" data-section="groups" type="button">Группы</button>
+          <button class="subtab" data-section="registry" type="button">Реестр</button>
           <button class="subtab" data-section="create" type="button">Создать дату</button>
         </nav>
 
@@ -1312,6 +1439,41 @@
             </label>
           </section>
           <div class="list" id="candidateList"></div>
+        </section>
+
+        <section id="registrySection" class="hidden">
+          <section class="panel">
+            <div class="registry-head">
+              <div>
+                <h2>Реестр стажеров</h2>
+                <p class="meta">Живая таблица из текущих заявок: статусы, даты, стажировка, площадка, Telegram и итоги наставников.</p>
+              </div>
+              <div class="registry-actions">
+                <button class="secondary" id="downloadTraineesCsvBtn" type="button">Скачать CSV</button>
+                <button class="quiet" data-section="dates" type="button">К стажировке</button>
+              </div>
+            </div>
+            <div class="registry-controls">
+              <label>Поиск
+                <input id="registrySearch" placeholder="ФИО, Telegram, площадка">
+              </label>
+              <label>Статус
+                <select id="registryStatusFilter">
+                  <option value="all">Все статусы</option>
+                  <option value="active">В работе</option>
+                  <option value="pending">Заявка отправлена</option>
+                  <option value="queue">Предварительная запись</option>
+                  <option value="confirmed">Выход подтвержден</option>
+                  <option value="invited">Приглашение отправлено</option>
+                  <option value="feedback">Ждет отчет</option>
+                  <option value="passed">Прошел</option>
+                  <option value="failed">Не прошел</option>
+                  <option value="noshow">Не вышел</option>
+                </select>
+              </label>
+            </div>
+            <div id="traineeRegistry"></div>
+          </section>
         </section>
 
         <section id="groupsSection" class="hidden">
@@ -1456,6 +1618,8 @@
     let unlocked = false;
     let serverRole = "guest";
     let state = load();
+    let registrySearch = "";
+    let registryStatusFilter = "all";
 
     const fields = {
       traineeName: document.getElementById("traineeName"),
@@ -2114,11 +2278,11 @@
 
     function stageItems() {
       return [
-        { title: "Заявка", shortTitle: "Заявка", hint: "Заявка есть в системе: выбрана дата или предварительная запись.", icon: "file" },
-        { title: "Подтверждение", shortTitle: "Подтв.", hint: "Рекрут проверяет дату и подтверждает выход на стажировку.", icon: "check" },
-        { title: "Приглашение", shortTitle: "Группа", hint: "Рекрут отправляет площадку, ссылку на рабочую группу и инструкции.", icon: "send" },
-        { title: "Стажировка", shortTitle: "Выход", hint: "Кандидат выходит на стажировку по согласованной дате.", icon: "calendar" },
-        { title: "Итог", shortTitle: "Итог", hint: "Финальный результат зафиксирован: прошел, не прошел или не вышел.", icon: "flag" }
+        { title: "Заявка", hint: "Стажёр заполнил анкету и выбрал дату или предварительную запись. На этом этапе данные ещё можно уточнять до решения рекрута.", icon: "file" },
+        { title: "Подтверждение", hint: "Рекрут проверяет заявку и подтверждает, что кандидат действительно выходит на выбранную дату. После этого ещё нужно отправить рабочую группу.", icon: "check" },
+        { title: "Рабочая группа", hint: "Кандидату отправлены площадка, ссылка на рабочую группу и инструкции. Только после этого можно отмечать, вышел он на стажировку или нет.", icon: "send" },
+        { title: "Выход на стажировку", hint: "Кандидат должен выйти на смену. Если он вышел, рекрут отмечает это, и стажёр остаётся в списке наставника до отчёта.", icon: "calendar" },
+        { title: "Итог", hint: "Финальный результат уже зафиксирован: стажировка пройдена, нужна повторная попытка или кандидат не вышел.", icon: "flag" }
       ];
     }
 
@@ -2157,11 +2321,9 @@
           ${stages.map((item, index) => {
             const number = index + 1;
             const stateClass = number < current ? "done" : number === current ? "current" : "";
-            const stageLabel = item.shortTitle || item.title;
             return `
               <button class="stage-node ${stateClass}" data-stage-index="${number}" data-stage-app="${app.id}" data-stage-info="${popoverId}" type="button" aria-label="${escapeHtml(item.title)}" aria-describedby="${popoverId}" aria-expanded="false" ${number === current ? "aria-current=\"step\"" : ""}>
                 <span class="stage-dot">${stageIcon(item.icon)}</span>
-                <span class="stage-label">${escapeHtml(stageLabel)}</span>
               </button>
             `;
           }).join("")}
@@ -2173,10 +2335,16 @@
     function renderCandidateStage(app, scope) {
       return `
         <div class="candidate-stage">
-          <span class="candidate-stage-label">Этап кандидата</span>
+          <span class="candidate-stage-label">Этап кандидата · нажмите на значок</span>
           ${renderStageTrack(app, { scope, compact: true, label: "Этап кандидата" })}
         </div>
       `;
+    }
+
+    function stageProgressLabel(stageNumberValue, current) {
+      if (stageNumberValue < current) return "Этап пройден";
+      if (stageNumberValue === current) return "Текущий этап";
+      return "Следующий этап";
     }
 
     function hideStagePopovers(exceptId = "") {
@@ -2201,12 +2369,23 @@
       }
       hideStagePopovers(info.id);
       const rect = button.getBoundingClientRect();
-      const left = Math.min(Math.max(rect.left + rect.width / 2, 86), window.innerWidth - 86);
-      const showBelow = rect.top < 96;
+      const popoverWidth = Math.min(348, window.innerWidth - 24);
+      const left = Math.min(
+        Math.max(rect.left + rect.width / 2, popoverWidth / 2 + 12),
+        window.innerWidth - popoverWidth / 2 - 12
+      );
+      const showBelow = rect.top < 150;
       const top = showBelow
-        ? Math.min(rect.bottom + 2, window.innerHeight - 92)
-        : Math.max(rect.top - 4, 86);
-      info.innerHTML = `<b>${escapeHtml(item.title)}</b><span>${escapeHtml(item.hint)}</span>`;
+        ? Math.min(rect.bottom + 4, window.innerHeight - 118)
+        : Math.max(rect.top - 6, 118);
+      const app = state.applications.find(candidate => String(candidate.id) === String(button.dataset.stageApp));
+      const current = app ? stageNumber(app) : Number(button.dataset.stageIndex);
+      const stageIndex = Number(button.dataset.stageIndex);
+      info.innerHTML = `
+        <span class="stage-kicker">${escapeHtml(stageProgressLabel(stageIndex, current))}</span>
+        <strong class="stage-title">${escapeHtml(item.title)}</strong>
+        <span class="stage-text">${escapeHtml(item.hint)}</span>
+      `;
       info.style.left = `${left}px`;
       info.style.top = `${top}px`;
       info.classList.toggle("below", showBelow);
@@ -2251,7 +2430,7 @@
     function renderRecruiter() {
       if (!unlocked) return;
       document.querySelectorAll(".subtab").forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
-      ["dates", "candidates", "groups", "create"].forEach(id => {
+      ["dates", "candidates", "groups", "registry", "create"].forEach(id => {
         document.getElementById(`${id}Section`).classList.toggle("hidden", id !== section);
       });
       document.getElementById("statPending").textContent = state.applications.filter(app => app.status === "pending").length;
@@ -2261,6 +2440,7 @@
       renderRecruiterDates();
       renderCandidates();
       renderInviteGroups();
+      renderRegistry();
       renderQuickDates();
     }
 
@@ -2500,6 +2680,161 @@
           </article>
         `;
       }).join("") : `<div class="panel empty">Кандидатов на этом этапе нет.</div>`;
+    }
+
+    function registryRows() {
+      return state.applications
+        .map(app => {
+          const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+          const group = state.inviteGroups.find(item => String(item.id) === String(app.inviteGroupId));
+          const venue = venueById(app.venueId || group?.venueId);
+          const telegram = app.telegramUsername
+            ? `@${String(app.telegramUsername).replace(/^@/, "")}`
+            : app.telegramUserId || app.telegramChatId || "";
+          return {
+            app,
+            id: app.id,
+            name: app.name || "Без имени",
+            status: app.status,
+            statusLabel: statusNames[app.status] || app.status,
+            date: shift?.date || "",
+            dateText: shift ? formatDate(shift.date) : "Предварительная запись",
+            training: trainingNames[app.training] || "Не указано",
+            attempt: attemptNames[app.attempt] || "Не указано",
+            limits: app.limits || "Нет ограничений",
+            venue: venue?.name || app.venueId || group?.venueId || "Не назначена",
+            groupLink: app.groupLink || group?.link || "",
+            telegram,
+            mentorReport: app.mentorReport ? "Получен" : "Нет",
+            mentorDecision: app.mentorDecision || "—",
+            mentorDelivery: app.mentorCommentDeliveryStatus || "—"
+          };
+        })
+        .sort((left, right) => {
+          const leftDate = left.date || "9999-12-31";
+          const rightDate = right.date || "9999-12-31";
+          if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+          return left.name.localeCompare(right.name, "ru");
+        });
+    }
+
+    function filteredRegistryRows() {
+      const query = registrySearch.trim().toLowerCase();
+      const activeStatuses = ["pending", "queue", "confirmed", "invited", "feedback"];
+      return registryRows().filter(row => {
+        const matchesStatus = registryStatusFilter === "all"
+          || row.status === registryStatusFilter
+          || (registryStatusFilter === "active" && activeStatuses.includes(row.status));
+        if (!matchesStatus) return false;
+        if (!query) return true;
+        const haystack = [
+          row.name,
+          row.statusLabel,
+          row.dateText,
+          row.training,
+          row.attempt,
+          row.venue,
+          row.telegram,
+          row.mentorDecision
+        ].join(" ").toLowerCase();
+        return haystack.includes(query);
+      });
+    }
+
+    function registrySummary(rows) {
+      const total = state.applications.length;
+      const invited = state.applications.filter(app => app.status === "invited").length;
+      const feedback = state.applications.filter(app => app.status === "feedback").length;
+      const final = state.applications.filter(app => ["passed", "failed", "noshow"].includes(app.status)).length;
+      return `
+        <div class="registry-summary">
+          <div class="metric"><b>${total}</b><span>всего</span></div>
+          <div class="metric"><b>${invited}</b><span>приглашены</span></div>
+          <div class="metric"><b>${feedback}</b><span>ждут отчет</span></div>
+          <div class="metric"><b>${final}</b><span>с итогом</span></div>
+        </div>
+        ${rows.length !== total ? `<p class="meta">Показано: ${rows.length} из ${total}</p>` : ""}
+      `;
+    }
+
+    function renderRegistryLink(url, label = "Открыть") {
+      return url
+        ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`
+        : "—";
+    }
+
+    function renderRegistryStatus(row) {
+      return `<span class="pill ${statusPill[row.status] || "wait"}">${escapeHtml(row.statusLabel)}</span>`;
+    }
+
+    function renderRegistryTable(rows) {
+      if (!rows.length) return `<div class="registry-empty">По таким условиям стажёров не найдено.</div>`;
+      return `
+        <div class="registry-table-wrap" role="region" aria-label="Таблица стажёров">
+          <table class="registry-table">
+            <thead>
+              <tr>
+                <th>ФИО</th>
+                <th>Статус</th>
+                <th>Дата</th>
+                <th>Стажировка</th>
+                <th>Площадка</th>
+                <th>Telegram</th>
+                <th>Наставник</th>
+                <th>Ограничения</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td class="name-cell">${escapeHtml(row.name)}</td>
+                  <td>${renderRegistryStatus(row)}</td>
+                  <td>${escapeHtml(row.dateText)}</td>
+                  <td>${escapeHtml(row.training)}<br><span class="meta">${escapeHtml(row.attempt)}</span></td>
+                  <td>${escapeHtml(row.venue)}<br>${renderRegistryLink(row.groupLink, "Группа")}</td>
+                  <td>${escapeHtml(row.telegram || "—")}</td>
+                  <td class="wide-cell">${escapeHtml(row.mentorReport)}<br><span class="meta">${escapeHtml(row.mentorDecision)}</span></td>
+                  <td class="wide-cell">${escapeHtml(row.limits)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="registry-cards">
+          ${rows.map(row => `
+            <article class="registry-card">
+              <div class="registry-card-head">
+                <div>
+                  <h3>${escapeHtml(row.name)}</h3>
+                  <p class="meta">${escapeHtml(row.dateText)} · ${escapeHtml(row.venue)}</p>
+                </div>
+                ${renderRegistryStatus(row)}
+              </div>
+              <div class="registry-card-grid">
+                <div class="registry-field"><span>Стажировка</span>${escapeHtml(row.training)}<br>${escapeHtml(row.attempt)}</div>
+                <div class="registry-field"><span>Telegram</span>${escapeHtml(row.telegram || "—")}</div>
+                <div class="registry-field"><span>Наставник</span>${escapeHtml(row.mentorReport)} · ${escapeHtml(row.mentorDecision)}</div>
+                <div class="registry-field"><span>Группа</span>${renderRegistryLink(row.groupLink, "Открыть")}</div>
+              </div>
+              <div class="registry-field"><span>Ограничения</span>${escapeHtml(row.limits)}</div>
+            </article>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderRegistry() {
+      const search = document.getElementById("registrySearch");
+      const status = document.getElementById("registryStatusFilter");
+      if (search && search.value !== registrySearch) search.value = registrySearch;
+      if (status && status.value !== registryStatusFilter) status.value = registryStatusFilter;
+      const target = document.getElementById("traineeRegistry");
+      if (!target) return;
+      const rows = filteredRegistryRows();
+      target.innerHTML = `
+        ${registrySummary(rows)}
+        ${renderRegistryTable(rows)}
+      `;
     }
 
     async function createApplication(type, shiftId) {
@@ -2869,6 +3204,13 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         return;
       }
       if (event.target.id === "exportTraineesBtn") {
+        role = "recruiter";
+        section = "registry";
+        render();
+        document.getElementById("registrySection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      if (event.target.id === "downloadTraineesCsvBtn") {
         await downloadTraineesCsv();
         return;
       }
@@ -2959,6 +3301,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target === fields.newDate) {
         renderQuickDates();
       }
+      if (event.target.id === "registrySearch") {
+        registrySearch = event.target.value;
+        renderRegistry();
+      }
     });
 
     document.addEventListener("change", event => {
@@ -2967,6 +3313,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
         if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();
+      }
+      if (event.target.id === "registryStatusFilter") {
+        registryStatusFilter = event.target.value;
+        renderRegistry();
       }
     });
 
