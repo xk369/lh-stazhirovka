@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applyMentorReportResultToBookingState,
+  composeMentorTraineeResultMessage,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -106,6 +107,25 @@ function stateWithApplications() {
         telegramUsername: '',
         candidateReport: false,
         mentorReport: false
+      },
+      {
+        id: 6,
+        shiftId: 1,
+        name: 'Яковлев Ян',
+        training: 'passed',
+        attempt: 'first',
+        limits: '',
+        status: 'feedback',
+        comment: '',
+        inviteGroupId: 10,
+        venueId: 'loft1',
+        groupLink: 'https://t.me/+invite',
+        telegramCode: '',
+        telegramChatId: '100006',
+        telegramUserId: '100006',
+        telegramUsername: 'yakovlev',
+        candidateReport: false,
+        mentorReport: false
       }
     ],
     inviteGroups: [
@@ -114,7 +134,7 @@ function stateWithApplications() {
         shiftId: 1,
         venueId: 'loft1',
         link: 'https://t.me/+invite',
-        memberIds: [1, 2, 4],
+        memberIds: [1, 2, 4, 6],
         sentAt: '2026-07-03T01:00:00.000Z'
       }
     ]
@@ -124,10 +144,11 @@ function stateWithApplications() {
 test('mentor trainee list includes only invited group members waiting for report/final result', () => {
   const trainees = mentorTraineesFromState(stateWithApplications());
 
-  assert.deepEqual(trainees.map(item => item.applicationId), [1]);
+  assert.deepEqual(trainees.map(item => item.applicationId), [1, 6]);
   assert.equal(trainees[0].telegramUsername, '@ivanov');
   assert.equal(trainees[0].telegramChatAvailable, true);
   assert.equal(trainees[0].statusLabel, 'Приглашен в группу');
+  assert.equal(trainees[1].statusLabel, 'Ждет отчет');
 });
 
 test('mentor report result marks application as passed and stores delivery status', () => {
@@ -174,4 +195,48 @@ test('mentor report result marks application as failed when repeat internship is
   const application = next.applications.find(item => item.id === 1);
   assert.equal(application.status, 'failed');
   assert.equal(application.mentorReport, true);
+});
+
+test('mentor trainee result message hides mentor free-text comments', () => {
+  const text = composeMentorTraineeResultMessage(
+    { name: 'Иванов Иван' },
+    {
+      date: '2026-07-04',
+      venue: 'LOFT #5 · SMALL',
+      mastered: 26,
+      total: 29,
+      decision: 'Стажировка пройдена',
+      topicsToRepeat: [
+        { order: 16, title: 'Синхронная подача и сервировка тарелок' },
+        { order: 23, title: 'Вынос горячих закусок и основных блюд' },
+        { order: 25, title: 'Закрытие смены и порядок в рабочих зонах' }
+      ],
+      mentorCommentForTrainee: 'Этот текст стажер видеть не должен'
+    }
+  );
+
+  assert.match(text, /📋 <b>Итоги стажировки<\/b>/);
+  assert.match(text, /Дата: 04\.07\.2026/);
+  assert.match(text, /Площадка: LOFT #5 · SMALL/);
+  assert.match(text, /Освоено: 26 из 29 тем\./);
+  assert.match(text, /• 16\. Синхронная подача и сервировка тарелок/);
+  assert.match(text, /🟢 Стажировка пройдена\./);
+  assert.doesNotMatch(text, /Этот текст стажер видеть не должен/);
+});
+
+test('mentor trainee result message congratulates when all topics are passed', () => {
+  const text = composeMentorTraineeResultMessage(
+    { name: 'Иванов Иван' },
+    {
+      date: '2026-07-04',
+      venue: 'LOFT #5 · SMALL',
+      mastered: 29,
+      total: 29,
+      decision: 'Стажировка пройдена',
+      topicsToRepeat: []
+    }
+  );
+
+  assert.match(text, /🎉 Поздравляем! Все темы успешно освоены\./);
+  assert.match(text, /🟢 Стажировка пройдена\./);
 });

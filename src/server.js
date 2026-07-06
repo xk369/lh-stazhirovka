@@ -327,6 +327,13 @@ function normalizeDateValue(value, field) {
   return text;
 }
 
+function urlValidationMessage(field) {
+  if (field === 'inviteGroup.link' || field === 'application.groupLink') {
+    return 'Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...';
+  }
+  return `${field} must be a valid URL.`;
+}
+
 function normalizeUrl(value, field, { required = false } = {}) {
   const text = required
     ? normalizeRequiredText(value, field, 500)
@@ -336,10 +343,10 @@ function normalizeUrl(value, field, { required = false } = {}) {
   try {
     parsed = new URL(text);
   } catch {
-    throw new BookingValidationError(`${field} must be a valid URL.`);
+    throw new BookingValidationError(urlValidationMessage(field));
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new BookingValidationError(`${field} must use http or https.`);
+    throw new BookingValidationError(urlValidationMessage(field));
   }
   return text;
 }
@@ -588,8 +595,8 @@ function applicationCanReceiveMentorReport(application) {
 }
 
 function mentorTraineeStatusLabel(application) {
-  if (application?.mentorReport) return 'Фидбек наставника отправлен';
-  if (normalizeLegacyStatus(application?.status) === 'feedback') return 'Ждет фидбек';
+  if (application?.mentorReport) return 'Отчет наставника отправлен';
+  if (normalizeLegacyStatus(application?.status) === 'feedback') return 'Ждет отчет';
   return 'Приглашен в группу';
 }
 
@@ -651,20 +658,60 @@ function escapeTelegramHtml(value) {
   }[char]));
 }
 
-function composeMentorCommentMessage(application, comment) {
-  const lines = [
-    '<b>Комментарий наставника для проработки</b>',
-    application?.name ? `<b>Стажёр:</b> ${escapeTelegramHtml(application.name)}` : '',
-    '',
-    escapeTelegramHtml(comment)
-  ];
-  return lines.filter((line, index) => line || lines[index - 1]).join('\n').trim();
+function formatRuDate(value) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return text || '—';
+  const [year, month, day] = text.split('-');
+  return `${day}.${month}.${year}`;
 }
 
-async function sendMentorCommentToTrainee(application, comment, now = new Date()) {
-  const text = normalizeOptionalText(comment, 'mentorCommentForTrainee', 1200);
-  if (!text) {
-    return { ok: false, status: 'skipped', skipped: 'empty_comment' };
+function normalizeMentorTraineeResult(value) {
+  const result = value && typeof value === 'object' ? value : {};
+  const topics = Array.isArray(result.topicsToRepeat) ? result.topicsToRepeat : [];
+  return {
+    date: normalizeOptionalText(result.date, 'mentorTraineeResult.date', 20),
+    venue: normalizeOptionalText(result.venue, 'mentorTraineeResult.venue', 120),
+    mastered: Math.max(Number.parseInt(result.mastered, 10) || 0, 0),
+    total: Math.max(Number.parseInt(result.total, 10) || 0, 0),
+    decision: normalizeOptionalText(result.decision, 'mentorTraineeResult.decision', 120),
+    topicsToRepeat: topics.slice(0, 40).map((topic, index) => ({
+      order: Math.max(Number.parseInt(topic?.order, 10) || index + 1, 1),
+      title: normalizeRequiredText(topic?.title, 'mentorTraineeResult.topic.title', 220)
+    }))
+  };
+}
+
+function composeMentorTraineeResultMessage(application, resultPayload) {
+  const result = normalizeMentorTraineeResult(resultPayload);
+  const passed = result.decision === 'Стажировка пройдена';
+  const decisionLine = passed ? '🟢 Стажировка пройдена.' : '🔴 Стажировка не пройдена.';
+  const topics = result.topicsToRepeat
+    .map(topic => `• ${topic.order}. ${escapeTelegramHtml(topic.title)}`);
+  const lines = [
+    '📋 <b>Итоги стажировки</b>',
+    '',
+    `Дата: ${escapeTelegramHtml(formatRuDate(result.date))}`,
+    `Площадка: ${escapeTelegramHtml(result.venue || '—')}`,
+    '',
+    `Освоено: ${result.mastered} из ${result.total} тем.`,
+    ''
+  ];
+
+  if (topics.length) {
+    lines.push('📚 <b>Темы для повторения</b>', '', ...topics);
+  } else if (passed) {
+    lines.push('🎉 Поздравляем! Все темы успешно освоены.');
+  } else {
+    lines.push('📚 Темы для повторения не указаны наставником.');
+  }
+
+  lines.push('', '━━━━━━━━━━━━━━━', '', decisionLine);
+  return lines.join('\n').trim();
+}
+
+async function sendMentorResultToTrainee(application, resultPayload, now = new Date()) {
+  if (!resultPayload || typeof resultPayload !== 'object') {
+    return { ok: false, status: 'skipped', skipped: 'empty_result' };
   }
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
@@ -674,7 +721,7 @@ async function sendMentorCommentToTrainee(application, comment, now = new Date()
     const message = await sendTelegramMessage({
       botToken: config.botToken,
       chatId: application.telegramChatId,
-      text: composeMentorCommentMessage(application, text),
+      text: composeMentorTraineeResultMessage(application, resultPayload),
       parseMode: 'HTML',
       disableWebPagePreview: true
     });
@@ -685,7 +732,7 @@ async function sendMentorCommentToTrainee(application, comment, now = new Date()
       sentAt: now.toISOString()
     };
   } catch (error) {
-    console.error('Mentor comment delivery error:', error);
+    console.error('Mentor result delivery error:', error);
     return {
       ok: false,
       status: 'failed',
@@ -936,7 +983,7 @@ function applySendInvites(state, command, actor) {
     if (String(application.shiftId) !== String(shiftId)) {
       throw new BookingValidationError('inviteGroup member has another shift.');
     }
-    if (!['confirmed', 'invited'].includes(application.status)) {
+    if (application.status !== 'confirmed') {
       throw new BookingValidationError('inviteGroup member is not eligible.');
     }
     next.applications[index] = {
@@ -1416,6 +1463,10 @@ app.post('/api/report', async (request, response) => {
       'mentorCommentForTrainee',
       1200
     );
+    const rawMentorTraineeResult = request.body?.mentorTraineeResult;
+    const mentorTraineeResult = role === 'mentor' && rawMentorTraineeResult && typeof rawMentorTraineeResult === 'object'
+      ? normalizeMentorTraineeResult(rawMentorTraineeResult)
+      : null;
     let mentorApplication = null;
 
     if (role === 'mentor') {
@@ -1432,9 +1483,9 @@ app.post('/api/report', async (request, response) => {
 
     if (role === 'mentor' && mentorApplication) {
       const deliveryTime = new Date();
-      traineeMessage = await sendMentorCommentToTrainee(
+      traineeMessage = await sendMentorResultToTrainee(
         mentorApplication,
-        mentorCommentForTrainee,
+        mentorTraineeResult,
         deliveryTime
       );
 
@@ -1552,6 +1603,7 @@ export {
   applyMentorReportResultToBookingState,
   applyBookingCommand,
   bookingStateForActor,
+  composeMentorTraineeResultMessage,
   mentorTraineesFromState,
   normalizeBookingState
 };

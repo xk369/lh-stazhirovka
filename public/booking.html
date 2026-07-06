@@ -218,6 +218,8 @@
       line-height: 1.35;
       font-weight: 700;
     }
+    .select-hint { display: none; }
+    .has-select-hint:focus-within .select-hint { display: block; }
     .field-error:empty { display: none; }
     .field-error { color: var(--bad); }
     .form-status {
@@ -1160,7 +1162,7 @@
       <div class="head">
         <div>
           <h1>Запись на стажировку</h1>
-          <p class="lead">Кандидат выбирает дату или очередь, рекрут подтверждает выход и ведет итог стажировки.</p>
+          <p class="lead">Кандидат выбирает дату или предварительную запись, рекрут подтверждает выход и ведет итог стажировки.</p>
         </div>
         <div class="tools">
           <a class="quiet home-link" href="/" data-home-link>← Главное меню</a>
@@ -1175,7 +1177,7 @@
         <h2>Перед записью</h2>
         <div class="notice">
           <b>Стажировка длится 6-8 часов, оплата 1000 руб.</b><br>
-          Расписание может меняться, поэтому дату подтверждает рекрут. Если ни одна дата не подходит, можно встать в общую очередь.
+          Расписание может меняться, поэтому дату подтверждает рекрут. Если ни одна дата не подходит, можно встать в предварительную запись.
         </div>
       </section>
 
@@ -1187,25 +1189,30 @@
             <span class="field-error" id="traineeNameError"></span>
           </label>
           <div class="choice-grid">
-            <label>Обучение в боте
-              <select id="traineeTraining">
+            <label class="has-select-hint" data-field="traineeTraining">Тренинг пройден
+              <select id="traineeTraining" required aria-describedby="traineeTrainingHint traineeTrainingError">
+                <option value="">Выберите...</option>
                 <option value="passed">Да</option>
                 <option value="not_passed">Нет</option>
               </select>
+              <span class="field-help select-hint" id="traineeTrainingHint">Укажите, проходили ли вы сервис-тренинг перед стажировкой.</span>
+              <span class="field-error" id="traineeTrainingError"></span>
             </label>
-            <label>Тип стажировки
-              <select id="traineeAttempt">
+            <label class="has-select-hint" data-field="traineeAttempt">Стажировка
+              <select id="traineeAttempt" required aria-describedby="traineeAttemptHint traineeAttemptError">
+                <option value="">Выберите...</option>
                 <option value="first">Первая</option>
                 <option value="repeat">Повторная</option>
               </select>
+              <span class="field-help select-hint" id="traineeAttemptHint">Выберите, какая это для вас стажировка: первая или повторная.</span>
+              <span class="field-error" id="traineeAttemptError"></span>
             </label>
           </div>
           <label>Когда удобно выйти / ограничения
-            <textarea id="traineeLimits" placeholder="Например: могу после 17:00, не могу 29.06"></textarea>
+            <textarea id="traineeLimits" placeholder="Например: могу после 17:00"></textarea>
             <span class="field-help">Если ограничений нет, можно оставить поле пустым.</span>
           </label>
           <div class="form-status hidden" id="traineeFormStatus" role="status" aria-live="polite"></div>
-          <div class="notice" id="telegramConnect"></div>
         </div>
       </section>
 
@@ -1215,7 +1222,7 @@
           <span class="pill ok" id="openDatesCount">0 открыто</span>
         </div>
         <div class="date-list" id="publicDates"></div>
-        <button class="secondary" id="queueBtn" type="button">Встать в общую очередь</button>
+        <button class="secondary" id="queueBtn" type="button">Встать в предварительную запись</button>
       </section>
 
       <section class="panel">
@@ -1237,8 +1244,8 @@
         <section class="stats">
           <div class="stat"><b id="statPending">0</b><span>ждут решения</span></div>
           <div class="stat"><b id="statConfirmed">0</b><span>подтверждены</span></div>
-          <div class="stat"><b id="statFeedback">0</b><span>ждут итог</span></div>
-          <div class="stat"><b id="statQueue">0</b><span>в очереди</span></div>
+          <div class="stat"><b id="statFeedback">0</b><span>ждут отчет</span></div>
+          <div class="stat"><b id="statQueue">0</b><span>предзапись</span></div>
         </section>
 
         <nav class="subtabs" aria-label="Разделы рекрута">
@@ -1259,7 +1266,7 @@
                 <option value="active">На стажировке и после</option>
                 <option value="all">Все кандидаты</option>
                 <option value="invited">Приглашение отправлено</option>
-                <option value="feedback">Ждет фидбек</option>
+                <option value="feedback">Ждет отчет</option>
                 <option value="passed">Прошел</option>
                 <option value="failed">Не прошел</option>
                 <option value="noshow">Не вышел</option>
@@ -1290,6 +1297,7 @@
                 <h3>Кого пригласить</h3>
                 <div class="list" id="groupMembers"></div>
                 <button class="primary" id="sendInvitesBtn" type="button">Отправить приглашения</button>
+                <div class="form-status hidden" id="groupInviteStatus" role="status" aria-live="polite"></div>
               </div>
               <div class="form">
                 <h3>Сообщение стажеру</h3>
@@ -1344,9 +1352,9 @@
         text: "Заявка отправлена. Рекрут проверит дату и подтвердит выход."
       },
       queue: {
-        label: "В очереди",
-        lead: "Вы в очереди, даты пока нет.",
-        text: "Вы в общей очереди. Рекрут поставит вас на подходящую дату."
+        label: "Предварительная запись",
+        lead: "Вы в предварительной записи, даты пока нет.",
+        text: "Вы в предварительной записи. Рекрут поставит вас на подходящую дату."
       },
       confirmed: {
         label: "Выход подтвержден",
@@ -1359,9 +1367,9 @@
         text: "Вам отправлено приглашение на стажировку. Перейдите в рабочую группу и напишите, что выходите."
       },
       feedback: {
-        label: "Ждем итог",
-        lead: "Стажировка прошла, ждём итог.",
-        text: "Стажировка прошла, сейчас ждём обратную связь от наставника."
+        label: "Ждем отчет",
+        lead: "Выход отмечен, ждём отчёт наставника.",
+        text: "Рекрут отметил, что вы вышли на стажировку. После отчёта наставника вы получите итог."
       },
       passed: {
         label: "Стажировка пройдена",
@@ -1376,7 +1384,7 @@
       noshow: {
         label: "Выход не состоялся",
         lead: "Выход на стажировку не состоялся.",
-        text: "Отмечено, что вы не вышли на стажировку. Можно выбрать новую дату или встать в очередь снова."
+        text: "Отмечено, что вы не вышли на стажировку. Можно выбрать новую дату или встать в предварительную запись снова."
       }
     };
     const statusNames = Object.fromEntries(Object.entries(statusMeta).map(([status, meta]) => [status, meta.label]));
@@ -1390,7 +1398,7 @@
       failed: "bad",
       noshow: "bad"
     };
-    const trainingNames = { passed: "Обучение пройдено", not_passed: "Без обучения" };
+    const trainingNames = { passed: "Тренинг пройден", not_passed: "Тренинг не пройден" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const venues = [
       { id: "loft1", name: "LOFT#1", address: "ул. Ленинская Слобода, 26, стр. 35", photo: "assets/venues/loft1.jpg" },
@@ -1416,7 +1424,9 @@
       traineeNameError: document.getElementById("traineeNameError"),
       traineeFormStatus: document.getElementById("traineeFormStatus"),
       traineeTraining: document.getElementById("traineeTraining"),
+      traineeTrainingError: document.getElementById("traineeTrainingError"),
       traineeAttempt: document.getElementById("traineeAttempt"),
+      traineeAttemptError: document.getElementById("traineeAttemptError"),
       traineeLimits: document.getElementById("traineeLimits"),
       recruiterGateStatus: document.getElementById("recruiterGateStatus"),
       candidateFilter: document.getElementById("candidateFilter"),
@@ -1424,7 +1434,8 @@
       newSeats: document.getElementById("newSeats"),
       groupShift: document.getElementById("groupShift"),
       groupVenue: document.getElementById("groupVenue"),
-      groupLink: document.getElementById("groupLink")
+      groupLink: document.getElementById("groupLink"),
+      groupInviteStatus: document.getElementById("groupInviteStatus")
     };
 
     if (tgApp) {
@@ -1526,7 +1537,7 @@
     }
 
     function defaultProfile() {
-      return { name: "", training: "passed", attempt: "first", limits: "", telegramCode: "", activeAppId: null };
+      return { name: "", training: "", attempt: "", limits: "", telegramCode: "", activeAppId: null };
     }
 
     function getTelegramCode() {
@@ -1675,8 +1686,8 @@
 
     function fillProfile() {
       fields.traineeName.value = state.profile.name || "";
-      fields.traineeTraining.value = state.profile.training || "passed";
-      fields.traineeAttempt.value = state.profile.attempt || "first";
+      fields.traineeTraining.value = state.profile.training || "";
+      fields.traineeAttempt.value = state.profile.attempt || "";
       fields.traineeLimits.value = state.profile.limits || "";
     }
 
@@ -1729,9 +1740,15 @@
         app.limits = state.profile.limits;
         app.telegramCode = state.profile.telegramCode || app.telegramCode || "";
       }
-      if (state.profile.name) clearTraineeValidation();
       saveLocalSnapshot();
       if (options.persist !== false) scheduleTraineeApplicationPersist();
+    }
+
+    function clearFieldValidation(field, error) {
+      field?.closest("label")?.classList.remove("invalid");
+      field?.removeAttribute("aria-invalid");
+      if (error) error.textContent = "";
+      setTraineeFormStatus("");
     }
 
     function setTraineeFormStatus(message) {
@@ -1740,22 +1757,69 @@
       fields.traineeFormStatus.classList.toggle("hidden", !message);
     }
 
+    function setGroupInviteStatus(message) {
+      if (!fields.groupInviteStatus) return;
+      fields.groupInviteStatus.textContent = message || "";
+      fields.groupInviteStatus.classList.toggle("hidden", !message);
+    }
+
+    function isValidInviteLink(value) {
+      const text = String(value || "").trim();
+      if (!text) return false;
+      try {
+        const url = new URL(text);
+        return ["http:", "https:"].includes(url.protocol);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function friendlyBookingError(error) {
+      const message = String(error?.message || error || "");
+      if (message.includes("inviteGroup.link") || message.includes("valid URL") || message.includes("http or https")) {
+        return "Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...";
+      }
+      if (message.includes("not eligible")) {
+        return "Кандидат уже не доступен для приглашения. Обновите список и выберите только тех, кому приглашение еще не отправляли.";
+      }
+      return message || "Не удалось выполнить действие. Проверьте данные и попробуйте еще раз.";
+    }
+
     function clearTraineeValidation() {
-      fields.traineeName.closest("label")?.classList.remove("invalid");
-      fields.traineeName.removeAttribute("aria-invalid");
-      if (fields.traineeNameError) fields.traineeNameError.textContent = "";
+      [
+        [fields.traineeName, fields.traineeNameError],
+        [fields.traineeTraining, fields.traineeTrainingError],
+        [fields.traineeAttempt, fields.traineeAttemptError]
+      ].forEach(([field, error]) => {
+        field?.closest("label")?.classList.remove("invalid");
+        field?.removeAttribute("aria-invalid");
+        if (error) error.textContent = "";
+      });
       setTraineeFormStatus("");
     }
 
     function validateTraineeProfile() {
       clearTraineeValidation();
-      if (state.profile.name) return true;
-      fields.traineeName.closest("label")?.classList.add("invalid");
-      fields.traineeName.setAttribute("aria-invalid", "true");
-      if (fields.traineeNameError) fields.traineeNameError.textContent = "Укажите ФИО, чтобы рекрут понял, чья это заявка.";
-      setTraineeFormStatus("Заполните ФИО перед выбором даты или очереди.");
-      fields.traineeName.focus();
-      fields.traineeName.scrollIntoView({ behavior: "smooth", block: "center" });
+      const invalidFields = [];
+      if (!state.profile.name) {
+        invalidFields.push([fields.traineeName, fields.traineeNameError, "Укажите ФИО, чтобы рекрут понял, чья это заявка."]);
+      }
+      if (!state.profile.training) {
+        invalidFields.push([fields.traineeTraining, fields.traineeTrainingError, "Выберите, проходили ли вы сервис-тренинг."]);
+      }
+      if (!state.profile.attempt) {
+        invalidFields.push([fields.traineeAttempt, fields.traineeAttemptError, "Выберите, первая это стажировка или повторная."]);
+      }
+      invalidFields.forEach(([field, error, message]) => {
+        field?.closest("label")?.classList.add("invalid");
+        field?.setAttribute("aria-invalid", "true");
+        if (error) error.textContent = message;
+      });
+      if (!invalidFields.length) return true;
+      setTraineeFormStatus("Заполните обязательные поля перед выбором даты или предварительной записью.");
+      const firstField = invalidFields[0][0];
+      firstField?.focus();
+      firstField?.scrollIntoView({ behavior: "smooth", block: "center" });
       return false;
     }
 
@@ -1842,16 +1906,19 @@
       queueBtn.disabled = Boolean(queueLocked || isQueue);
       queueBtn.setAttribute("aria-disabled", queueBtn.disabled ? "true" : "false");
       queueBtn.textContent = isQueue
-        ? "Вы уже в общей очереди"
-        : queueLocked ? "У вас уже есть запись" : ["failed", "noshow"].includes(current?.status) ? "Встать в очередь заново" : "Встать в общую очередь";
+        ? "Вы уже в предварительной записи"
+        : queueLocked ? "У вас уже есть запись" : ["failed", "noshow"].includes(current?.status) ? "Встать в предварительную запись заново" : "Встать в предварительную запись";
 
       document.getElementById("myStatus").innerHTML = current ? renderMyStatus(current) : `
-        <div class="notice">Заполните данные и выберите дату. Если даты не подходят, встаньте в общую очередь.</div>
+        <div class="notice">Заполните данные и выберите дату. Если даты не подходят, встаньте в предварительную запись.</div>
       `;
       renderTelegramConnect(current);
     }
 
     function renderTelegramConnect(current) {
+      if (current && !current.telegramChatId && tgApp?.initData) {
+        linkCurrentApplicationToTelegram(current);
+      }
       const target = document.getElementById("telegramConnect");
       if (!target) return;
       if (!current) {
@@ -1960,7 +2027,7 @@
             </div>
             <div class="status-date">
               <span>${shift ? "Дата стажировки" : "Текущий этап"}</span>
-              <b>${shift ? formatDate(shift.date) : "Общая очередь"}</b>
+              <b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b>
             </div>
           </div>
           <div class="notice status-message">${escapeHtml(meta.text)}</div>
@@ -1970,14 +2037,14 @@
           ${renderMentorReportNotice(app)}
           ${app.comment ? `<div class="notice">Комментарий рекрута: ${escapeHtml(app.comment)}</div>` : ""}
           ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
-          ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в очередь заново</button>` : ""}
+          ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись заново</button>` : ""}
         </article>
       `;
     }
 
     function stageItems() {
       return [
-        { title: "Заявка", hint: "Заявка есть в системе: выбрана дата или очередь.", icon: "file" },
+        { title: "Заявка", hint: "Заявка есть в системе: выбрана дата или предварительная запись.", icon: "file" },
         { title: "Подтверждение", hint: "Рекрут проверяет дату и подтверждает выход на стажировку.", icon: "check" },
         { title: "Приглашение", hint: "Рекрут отправляет площадку, ссылку на рабочую группу и инструкции.", icon: "send" },
         { title: "Стажировка", hint: "Кандидат выходит на стажировку по согласованной дате.", icon: "calendar" },
@@ -2154,7 +2221,7 @@
               </div>
               ${queue.length && shift.open ? `
                 <div class="notice">
-                  <b>Очередь без даты</b>
+                  <b>Предварительная запись</b>
                   <div class="compact-actions" style="margin-top:8px">
                     ${queue.map(app => `<button class="quiet" data-assign="${app.id}" data-shift="${shift.id}" type="button">${escapeHtml(app.name)}</button>`).join("")}
                   </div>
@@ -2198,7 +2265,7 @@
           ${renderCandidateStage(app, "recruiter-pending")}
           <div class="candidate-actions">
             <button class="primary" data-status="confirmed" data-id="${app.id}" type="button">Подтвердить стажировку</button>
-            <button class="secondary" data-return-queue="${app.id}" type="button">Вернуть в очередь</button>
+            <button class="secondary" data-return-queue="${app.id}" type="button">Вернуть в предзапись</button>
           </div>
         </article>
       `;
@@ -2225,7 +2292,9 @@
           ${renderCandidateStage(app, "recruiter-booked")}
           ${canManageAttendance ? `
             <div class="candidate-actions">
-              ${app.status !== "confirmed" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
+              ${["confirmed", "invited"].includes(app.status) ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>` : ""}
+              <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
+              ${app.status === "feedback" ? `<button class="secondary" data-status="confirmed" data-id="${app.id}" type="button">Откатить до подтвержден</button>` : ""}
               <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
             </div>
           ` : ""}
@@ -2236,7 +2305,7 @@
     function eligibleInviteCandidates(shiftId) {
       if (!shiftId) return [];
       return state.applications.filter(app => {
-        return String(app.shiftId) === String(shiftId) && ["confirmed", "invited"].includes(app.status);
+        return String(app.shiftId) === String(shiftId) && app.status === "confirmed";
       });
     }
 
@@ -2324,7 +2393,7 @@
             <div class="candidate-head">
               <div>
                 <div class="name">${escapeHtml(app.name)}</div>
-                <p class="meta">${shift ? `Дата: ${formatDate(shift.date)}` : "Очередь без даты"}<br>Ограничения: ${escapeHtml(app.limits || "нет")}</p>
+                <p class="meta">${shift ? `Дата: ${formatDate(shift.date)}` : "Предварительная запись"}<br>Ограничения: ${escapeHtml(app.limits || "нет")}</p>
               </div>
               <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
             </div>
@@ -2339,13 +2408,13 @@
             </label>
             ${showAfterActions ? `
               <div class="compact-actions">
-                ${["confirmed", "invited"].includes(app.status) ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Запросить фидбек</button>` : ""}
+                ${["confirmed", "invited"].includes(app.status) ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>` : ""}
                 <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
               </div>
             ` : ""}
             ${isFinal ? `
               <div class="compact-actions">
-                <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Откатить к фидбеку</button>
+                <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Откатить к отчету</button>
                 <button class="quiet" data-status="confirmed" data-id="${app.id}" type="button">Откатить к подтвержден</button>
               </div>
             ` : ""}
@@ -2416,9 +2485,8 @@ ${shift ? `<b>📅 Дата стажировки: ${escapeHtml(formatLongDate(sh
     }
 
     function composeFeedbackRequestedMessage() {
-      return `✅ Стажировка завершена.
-Спасибо за участие! Сейчас мы ожидаем обратную связь от вашего наставника.
-После проверки вы получите уведомление с результатом стажировки.`;
+      return `✅ Рекрут отметил, что вы вышли на стажировку.
+После отчёта наставника вы получите итог стажировки в личные сообщения.`;
     }
 
     function composePassedMessage() {
@@ -2430,12 +2498,12 @@ ${shift ? `<b>📅 Дата стажировки: ${escapeHtml(formatLongDate(sh
     function composeFailedMessage() {
       return `❌ К сожалению, стажировка не пройдена.
 Не расстраивайтесь — вы можете пройти стажировку повторно.
-Для этого снова встаньте в очередь на стажировку или запишитесь на удобную дату через бота.`;
+Для этого снова встаньте в предварительную запись на стажировку или запишитесь на удобную дату через бота.`;
     }
 
     function composeNoShowMessage() {
       return `⚠️ Вы не вышли на стажировку.
-Если вы всё ещё хотите пройти стажировку в LOFT HALL, пожалуйста, снова встаньте в очередь или запишитесь на новую дату через бота.
+Если вы всё ещё хотите пройти стажировку в LOFT HALL, пожалуйста, снова встаньте в предварительную запись или запишитесь на новую дату через бота.
 Если не сможете выйти в следующий раз, обязательно предупредите заранее.`;
     }
 
@@ -2685,12 +2753,31 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
         const memberIds = [...draft.memberIds];
         const venue = venueById(draft.venueId);
         const link = draft.link.trim();
-        await queueBookingCommand("send_invites", {
-          shiftId: Number(draft.shiftId),
-          venueId: draft.venueId,
-          link,
-          memberIds
-        });
+        setGroupInviteStatus("");
+        fields.groupLink.closest("label")?.classList.remove("invalid");
+        fields.groupLink.removeAttribute("aria-invalid");
+        if (!isValidInviteLink(link)) {
+          fields.groupLink.closest("label")?.classList.add("invalid");
+          fields.groupLink.setAttribute("aria-invalid", "true");
+          setGroupInviteStatus("Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...");
+          fields.groupLink.focus();
+          return;
+        }
+        try {
+          await queueBookingCommand(
+            "send_invites",
+            {
+              shiftId: Number(draft.shiftId),
+              venueId: draft.venueId,
+              link,
+              memberIds
+            },
+            { notify: false }
+          );
+        } catch (error) {
+          setGroupInviteStatus(friendlyBookingError(error));
+          return;
+        }
         memberIds.forEach(id => {
           const app = state.applications.find(item => String(item.id) === String(id));
           if (!app) return;
@@ -2747,6 +2834,9 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
     document.addEventListener("input", event => {
       if ([fields.traineeName, fields.traineeTraining, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
         syncProfile();
+        if (event.target === fields.traineeName) clearFieldValidation(fields.traineeName, fields.traineeNameError);
+        if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
+        if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();
         return;
       }
@@ -2771,6 +2861,9 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
         draft.link = fields.groupLink.value.trim();
         if (event.target === fields.groupShift) draft.memberIds = [];
         saveLocalSnapshot();
+        setGroupInviteStatus("");
+        fields.groupLink.closest("label")?.classList.remove("invalid");
+        fields.groupLink.removeAttribute("aria-invalid");
         if (event.target === fields.groupLink) {
           const venue = venueById(draft.venueId) || venues[0];
           document.getElementById("invitePreview").innerHTML = composeInviteMessage(venue, draft.link);
@@ -2782,6 +2875,15 @@ ${escapeHtml(link || "Ссылка на рабочую группу будет �
       }
       if (event.target === fields.newDate) {
         renderQuickDates();
+      }
+    });
+
+    document.addEventListener("change", event => {
+      if ([fields.traineeTraining, fields.traineeAttempt].includes(event.target)) {
+        syncProfile();
+        if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
+        if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
+        renderTrainee();
       }
     });
 

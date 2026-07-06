@@ -114,3 +114,49 @@ test('rejects trainee booking when shift has no free seats', () => {
     BookingValidationError
   );
 });
+
+test('rejects duplicate invite for already invited application', () => {
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        {
+          version: 4,
+          updatedAt: '2026-07-03T00:00:00.000Z',
+          shifts: [{ id: 1, date: '2026-07-10', seats: 3, open: true }],
+          applications: [
+            {
+              id: 10,
+              shiftId: 1,
+              name: 'Invited Trainee',
+              training: 'passed',
+              attempt: 'first',
+              status: 'invited',
+              inviteGroupId: 1,
+              venueId: 'loft1',
+              groupLink: 'https://t.me/+old'
+            }
+          ],
+          inviteGroups: [
+            {
+              id: 1,
+              shiftId: 1,
+              venueId: 'loft1',
+              link: 'https://t.me/+old',
+              memberIds: [10],
+              sentAt: '2026-07-03T00:30:00.000Z'
+            }
+          ]
+        },
+        {
+          action: 'send_invites',
+          baseVersion: 4,
+          shiftId: 1,
+          venueId: 'loft1',
+          link: 'https://t.me/+new',
+          memberIds: [10]
+        },
+        recruiterActor
+      ),
+    BookingValidationError
+  );
+});

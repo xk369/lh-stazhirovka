@@ -1964,6 +1964,18 @@
         { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
         { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOB HALL', 'LEVITAN HALL'] }
       ];
+      const BOOKING_VENUE_LABELS = {
+        loft1: 'LOFT #1',
+        loft2: 'LOFT #2',
+        loft3: 'LOFT #3',
+        loft4: 'LOFT #4',
+        loft5_contrabanda: 'LOFT #5 · CONTRABANDA',
+        loft5_small: 'LOFT #5 · SMALL',
+        loft8: 'LOFT #8',
+        loft10: 'LOFT #10 (TAU)',
+        birch: 'THE BIRCH',
+        metelitsa: 'МЕТЕЛИЦА'
+      };
       const tg = window.Telegram?.WebApp;
       const state = {
         screen: 'home', role: null, items: [], profileFields: [], summaryFields: [], profile: { date: '' }, answers: {},
@@ -2291,6 +2303,27 @@
       }
       function setRoleLabels() { $('#profileRole').textContent = roleLabels[state.role]; $('#checklistRole').textContent = roleLabels[state.role]; $('#reviewRole').textContent = roleLabels[state.role] }
       function hallValue(loft, hall) { return `${loft} ${hall}` }
+      function traineeResultVenueLabel() {
+        const selected = parseHallValue(state.profile.hall);
+        if (selected.hall) return `${selected.loft} · ${selected.hall}`;
+        return BOOKING_VENUE_LABELS[state.profile.bookingVenueId] || state.profile.hall || '—';
+      }
+      function mentorTraineeResultPayload() {
+        const items = roleItems().sort((a, b) => Number(a.item_order) - Number(b.item_order));
+        const failed = items.filter(item => state.answers[item.id]?.status === 'no');
+        const mastered = items.filter(item => state.answers[item.id]?.status === 'yes').length;
+        return {
+          date: state.profile.date || '',
+          venue: traineeResultVenueLabel(),
+          mastered,
+          total: items.length,
+          decision: state.summary.mentorDecision || '',
+          topicsToRepeat: failed.map(item => ({
+            order: Number(item.item_order),
+            title: MENTOR_REPORT_TOPICS[item.item_order] || item.text
+          }))
+        };
+      }
       function parseHallValue(value) {
         const text = String(value || '').trim();
         for (const group of HALL_GROUPS) {
@@ -2326,7 +2359,7 @@
         const preview = selected
           ? `<div class="trainee-preview ${warning ? 'warning' : ''}"><strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml([selected.date ? formatDate(selected.date) : '', selected.telegramUsername || 'Telegram не указан'].filter(Boolean).join(' · '))}</span><span class="trainee-status">${escapeHtml(selected.statusLabel || 'Приглашён')}</span>${warning ? `<span>${escapeHtml(warning)}</span>` : ''}</div>`
           : staleSelection
-            ? `<div class="trainee-preview warning"><strong>Выбранный стажёр больше недоступен</strong><span>Проверьте, что он ещё находится на этапе приглашения или ожидания фидбека.</span></div>`
+            ? `<div class="trainee-preview warning"><strong>Выбранный стажёр больше недоступен</strong><span>Проверьте, что он ещё находится на этапе приглашения или ожидания отчёта.</span></div>`
             : '';
         const helper = state.mentorTraineesError
           ? `<span class="field-help">${escapeHtml(state.mentorTraineesError)}</span>`
@@ -2605,7 +2638,8 @@
               reportText: reportText(),
               applicationId: state.role === 'mentor' ? state.profile.traineeApplicationId : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
-              mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined
+              mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
+              mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined
             }),
             signal: controller.signal
           });
