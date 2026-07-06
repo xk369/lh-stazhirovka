@@ -514,21 +514,25 @@
       position: fixed;
       left: 50%;
       top: 50%;
-      z-index: 50;
-      width: min(348px, calc(100vw - 24px));
+      z-index: 1000;
+      width: min(360px, calc(100vw - 24px));
+      max-height: min(320px, calc(100vh - 28px));
+      overflow: auto;
       display: grid;
-      gap: 7px;
-      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-      border-radius: 12px;
+      gap: 8px;
+      border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+      border-radius: 14px;
       background: color-mix(in srgb, var(--surface) 96%, var(--field));
       color: var(--text);
-      padding: 12px 13px;
+      padding: 13px 46px 13px 14px;
       line-height: 1.32;
       text-align: left;
-      box-shadow: var(--shadow-lift);
+      box-shadow: 0 18px 48px rgba(17,24,32,.18), var(--shadow-lift);
       transform: translate(-50%, calc(-100% - 12px));
-      pointer-events: none;
+      pointer-events: auto;
       animation: stagePopoverIn .18s ease-in-out both;
+      overflow-wrap: anywhere;
+      -webkit-overflow-scrolling: touch;
     }
     @keyframes stagePopoverIn {
       from {
@@ -544,6 +548,16 @@
       transform: translate(-50%, 10px);
       animation: stagePopoverBelowIn .18s ease-in-out both;
     }
+    .stage-popover.mobile {
+      left: 12px !important;
+      right: 12px;
+      top: auto !important;
+      bottom: calc(12px + env(safe-area-inset-bottom));
+      width: auto;
+      max-height: min(46vh, 340px);
+      transform: translateY(0);
+      animation: stagePopoverMobileIn .2s ease-in-out both;
+    }
     @keyframes stagePopoverBelowIn {
       from {
         opacity: 0;
@@ -554,6 +568,16 @@
         transform: translate(-50%, 10px) scale(1);
       }
     }
+    @keyframes stagePopoverMobileIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
     .stage-popover .stage-kicker {
       color: var(--accent);
       font-size: 11px;
@@ -562,14 +586,31 @@
       text-transform: uppercase;
     }
     .stage-popover .stage-title {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 950;
       line-height: 1.18;
     }
     .stage-popover .stage-text {
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.38;
+      font-size: 14px;
+      line-height: 1.42;
+    }
+    .stage-popover .stage-close {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      width: 30px;
+      height: 30px;
+      min-height: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--field);
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+      padding: 0;
     }
     .invite-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 12px; align-items: start; }
     .invite-layout > *,
@@ -724,17 +765,83 @@
     }
     .registry-card {
       display: grid;
-      gap: 9px;
-      border: 1px solid var(--line);
+      gap: 12px;
+      border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
       border-radius: 8px;
       background: var(--surface);
-      padding: 11px;
+      padding: 12px;
     }
     .registry-card-head {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: start;
+    }
+    .registry-person-name {
+      font-size: 19px;
+      line-height: 1.12;
+      font-weight: 950;
+      overflow-wrap: anywhere;
+    }
+    .registry-meta-line {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.32;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .registry-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .registry-tag {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--text);
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .registry-tag.ok {
+      color: var(--ok);
+      border-color: color-mix(in srgb, var(--ok) 32%, var(--line));
+      background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+    }
+    .registry-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .registry-row {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      padding: 9px;
+      display: grid;
+      gap: 3px;
+      overflow-wrap: anywhere;
+    }
+    .registry-row.full {
+      grid-column: 1 / -1;
+    }
+    .registry-row span {
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 950;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .registry-row b {
+      font-size: 13px;
+      line-height: 1.28;
     }
     .registry-card-grid {
       display: grid;
@@ -1271,6 +1378,7 @@
       .registry-summary { grid-template-columns: 1fr 1fr; }
       .registry-table-wrap { display: none; }
       .registry-cards { display: grid; }
+      .registry-details { grid-template-columns: 1fr 1fr; }
       .registry-card-grid { grid-template-columns: 1fr; }
       .timeline { grid-template-columns: 1fr; }
       .step-arrow { display: none; }
@@ -1416,7 +1524,6 @@
           <button class="subtab active" data-section="dates" type="button">Даты</button>
           <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
           <button class="subtab" data-section="groups" type="button">Группы</button>
-          <button class="subtab" data-section="registry" type="button">Реестр</button>
           <button class="subtab" data-section="create" type="button">Создать дату</button>
         </nav>
 
@@ -1449,7 +1556,7 @@
                 <p class="meta">Живая таблица из текущих заявок: статусы, даты, стажировка, площадка, Telegram и итоги наставников.</p>
               </div>
               <div class="registry-actions">
-                <button class="secondary" id="downloadTraineesCsvBtn" type="button">Скачать CSV</button>
+                <button class="secondary" id="downloadTraineesCsvBtn" type="button">Скачать на устройство</button>
                 <button class="quiet" data-section="dates" type="button">К стажировке</button>
               </div>
             </div>
@@ -1545,6 +1652,7 @@
     let profileSaveTimer = null;
     let bookingCommandQueue = Promise.resolve();
     let activeStageInfoId = "";
+    let activeStageButton = null;
     const statusMeta = {
       pending: {
         label: "Заявка отправлена",
@@ -1995,7 +2103,10 @@
         alert("Экспорт доступен только рекрутеру при запуске из Telegram.");
         return;
       }
-      try {
+      const fileName = `loft-trainees-${new Date().toISOString().slice(0, 10)}.csv`;
+      const exportUrl = new URL("/api/trainees/export.csv", window.location.origin);
+      exportUrl.searchParams.set("initData", telegramInitData());
+      const blobDownload = async () => {
         const response = await fetch("/api/trainees/export.csv", {
           headers: { "X-Telegram-Init-Data": telegramInitData() }
         });
@@ -2007,11 +2118,36 @@
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `loft-trainees-${new Date().toISOString().slice(0, 10)}.csv`;
+        link.download = fileName;
+        link.rel = "noopener";
         document.body.append(link);
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
+      };
+
+      try {
+        if (typeof tgApp?.downloadFile === "function") {
+          const downloaded = await new Promise(resolve => {
+            let settled = false;
+            try {
+              tgApp.downloadFile(
+                { url: exportUrl.toString(), file_name: fileName },
+                ok => {
+                  settled = true;
+                  resolve(Boolean(ok));
+                }
+              );
+              setTimeout(() => {
+                if (!settled) resolve(false);
+              }, 1200);
+            } catch (_) {
+              resolve(false);
+            }
+          });
+          if (downloaded) return;
+        }
+        await blobDownload();
       } catch (error) {
         alert(error.message || "Не удалось скачать таблицу стажеров.");
       }
@@ -2056,6 +2192,7 @@
     }
 
     function render() {
+      if (activeStageInfoId) hideStagePopovers();
       document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.role === role));
       document.getElementById("traineeView").classList.toggle("hidden", role !== "trainee");
       document.getElementById("recruiterView").classList.toggle("hidden", role !== "recruiter");
@@ -2313,7 +2450,6 @@
       const scope = options.scope || "trainee";
       const compact = Boolean(options.compact);
       const label = options.label || "Этапы заявки";
-      const popoverId = `stageInfo-${scope}-${app.id}`;
       const current = stageNumber(app);
       const stages = stageItems();
       return `
@@ -2322,13 +2458,12 @@
             const number = index + 1;
             const stateClass = number < current ? "done" : number === current ? "current" : "";
             return `
-              <button class="stage-node ${stateClass}" data-stage-index="${number}" data-stage-app="${app.id}" data-stage-info="${popoverId}" type="button" aria-label="${escapeHtml(item.title)}" aria-describedby="${popoverId}" aria-expanded="false" ${number === current ? "aria-current=\"step\"" : ""}>
+              <button class="stage-node ${stateClass}" data-stage-index="${number}" data-stage-scope="${escapeHtml(scope)}" data-stage-app="${app.id}" type="button" aria-label="${escapeHtml(item.title)}" aria-describedby="stagePopover" aria-expanded="false" ${number === current ? "aria-current=\"step\"" : ""}>
                 <span class="stage-dot">${stageIcon(item.icon)}</span>
               </button>
             `;
           }).join("")}
         </div>
-        <div class="stage-popover hidden" id="${popoverId}"></div>
       `;
     }
 
@@ -2347,29 +2482,45 @@
       return "Следующий этап";
     }
 
+    function stagePopoverElement() {
+      let popover = document.getElementById("stagePopover");
+      if (!popover) {
+        popover = document.createElement("div");
+        popover.id = "stagePopover";
+        popover.className = "stage-popover hidden";
+        popover.setAttribute("role", "dialog");
+        popover.setAttribute("aria-live", "polite");
+        document.body.append(popover);
+      }
+      return popover;
+    }
+
     function hideStagePopovers(exceptId = "") {
-      document.querySelectorAll(".stage-popover").forEach(popover => {
-        if (exceptId && popover.id === exceptId) return;
+      const popover = document.getElementById("stagePopover");
+      if (popover && (!exceptId || popover.id !== exceptId)) {
         popover.classList.add("hidden");
-        popover.classList.remove("below");
-      });
-      document.querySelectorAll("[data-stage-info]").forEach(button => {
-        if (exceptId && button.dataset.stageInfo === exceptId) return;
+        popover.classList.remove("below", "mobile");
+      }
+      document.querySelectorAll("[data-stage-index]").forEach(button => {
         button.setAttribute("aria-expanded", "false");
       });
-      if (!exceptId || activeStageInfoId !== exceptId) activeStageInfoId = "";
+      if (!exceptId || activeStageInfoId !== exceptId) {
+        activeStageInfoId = "";
+        activeStageButton = null;
+      }
     }
 
     function showStagePopover(button, item, options = {}) {
-      const info = document.getElementById(button.dataset.stageInfo);
+      const info = stagePopoverElement();
       if (!info || !item) return;
-      if (options.toggle && activeStageInfoId === info.id && !info.classList.contains("hidden")) {
+      if (options.toggle && activeStageButton === button && !info.classList.contains("hidden")) {
         hideStagePopovers();
         return;
       }
       hideStagePopovers(info.id);
       const rect = button.getBoundingClientRect();
       const popoverWidth = Math.min(348, window.innerWidth - 24);
+      const isMobile = window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
       const left = Math.min(
         Math.max(rect.left + rect.width / 2, popoverWidth / 2 + 12),
         window.innerWidth - popoverWidth / 2 - 12
@@ -2382,16 +2533,19 @@
       const current = app ? stageNumber(app) : Number(button.dataset.stageIndex);
       const stageIndex = Number(button.dataset.stageIndex);
       info.innerHTML = `
+        <button class="stage-close" data-stage-close type="button" aria-label="Закрыть подсказку">×</button>
         <span class="stage-kicker">${escapeHtml(stageProgressLabel(stageIndex, current))}</span>
         <strong class="stage-title">${escapeHtml(item.title)}</strong>
         <span class="stage-text">${escapeHtml(item.hint)}</span>
       `;
       info.style.left = `${left}px`;
       info.style.top = `${top}px`;
-      info.classList.toggle("below", showBelow);
+      info.classList.toggle("below", showBelow && !isMobile);
+      info.classList.toggle("mobile", isMobile);
       info.classList.remove("hidden");
       button.setAttribute("aria-expanded", "true");
       activeStageInfoId = info.id;
+      activeStageButton = button;
       clearTimeout(stagePopoverTimers.get(info.id));
       if (options.temporary) {
         stagePopoverTimers.set(info.id, setTimeout(() => {
@@ -2767,6 +2921,16 @@
       return `<span class="pill ${statusPill[row.status] || "wait"}">${escapeHtml(row.statusLabel)}</span>`;
     }
 
+    function registryTrainingTags(row) {
+      return `
+        <div class="registry-tags">
+          <span class="registry-tag ${row.training === "Тренинг пройден" ? "ok" : ""}">${escapeHtml(row.training)}</span>
+          <span class="registry-tag">${escapeHtml(row.attempt)}</span>
+          <span class="registry-tag ${row.mentorReport === "Получен" ? "ok" : ""}">Отчет: ${escapeHtml(row.mentorReport.toLowerCase())}</span>
+        </div>
+      `;
+    }
+
     function renderRegistryTable(rows) {
       if (!rows.length) return `<div class="registry-empty">По таким условиям стажёров не найдено.</div>`;
       return `
@@ -2776,9 +2940,9 @@
               <tr>
                 <th>ФИО</th>
                 <th>Статус</th>
-                <th>Дата</th>
-                <th>Стажировка</th>
-                <th>Площадка</th>
+                <th>Дата и площадка</th>
+                <th>Профиль</th>
+                <th>Группа</th>
                 <th>Telegram</th>
                 <th>Наставник</th>
                 <th>Ограничения</th>
@@ -2789,11 +2953,11 @@
                 <tr>
                   <td class="name-cell">${escapeHtml(row.name)}</td>
                   <td>${renderRegistryStatus(row)}</td>
-                  <td>${escapeHtml(row.dateText)}</td>
-                  <td>${escapeHtml(row.training)}<br><span class="meta">${escapeHtml(row.attempt)}</span></td>
-                  <td>${escapeHtml(row.venue)}<br>${renderRegistryLink(row.groupLink, "Группа")}</td>
+                  <td><b>${escapeHtml(row.dateText)}</b><br><span class="meta">${escapeHtml(row.venue)}</span></td>
+                  <td>${registryTrainingTags(row)}</td>
+                  <td>${renderRegistryLink(row.groupLink, "Открыть группу")}</td>
                   <td>${escapeHtml(row.telegram || "—")}</td>
-                  <td class="wide-cell">${escapeHtml(row.mentorReport)}<br><span class="meta">${escapeHtml(row.mentorDecision)}</span></td>
+                  <td class="wide-cell"><b>${escapeHtml(row.mentorReport)}</b><br><span class="meta">${escapeHtml(row.mentorDecision)}</span></td>
                   <td class="wide-cell">${escapeHtml(row.limits)}</td>
                 </tr>
               `).join("")}
@@ -2805,18 +2969,18 @@
             <article class="registry-card">
               <div class="registry-card-head">
                 <div>
-                  <h3>${escapeHtml(row.name)}</h3>
-                  <p class="meta">${escapeHtml(row.dateText)} · ${escapeHtml(row.venue)}</p>
+                  <div class="registry-person-name">${escapeHtml(row.name)}</div>
+                  <div class="registry-meta-line">${escapeHtml(row.dateText)} · ${escapeHtml(row.venue)}</div>
                 </div>
                 ${renderRegistryStatus(row)}
               </div>
-              <div class="registry-card-grid">
-                <div class="registry-field"><span>Стажировка</span>${escapeHtml(row.training)}<br>${escapeHtml(row.attempt)}</div>
-                <div class="registry-field"><span>Telegram</span>${escapeHtml(row.telegram || "—")}</div>
-                <div class="registry-field"><span>Наставник</span>${escapeHtml(row.mentorReport)} · ${escapeHtml(row.mentorDecision)}</div>
-                <div class="registry-field"><span>Группа</span>${renderRegistryLink(row.groupLink, "Открыть")}</div>
+              ${registryTrainingTags(row)}
+              <div class="registry-details">
+                <div class="registry-row"><span>Telegram</span><b>${escapeHtml(row.telegram || "—")}</b></div>
+                <div class="registry-row"><span>Группа</span><b>${renderRegistryLink(row.groupLink, "Открыть")}</b></div>
+                <div class="registry-row full"><span>Наставник</span><b>${escapeHtml(row.mentorReport)} · ${escapeHtml(row.mentorDecision)}</b></div>
+                <div class="registry-row full"><span>Ограничения</span><b>${escapeHtml(row.limits)}</b></div>
               </div>
-              <div class="registry-field"><span>Ограничения</span>${escapeHtml(row.limits)}</div>
             </article>
           `).join("")}
         </div>
@@ -3049,6 +3213,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         }
         const clickedStage = event.target.closest("[data-stage-index]");
         if (!clickedStage && !event.target.closest(".stage-popover")) hideStagePopovers();
+        if (event.target.closest("[data-stage-close]")) {
+          hideStagePopovers();
+          return;
+        }
       if (event.target.id === "recruiterCabinetBtn") {
         role = role === "recruiter" ? "trainee" : "recruiter";
         render();
@@ -3248,7 +3416,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
       const stage = event.target.closest("[data-stage-index]");
       if (!stage || stage.contains(event.relatedTarget)) return;
-      const infoId = stage.dataset.stageInfo;
+      const infoId = "stagePopover";
       clearTimeout(stagePopoverTimers.get(infoId));
       stagePopoverTimers.set(infoId, setTimeout(() => {
         const popover = document.getElementById(infoId);
