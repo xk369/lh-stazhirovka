@@ -4,7 +4,8 @@ import {
   BookingConflictError,
   BookingValidationError,
   applyBookingCommand,
-  bookingStateForActor
+  bookingStateForActor,
+  traineesCsvFromState
 } from '../src/server.js';
 
 const recruiterActor = {
@@ -159,4 +160,117 @@ test('rejects duplicate invite for already invited application', () => {
       ),
     BookingValidationError
   );
+});
+
+test('rejects attendance status before group invite is sent', () => {
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        {
+          version: 5,
+          updatedAt: '2026-07-03T00:00:00.000Z',
+          shifts: [{ id: 1, date: '2026-07-10', seats: 3, open: true }],
+          applications: [
+            {
+              id: 10,
+              shiftId: 1,
+              name: 'Confirmed Trainee',
+              training: 'passed',
+              attempt: 'first',
+              status: 'confirmed'
+            }
+          ],
+          inviteGroups: []
+        },
+        { action: 'set_application_status', baseVersion: 5, applicationId: 10, status: 'feedback' },
+        recruiterActor
+      ),
+    BookingValidationError
+  );
+});
+
+test('allows attendance status after group invite is sent', () => {
+  const next = applyBookingCommand(
+    {
+      version: 5,
+      updatedAt: '2026-07-03T00:00:00.000Z',
+      shifts: [{ id: 1, date: '2026-07-10', seats: 3, open: true }],
+      applications: [
+        {
+          id: 10,
+          shiftId: 1,
+          name: 'Invited Trainee',
+          training: 'passed',
+          attempt: 'first',
+          status: 'invited',
+          inviteGroupId: 20,
+          venueId: 'loft5_small',
+          groupLink: 'https://t.me/+group'
+        }
+      ],
+      inviteGroups: [
+        {
+          id: 20,
+          shiftId: 1,
+          venueId: 'loft5_small',
+          link: 'https://t.me/+group',
+          memberIds: [10],
+          sentAt: '2026-07-03T00:30:00.000Z'
+        }
+      ]
+    },
+    { action: 'set_application_status', baseVersion: 5, applicationId: 10, status: 'feedback' },
+    recruiterActor,
+    new Date('2026-07-03T02:00:00.000Z')
+  );
+
+  assert.equal(next.applications[0].status, 'feedback');
+});
+
+test('exports trainee table as excel-friendly csv', () => {
+  const csv = traineesCsvFromState({
+    version: 7,
+    updatedAt: '2026-07-03T02:00:00.000Z',
+    shifts: [{ id: 1, date: '2026-07-10', seats: 3, open: true }],
+    applications: [
+      {
+        id: 10,
+        shiftId: 1,
+        name: 'Иванов Иван',
+        training: 'passed',
+        attempt: 'repeat',
+        limits: 'После 17:00',
+        status: 'feedback',
+        inviteGroupId: 20,
+        venueId: 'loft5_small',
+        groupLink: 'https://t.me/+group',
+        telegramUsername: 'ivanov',
+        telegramUserId: '999',
+        telegramChatId: '999',
+        mentorReport: true,
+        mentorReportAt: '2026-07-10T20:00:00.000Z',
+        mentorDecision: 'Стажировка пройдена',
+        mentorCommentDeliveryStatus: 'sent',
+        createdAt: '2026-07-01T10:00:00.000Z'
+      }
+    ],
+    inviteGroups: [
+      {
+        id: 20,
+        shiftId: 1,
+        venueId: 'loft5_small',
+        link: 'https://t.me/+group',
+        memberIds: [10],
+        sentAt: '2026-07-03T00:30:00.000Z'
+      }
+    ]
+  });
+
+  assert.ok(csv.startsWith('\uFEFFID;ФИО;Статус;'));
+  assert.match(csv, /Иванов Иван/);
+  assert.match(csv, /Ждем отчет/);
+  assert.match(csv, /2026-07-10/);
+  assert.match(csv, /LOFT#5 SMALL/);
+  assert.match(csv, /@ivanov/);
+  assert.match(csv, /Стажировка пройдена/);
 });

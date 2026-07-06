@@ -57,6 +57,36 @@ const FINAL_BOOKING_STATUSES = new Set(['passed', 'failed', 'noshow']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
+const BOOKING_STATUS_LABELS = {
+  pending: 'Заявка отправлена',
+  queue: 'Предварительная запись',
+  confirmed: 'Выход подтвержден',
+  invited: 'Приглашение отправлено',
+  feedback: 'Ждем отчет',
+  passed: 'Стажировка пройдена',
+  failed: 'Нужна повторная запись',
+  noshow: 'Выход не состоялся'
+};
+const TRAINING_LABELS = {
+  passed: 'Тренинг пройден',
+  not_passed: 'Тренинг не пройден'
+};
+const ATTEMPT_LABELS = {
+  first: 'Первая стажировка',
+  repeat: 'Повторная стажировка'
+};
+const VENUE_LABELS = {
+  loft1: 'LOFT#1',
+  loft2: 'LOFT#2',
+  loft3: 'LOFT#3',
+  loft4: 'LOFT#4',
+  loft5_contrabanda: 'LOFT#5 CONTRABANDA',
+  loft5_small: 'LOFT#5 SMALL',
+  loft8: 'LOFT#8',
+  loft10: 'LOFT#10 (TAU)',
+  birch: 'THE BIRCH',
+  metelitsa: 'МЕТЕЛИЦА'
+};
 
 class BookingValidationError extends Error {
   constructor(message) {
@@ -572,6 +602,117 @@ function bookingStateForActor(state, actor) {
   };
 }
 
+function csvCell(value) {
+  const text = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+  if (/[;"\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function csvLine(values) {
+  return values.map(csvCell).join(';');
+}
+
+function applicationShift(state, application) {
+  return state.shifts.find(shift => String(shift.id) === String(application.shiftId)) || null;
+}
+
+function applicationInviteGroup(state, application) {
+  return state.inviteGroups.find(group => String(group.id) === String(application.inviteGroupId)) || null;
+}
+
+function applicationVenueLabel(application, group) {
+  const venueId = application.venueId || group?.venueId || '';
+  return VENUE_LABELS[venueId] || venueId;
+}
+
+function traineeTableRowsFromState(state) {
+  const cleanState = normalizeBookingState(state);
+  return cleanState.applications
+    .map(application => {
+      const status = normalizeLegacyStatus(application.status);
+      const shift = applicationShift(cleanState, application);
+      const group = applicationInviteGroup(cleanState, application);
+      return {
+        id: application.id,
+        name: application.name,
+        status,
+        statusLabel: BOOKING_STATUS_LABELS[status] || status,
+        date: shift?.date || '',
+        shiftId: application.shiftId || '',
+        training: application.training,
+        trainingLabel: TRAINING_LABELS[application.training] || application.training || '',
+        attempt: application.attempt,
+        attemptLabel: ATTEMPT_LABELS[application.attempt] || application.attempt || '',
+        limits: application.limits || '',
+        venueId: application.venueId || group?.venueId || '',
+        venue: applicationVenueLabel(application, group),
+        groupLink: application.groupLink || group?.link || '',
+        inviteGroupId: application.inviteGroupId || '',
+        telegramUsername: application.telegramUsername ? `@${application.telegramUsername.replace(/^@/, '')}` : '',
+        telegramUserId: application.telegramUserId || '',
+        telegramChatId: application.telegramChatId || '',
+        mentorReport: application.mentorReport ? 'да' : 'нет',
+        mentorReportAt: application.mentorReportAt || '',
+        mentorDecision: application.mentorDecision || '',
+        mentorMessageStatus: application.mentorCommentDeliveryStatus || '',
+        createdAt: application.createdAt || '',
+        stateUpdatedAt: cleanState.updatedAt
+      };
+    })
+    .sort((left, right) => {
+      const leftDate = left.date || '9999-12-31';
+      const rightDate = right.date || '9999-12-31';
+      if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+      return String(left.name).localeCompare(String(right.name), 'ru');
+    });
+}
+
+function traineesCsvFromState(state) {
+  const headers = [
+    'ID',
+    'ФИО',
+    'Статус',
+    'Дата стажировки',
+    'Тренинг',
+    'Стажировка',
+    'Ограничения',
+    'Площадка',
+    'Ссылка группы',
+    'Telegram username',
+    'Telegram user ID',
+    'Telegram chat ID',
+    'Отчет наставника',
+    'Дата отчета наставника',
+    'Итог наставника',
+    'Статус ЛС стажеру',
+    'Создано',
+    'State обновлен'
+  ];
+  const lines = traineeTableRowsFromState(state).map(row => csvLine([
+    row.id,
+    row.name,
+    row.statusLabel,
+    row.date,
+    row.trainingLabel,
+    row.attemptLabel,
+    row.limits,
+    row.venue,
+    row.groupLink,
+    row.telegramUsername,
+    row.telegramUserId,
+    row.telegramChatId,
+    row.mentorReport,
+    row.mentorReportAt,
+    row.mentorDecision,
+    row.mentorMessageStatus,
+    row.createdAt,
+    row.stateUpdatedAt
+  ]));
+  return `\uFEFF${csvLine(headers)}\n${lines.join('\n')}${lines.length ? '\n' : ''}`;
+}
+
 function splitFullName(value) {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
   return { lastName: parts.shift() || '', firstName: parts.join(' ') };
@@ -899,6 +1040,12 @@ function applySetApplicationStatus(state, command, actor) {
   const { index, application } = requireApplication(next, command.applicationId);
   if (status === 'confirmed' && !application.shiftId) {
     throw new BookingValidationError('confirmed application must have shiftId.');
+  }
+  if (status === 'invited' && !applicationHasInviteGroup(application)) {
+    throw new BookingValidationError('Сначала отправьте кандидату приглашение в рабочую группу.');
+  }
+  if (['feedback', 'noshow'].includes(status) && !applicationHasInviteGroup(application)) {
+    throw new BookingValidationError('Сначала отправьте кандидату приглашение в рабочую группу.');
   }
   next.applications[index] = { ...application, status };
   return next;
@@ -1431,6 +1578,21 @@ app.post('/api/debug/telegram-user', (request, response) => {
   }
 });
 
+app.get('/api/trainees/export.csv', async (request, response, next) => {
+  try {
+    requireRecruiterActor(request);
+    const state = await readBookingState();
+    const date = new Date().toISOString().slice(0, 10);
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    response.setHeader('Content-Disposition', `attachment; filename="loft-trainees-${date}.csv"`);
+    response.send(traineesCsvFromState(state));
+  } catch (error) {
+    if (handleBookingAuthError(response, error)) return;
+    next(error);
+  }
+});
+
 app.get('/api/report/trainees', async (request, response) => {
   try {
     validateRequestInitData(initDataFromRequest(request));
@@ -1605,7 +1767,9 @@ export {
   bookingStateForActor,
   composeMentorTraineeResultMessage,
   mentorTraineesFromState,
-  normalizeBookingState
+  normalizeBookingState,
+  traineesCsvFromState,
+  traineeTableRowsFromState
 };
 
 const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __filename;
