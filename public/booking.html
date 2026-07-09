@@ -1869,6 +1869,10 @@
           <section class="panel">
             <h2>Шаблоны для рабочих групп</h2>
             <p class="meta">После отправки приглашений здесь появится готовый текст для менеджеров рабочей группы: скопируйте сообщение, откройте группу и отправьте его вручную.</p>
+            <label>Менеджер, который назначит время выхода
+              <input id="workgroupManager" placeholder="Например: Анастасия @username">
+              <span class="field-help">Если поле оставить пустым, в шаблоне останется место, куда рекрут допишет менеджера вручную.</span>
+            </label>
             <div class="list" id="sentGroups"></div>
           </section>
         </section>
@@ -1985,6 +1989,7 @@
       groupShift: document.getElementById("groupShift"),
       groupVenue: document.getElementById("groupVenue"),
       groupLink: document.getElementById("groupLink"),
+      workgroupManager: document.getElementById("workgroupManager"),
       groupInviteStatus: document.getElementById("groupInviteStatus")
     };
 
@@ -2012,7 +2017,7 @@
           { id: 3, date: "2026-07-02", seats: 5, open: true }
         ],
         applications: [],
-        inviteDraft: { shiftId: 1, venueId: "loft1", link: "", memberIds: [] },
+        inviteDraft: { shiftId: 1, venueId: "loft1", link: "", memberIds: [], workgroupManager: "" },
         inviteGroups: []
       };
     }
@@ -2047,7 +2052,7 @@
         inviteGroups: Array.isArray(source.inviteGroups) ? source.inviteGroups : []
       };
       loaded.profile.activeAppId = loaded.profile.activeAppId || null;
-      loaded.inviteDraft = loaded.inviteDraft || { shiftId: loaded.shifts[0]?.id || null, venueId: "loft1", link: "", memberIds: [] };
+      loaded.inviteDraft = { shiftId: loaded.shifts[0]?.id || null, venueId: "loft1", link: "", memberIds: [], workgroupManager: "", ...(loaded.inviteDraft || {}) };
       loaded.inviteGroups = loaded.inviteGroups || [];
       return loaded;
     }
@@ -3044,13 +3049,17 @@
     }
 
     function composeWorkgroupTemplate(group) {
-      const members = applicationsForInviteGroup(group);
+      const members = Array.isArray(group?.members) ? group.members : applicationsForInviteGroup(group);
       const intro = members.length > 1
         ? "С вами будут работать стажёры (смена на 6 часов) —"
         : "С вами будет работать стажёр (смена на 6 часов) —";
       const memberLines = members.length
         ? members.map(traineeWorkgroupLine).join("\n")
         : "Стажёры не найдены";
+      const manager = String(state.inviteDraft?.workgroupManager || "").trim();
+      const managerLine = manager
+        ? `Время выхода назначит менеджер: ${manager}`
+        : "Время выхода назначит менеджер: __________";
       return `Добрый день!
 
 ${intro}
@@ -3061,29 +3070,68 @@ ${memberLines}
 - выучить меню;
 - взять с собой блокнот, ручку, нарзаник.
 
-Время выхода назначит менеджер Ринат @Ne_radb
+${managerLine}
 
 #стажировка`;
     }
 
-    function renderSentGroupTemplates() {
-      if (!state.inviteGroups.length) return `<div class="empty">Пока нет отправленных групп.</div>`;
-      const groupsByVenue = new Map();
-      state.inviteGroups
-        .slice()
+    function normalizeWorkgroupLink(link) {
+      return String(link || "").trim().replace(/\/+$/, "");
+    }
+
+    function workgroupTemplateGroups() {
+      const map = new Map();
+      state.inviteGroups.forEach(group => {
+        const linkKey = normalizeWorkgroupLink(group.link) || `group:${group.id}`;
+        const venueKey = group.venueId || "unknown";
+        const key = `${venueKey}::${linkKey}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            venueId: group.venueId,
+            link: group.link,
+            groups: [],
+            membersById: new Map(),
+            shiftsById: new Map()
+          });
+        }
+        const workgroup = map.get(key);
+        workgroup.groups.push(group);
+        if (group.link && !workgroup.link) workgroup.link = group.link;
+        const shift = state.shifts.find(item => String(item.id) === String(group.shiftId));
+        if (shift) workgroup.shiftsById.set(String(shift.id), shift);
+        applicationsForInviteGroup(group).forEach(app => {
+          workgroup.membersById.set(String(app.id), app);
+          const appShift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+          if (appShift) workgroup.shiftsById.set(String(appShift.id), appShift);
+        });
+      });
+      return [...map.values()]
+        .map(workgroup => ({
+          ...workgroup,
+          members: [...workgroup.membersById.values()].sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ru")),
+          shifts: [...workgroup.shiftsById.values()].sort((left, right) => String(left.date || "").localeCompare(String(right.date || "")))
+        }))
         .sort((left, right) => {
           const leftVenue = venueById(left.venueId)?.name || left.venueId || "";
           const rightVenue = venueById(right.venueId)?.name || right.venueId || "";
           if (leftVenue !== rightVenue) return leftVenue.localeCompare(rightVenue, "ru");
-          const leftShift = state.shifts.find(shift => String(shift.id) === String(left.shiftId))?.date || "";
-          const rightShift = state.shifts.find(shift => String(shift.id) === String(right.shiftId))?.date || "";
-          return rightShift.localeCompare(leftShift) || String(right.id).localeCompare(String(left.id));
-        })
-        .forEach(group => {
+          const leftDate = left.shifts.at(-1)?.date || "";
+          const rightDate = right.shifts.at(-1)?.date || "";
+          return rightDate.localeCompare(leftDate) || String(right.key).localeCompare(String(left.key));
+        });
+    }
+
+    function renderSentGroupTemplates() {
+      const templateGroups = workgroupTemplateGroups();
+      if (!templateGroups.length) return `<div class="empty">Пока нет отправленных групп.</div>`;
+      const groupsByVenue = new Map();
+      templateGroups.forEach((group, index) => {
+          group.templateIndex = index;
           const key = group.venueId || "unknown";
           if (!groupsByVenue.has(key)) groupsByVenue.set(key, []);
           groupsByVenue.get(key).push(group);
-        });
+      });
 
       return [...groupsByVenue.entries()].map(([venueId, groups]) => {
         const venue = venueById(venueId);
@@ -3095,22 +3143,21 @@ ${memberLines}
             </div>
             ${groups.map(group => {
               const groupVenue = venueById(group.venueId);
-              const groupShift = state.shifts.find(shift => String(shift.id) === String(group.shiftId));
-              const members = applicationsForInviteGroup(group);
-              const names = members.map(app => app.name).filter(Boolean).join(", ");
+              const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
+              const names = group.members.map(app => app.name).filter(Boolean).join(", ");
               const template = composeWorkgroupTemplate(group);
               return `
                 <article class="sent-group">
                   <div class="head">
                     <div>
                       <b>${escapeHtml(groupVenue?.name || "Площадка")}</b>
-                      <div class="meta">${groupShift ? formatDate(groupShift.date) : "без даты"} · ${escapeHtml(names || "нет кандидатов")}</div>
+                      <div class="meta">${escapeHtml(dates)} · ${escapeHtml(names || "нет кандидатов")}</div>
                     </div>
-                    <span class="pill ok">Готово</span>
+                    <span class="pill ok">${group.members.length} чел.</span>
                   </div>
                   <div class="workgroup-template">${escapeHtml(template)}</div>
                   <div class="workgroup-actions">
-                    <button class="secondary" data-copy-workgroup="${group.id}" type="button">Скопировать шаблон</button>
+                    <button class="secondary" data-copy-workgroup="${group.templateIndex}" type="button">Скопировать шаблон</button>
                     <a class="quiet" href="${escapeHtml(group.link)}" data-external-link target="_blank" rel="noopener">Открыть группу</a>
                   </div>
                 </article>
@@ -3141,6 +3188,7 @@ ${memberLines}
       fields.groupShift.innerHTML = shiftOptions || `<option value="">Нет дат</option>`;
       fields.groupVenue.innerHTML = venueOptions;
       fields.groupLink.value = draft.link || "";
+      if (fields.workgroupManager) fields.workgroupManager.value = draft.workgroupManager || "";
 
       const venue = venueById(draft.venueId) || venues[0];
       document.getElementById("venueCard").innerHTML = `
@@ -3486,10 +3534,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     }
 
     function ensureInviteDraft() {
-      state.inviteDraft = state.inviteDraft || { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [] };
+      state.inviteDraft = { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [], workgroupManager: "", ...(state.inviteDraft || {}) };
       if (!state.inviteDraft.shiftId && state.shifts.length) state.inviteDraft.shiftId = state.shifts[0].id;
       if (!state.inviteDraft.venueId) state.inviteDraft.venueId = venues[0].id;
       state.inviteDraft.memberIds = state.inviteDraft.memberIds || [];
+      state.inviteDraft.workgroupManager = String(state.inviteDraft.workgroupManager || "");
       return state.inviteDraft;
     }
 
@@ -3612,7 +3661,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         }
         const copyWorkgroup = event.target.closest("[data-copy-workgroup]");
         if (copyWorkgroup) {
-          const group = state.inviteGroups.find(item => String(item.id) === String(copyWorkgroup.dataset.copyWorkgroup));
+          const group = workgroupTemplateGroups()[Number(copyWorkgroup.dataset.copyWorkgroup)];
           if (!group) return;
           const previousText = copyWorkgroup.textContent;
           try {
@@ -3820,7 +3869,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (serverRole !== "recruiter" || !unlocked) return;
         if (!confirm("Точно очистить все даты, заявки и группы? Действие затронет общий серверный state.")) return;
         await queueBookingCommand("clear_state");
-        state.inviteDraft = { shiftId: null, venueId: "loft1", link: "", memberIds: [] };
+        state.inviteDraft = { shiftId: null, venueId: "loft1", link: "", memberIds: [], workgroupManager: state.inviteDraft?.workgroupManager || "" };
         saveLocalSnapshot();
         fillProfile();
         event.target.closest(".recruiter-more")?.removeAttribute("open");
@@ -3873,6 +3922,13 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
             { notify: false }
           ).catch(() => {});
         }, 650));
+      }
+      if (event.target === fields.workgroupManager) {
+        const draft = ensureInviteDraft();
+        draft.workgroupManager = fields.workgroupManager.value.trim();
+        saveLocalSnapshot();
+        document.getElementById("sentGroups").innerHTML = renderSentGroupTemplates();
+        return;
       }
       if ([fields.groupShift, fields.groupVenue, fields.groupLink].includes(event.target)) {
         const draft = ensureInviteDraft();
