@@ -46,14 +46,6 @@
     button[aria-disabled="true"] { cursor: not-allowed; opacity: 1; }
     .app { width: min(100%, 840px); margin: 0 auto; padding: 18px 14px 34px; overflow-x: clip; }
     .top { display: grid; gap: 12px; margin-bottom: 12px; }
-    .tools {
-      display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: max-content;
-      justify-content: end;
-      align-items: center;
-      gap: 8px;
-    }
     h1 { margin: 0; font-size: 32px; line-height: 1.06; letter-spacing: 0; }
     h2 { margin: 0; font-size: 21px; line-height: 1.18; letter-spacing: 0; }
     h3 { margin: 0; font-size: 17px; line-height: 1.25; letter-spacing: 0; }
@@ -225,8 +217,20 @@
       line-height: 1.35;
       font-weight: 700;
     }
-    .select-hint { display: none; }
-    .has-select-hint:focus-within .select-hint { display: block; }
+    .select-hint {
+      display: block;
+      min-height: 34px;
+      margin-top: 2px;
+      opacity: .78;
+    }
+    .has-select-hint {
+      display: grid;
+      align-content: start;
+    }
+    .has-select-hint:focus-within .select-hint {
+      color: var(--text);
+      opacity: 1;
+    }
     .field-error:empty { display: none; }
     .field-error { color: var(--bad); }
     .form-status {
@@ -1115,6 +1119,56 @@
       gap: 14px;
       min-width: 0;
     }
+    .shell-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+    }
+    .back-home-link {
+      width: fit-content;
+      max-width: 100%;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0 13px 0 10px;
+      font-size: 13px;
+      font-weight: 950;
+      line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .back-home-link span:first-child {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+      font-size: 19px;
+      line-height: 1;
+    }
+    .role-toggle {
+      width: 42px;
+      height: 42px;
+      min-width: 42px;
+      min-height: 42px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+      border-radius: 999px;
+      background: var(--field);
+      color: var(--accent);
+      padding: 0;
+      font-size: 16px;
+      font-weight: 950;
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 11%, transparent);
+    }
     h1 {
       font-size: clamp(38px, 9vw, 58px);
       line-height: .94;
@@ -1289,38 +1343,10 @@
       padding: 0 13px;
       text-decoration: none;
     }
-    .tool-button {
-      min-width: 116px;
-      min-height: 38px;
-      border-radius: 999px;
-      padding: 0 14px;
-      font-size: 13px;
-      font-weight: 900;
-      white-space: nowrap;
-    }
-    .tool-button.home-link {
-      min-width: 124px;
-    }
-    .tool-button.registry-tool {
-      min-width: 136px;
-    }
-    .tool-button.danger-tool {
-      min-width: 112px;
-      color: var(--bad);
-      background: color-mix(in srgb, var(--bad) 9%, var(--surface));
-      border-color: color-mix(in srgb, var(--bad) 24%, var(--line));
-    }
-    .home-link {
-      color: var(--accent);
-      background: var(--accent-soft);
-      border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
-    }
-    .tools { align-items: center; }
     .head > *,
     .date-head > *,
     .candidate-head > *,
     .top .head > *,
-    .tools > *,
     .subtabs > *,
     .stats > * {
       min-width: 0;
@@ -1422,6 +1448,90 @@
       height: 28px;
       box-shadow: 0 0 0 4px var(--accent-soft);
     }
+    .recruiter-nav {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) minmax(120px, .85fr) minmax(120px, .85fr) auto;
+      gap: 10px;
+      align-items: stretch;
+      margin: 10px 0 12px;
+    }
+    .recruiter-nav .subtab,
+    .recruiter-nav .secondary,
+    .recruiter-more summary {
+      min-height: 48px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 950;
+    }
+    .recruiter-more {
+      position: relative;
+      min-width: 0;
+    }
+    .recruiter-more summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      background: var(--button-quiet-bg);
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0 16px;
+      user-select: none;
+    }
+    .recruiter-more summary::-webkit-details-marker { display: none; }
+    .recruiter-more summary::after {
+      content: "⌄";
+      font-size: 15px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+    .recruiter-more[open] summary::after {
+      transform: rotate(180deg);
+    }
+    .recruiter-more.active summary,
+    .recruiter-extra-actions .quiet.active {
+      color: var(--accent);
+      background: var(--button-secondary-bg);
+      border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+    }
+    .recruiter-more-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      z-index: 50;
+      width: min(420px, calc(100vw - 28px));
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: color-mix(in srgb, var(--surface) 96%, var(--field));
+      padding: 12px;
+      box-shadow: var(--shadow-lift);
+    }
+    .recruiter-more-menu .stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .recruiter-extra-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .recruiter-extra-actions .subtab,
+    .recruiter-extra-actions .quiet {
+      width: 100%;
+      min-height: 44px;
+      border-radius: 16px;
+      padding: 0 10px;
+      white-space: normal;
+    }
+    .recruiter-extra-actions .danger-tool {
+      min-width: 0;
+      color: var(--bad);
+      background: color-mix(in srgb, var(--bad) 9%, var(--surface));
+      border-color: color-mix(in srgb, var(--bad) 24%, var(--line));
+    }
     .date-card.selected, .member-row.selected {
       box-shadow: var(--shadow-lift);
     }
@@ -1444,9 +1554,27 @@
       .candidate-actions { grid-template-columns: 1fr; }
       .status-hero-title { grid-template-columns: 1fr; }
       .status-date b { font-size: 20px; }
-      .choice-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .choice-grid { grid-template-columns: 1fr; gap: 10px; }
       .choice-grid select { padding-left: 10px; padding-right: 34px; }
       .choice-grid label { font-size: 12px; }
+      .recruiter-nav {
+        grid-template-columns: 1fr 1fr;
+      }
+      .recruiter-nav .secondary {
+        grid-column: 1 / -1;
+      }
+      .recruiter-more {
+        position: static;
+        grid-column: 1 / -1;
+      }
+      .recruiter-more-menu {
+        position: static;
+        width: 100%;
+        margin-top: 8px;
+      }
+      .recruiter-extra-actions {
+        grid-template-columns: 1fr;
+      }
       .invite-layout { grid-template-columns: 1fr; }
       .registry-head { grid-template-columns: 1fr; }
       .registry-actions {
@@ -1490,17 +1618,8 @@
         font-size: 10.5px;
       }
       .top .head { grid-template-columns: 1fr; }
-      .tools {
-        grid-auto-flow: row;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        justify-content: stretch;
-      }
-      .tool-button {
-        width: 100%;
-        min-width: 0;
-        min-height: 42px;
-        padding: 0 10px;
-      }
+      .back-home-link { min-height: 38px; padding-right: 11px; font-size: 12px; }
+      .role-toggle { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
       h1 { font-size: clamp(34px, 11vw, 44px); }
     }
     @media (max-width: 390px) {
@@ -1518,16 +1637,14 @@
 <body>
   <main class="app">
     <header class="top">
+      <div class="shell-bar">
+        <a class="back-home-link" href="/" data-home-link aria-label="Вернуться в главное меню"><span>‹</span><span>Главное меню</span></a>
+        <button class="role-toggle" id="recruiterCabinetBtn" data-role-switch type="button" aria-label="Кабинет рекрута" title="Кабинет рекрута">Р</button>
+      </div>
       <div class="head">
         <div>
           <h1>Запись на стажировку</h1>
           <p class="lead">Кандидат выбирает дату или предварительную запись, рекрут подтверждает выход и ведет итог стажировки.</p>
-        </div>
-        <div class="tools">
-          <a class="quiet tool-button home-link" href="/" data-home-link>Главное меню</a>
-          <button class="quiet tool-button" id="recruiterCabinetBtn" type="button">Кабинет рекрута</button>
-          <button class="quiet tool-button registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
-          <button class="quiet tool-button danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
         </div>
       </div>
     </header>
@@ -1549,13 +1666,13 @@
             <span class="field-error" id="traineeNameError"></span>
           </label>
           <div class="choice-grid">
-            <label class="has-select-hint" data-field="traineeTraining">Тренинг пройден
+            <label class="has-select-hint" data-field="traineeTraining">Банкетное обслуживание
               <select id="traineeTraining" required aria-describedby="traineeTrainingHint traineeTrainingError">
                 <option value="">Выберите...</option>
                 <option value="passed">Да</option>
                 <option value="not_passed">Нет</option>
               </select>
-              <span class="field-help select-hint" id="traineeTrainingHint">Укажите, проходили ли вы сервис-тренинг перед стажировкой.</span>
+              <span class="field-help select-hint" id="traineeTrainingHint">Укажите, проходили ли вы обучение по банкетному обслуживанию перед стажировкой.</span>
               <span class="field-error" id="traineeTrainingError"></span>
             </label>
             <label class="has-select-hint" data-field="traineeAttempt">Стажировка
@@ -1601,18 +1718,27 @@
       </section>
 
       <div id="recruiterWorkspace" class="hidden">
-        <section class="stats">
-          <div class="stat"><b id="statPending">0</b><span>ждут решения</span></div>
-          <div class="stat"><b id="statConfirmed">0</b><span>подтверждены</span></div>
-          <div class="stat"><b id="statFeedback">0</b><span>ждут отчет</span></div>
-          <div class="stat"><b id="statQueue">0</b><span>предзапись</span></div>
-        </section>
-
-        <nav class="subtabs" aria-label="Разделы рекрута">
+        <nav class="recruiter-nav" aria-label="Разделы рекрута">
+          <button class="secondary" data-role-switch data-role-switch-text type="button">К форме записи</button>
           <button class="subtab active" data-section="dates" type="button">Даты</button>
-          <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
           <button class="subtab" data-section="groups" type="button">Группы</button>
-          <button class="subtab" data-section="create" type="button">Создать дату</button>
+          <details class="recruiter-more">
+            <summary>Еще</summary>
+            <div class="recruiter-more-menu">
+              <section class="stats" aria-label="Статистика заявок">
+                <div class="stat"><b id="statPending">0</b><span>ждут решения</span></div>
+                <div class="stat"><b id="statConfirmed">0</b><span>подтверждены</span></div>
+                <div class="stat"><b id="statFeedback">0</b><span>ждут отчет</span></div>
+                <div class="stat"><b id="statQueue">0</b><span>предзапись</span></div>
+              </section>
+              <div class="recruiter-extra-actions">
+                <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
+                <button class="subtab" data-section="create" type="button">Создать дату</button>
+                <button class="quiet registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
+                <button class="quiet danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
+              </div>
+            </div>
+          </details>
         </nav>
 
         <section id="datesSection">
@@ -1794,7 +1920,7 @@
       failed: "bad",
       noshow: "bad"
     };
-    const trainingNames = { passed: "Тренинг пройден", not_passed: "Тренинг не пройден" };
+    const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const venues = [
       { id: "loft1", name: "LOFT#1", address: "ул. Ленинская Слобода, 26, стр. 35", photo: "assets/venues/loft1.jpg" },
@@ -1963,6 +2089,36 @@
       event?.preventDefault?.();
       try { saveLocalSnapshot(); } catch (_) {}
       window.location.assign(HOME_PATH);
+    }
+
+    function isTelegramLink(url) {
+      return /(^|\.)t\.me$/i.test(url.hostname) || /(^|\.)telegram\.me$/i.test(url.hostname);
+    }
+
+    function openExternalLink(url, event) {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      const raw = String(url || "").trim();
+      if (!raw) return;
+      try {
+        const parsed = new URL(raw, window.location.href);
+        if (parsed.origin === window.location.origin) {
+          window.location.assign(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+          return;
+        }
+        const href = parsed.toString();
+        if (tgApp && typeof tgApp.openLink === "function") {
+          tgApp.openLink(href, { try_instant_view: false });
+          return;
+        }
+        if (tgApp && isTelegramLink(parsed) && typeof tgApp.openTelegramLink === "function") {
+          tgApp.openTelegramLink(href);
+          return;
+        }
+        window.open(href, "_blank", "noopener,noreferrer");
+      } catch (_) {
+        window.open(raw, "_blank", "noopener,noreferrer");
+      }
     }
 
     function telegramInitData() {
@@ -2261,7 +2417,7 @@
         invalidFields.push([fields.traineeName, fields.traineeNameError, "Укажите ФИО, чтобы рекрут понял, чья это заявка."]);
       }
       if (!state.profile.training) {
-        invalidFields.push([fields.traineeTraining, fields.traineeTrainingError, "Выберите, проходили ли вы сервис-тренинг."]);
+        invalidFields.push([fields.traineeTraining, fields.traineeTrainingError, "Выберите, проходили ли вы обучение по банкетному обслуживанию."]);
       }
       if (!state.profile.attempt) {
         invalidFields.push([fields.traineeAttempt, fields.traineeAttemptError, "Выберите, первая это стажировка или повторная."]);
@@ -2284,12 +2440,24 @@
       document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.role === role));
       document.getElementById("traineeView").classList.toggle("hidden", role !== "trainee");
       document.getElementById("recruiterView").classList.toggle("hidden", role !== "recruiter");
-      document.getElementById("recruiterCabinetBtn").textContent = role === "recruiter" ? "К форме записи" : "Кабинет рекрута";
+      const switchLabel = role === "recruiter" ? "К форме записи" : "Кабинет рекрута";
+      const switchIcon = role === "recruiter" ? "Ф" : "Р";
+      document.querySelectorAll("[data-role-switch]").forEach(button => {
+        button.setAttribute("aria-label", switchLabel);
+        button.setAttribute("title", switchLabel);
+      });
+      document.querySelectorAll("[data-role-switch-text]").forEach(button => {
+        button.textContent = switchLabel;
+      });
+      const recruiterToggle = document.getElementById("recruiterCabinetBtn");
+      if (recruiterToggle) recruiterToggle.textContent = switchIcon;
       document.getElementById("gate").classList.toggle("hidden", unlocked);
       document.getElementById("recruiterWorkspace").classList.toggle("hidden", !unlocked);
       const recruiterToolsVisible = unlocked && serverRole === "recruiter";
       document.getElementById("clearBtn").classList.toggle("hidden", !recruiterToolsVisible);
       document.getElementById("exportTraineesBtn").classList.toggle("hidden", !recruiterToolsVisible);
+      document.querySelector(".recruiter-more")?.classList.toggle("active", ["candidates", "create", "registry"].includes(section));
+      document.getElementById("exportTraineesBtn")?.classList.toggle("active", section === "registry");
       renderTrainee();
       renderRecruiter();
     }
@@ -2666,7 +2834,7 @@
           <b>${escapeHtml(venue.name)}</b><br>
           ${escapeHtml(venue.address)}<br>
           ${shift ? `Дата: ${formatDate(shift.date)}<br>` : ""}
-          ${app.groupLink ? `<a href="${escapeHtml(app.groupLink)}" target="_blank" rel="noopener">Перейти в рабочую группу</a>` : "Ссылка на рабочую группу будет отправлена рекрутом."}
+          ${app.groupLink ? `<a href="${escapeHtml(app.groupLink)}" data-external-link target="_blank" rel="noopener">Перейти в рабочую группу</a>` : "Ссылка на рабочую группу будет отправлена рекрутом."}
         </div>
       `;
     }
@@ -3003,7 +3171,7 @@
 
     function renderRegistryLink(url, label = "Открыть") {
       return url
-        ? `<a class="registry-link" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`
+        ? `<a class="registry-link" href="${escapeHtml(url)}" data-external-link target="_blank" rel="noopener">${escapeHtml(label)}</a>`
         : "—";
     }
 
@@ -3014,7 +3182,7 @@
     function registryTrainingTags(row) {
       return `
         <div class="registry-tags">
-          <span class="registry-tag ${row.training === "Тренинг пройден" ? "ok" : ""}">${escapeHtml(row.training)}</span>
+          <span class="registry-tag ${row.training === "Банкетное обслуживание пройдено" ? "ok" : ""}">${escapeHtml(row.training)}</span>
           <span class="registry-tag">${escapeHtml(row.attempt)}</span>
           <span class="registry-tag ${row.mentorReport === "Получен" ? "ok" : ""}">Отчет: ${escapeHtml(row.mentorReport.toLowerCase())}</span>
         </div>
@@ -3306,23 +3474,33 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           goHome(event);
           return;
         }
+        const externalLink = event.target.closest("[data-external-link]");
+        if (externalLink) {
+          openExternalLink(externalLink.href, event);
+          return;
+        }
         const clickedStage = event.target.closest("[data-stage-index]");
         if (!clickedStage && !event.target.closest(".stage-popover")) hideStagePopovers();
+        if (!event.target.closest(".recruiter-more")) {
+          document.querySelectorAll(".recruiter-more[open]").forEach(item => item.removeAttribute("open"));
+        }
         if (event.target.closest("[data-stage-close]")) {
           hideStagePopovers();
           return;
         }
-      if (event.target.id === "recruiterCabinetBtn") {
-        role = role === "recruiter" ? "trainee" : "recruiter";
-        render();
-        return;
-      }
-      const subtab = event.target.closest("[data-section]");
-      if (subtab) {
-        section = subtab.dataset.section;
-        render();
-        return;
-      }
+        const roleSwitch = event.target.closest("[data-role-switch]");
+        if (roleSwitch) {
+          role = role === "recruiter" ? "trainee" : "recruiter";
+          render();
+          return;
+        }
+        const subtab = event.target.closest("[data-section]");
+        if (subtab) {
+          section = subtab.dataset.section;
+          subtab.closest(".recruiter-more")?.removeAttribute("open");
+          render();
+          return;
+        }
       const book = event.target.closest("[data-book]");
       if (book) {
         await createApplication("date", Number(book.dataset.book));
@@ -3469,6 +3647,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target.id === "exportTraineesBtn") {
         role = "recruiter";
         section = "registry";
+        event.target.closest(".recruiter-more")?.removeAttribute("open");
         render();
         document.getElementById("registrySection")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
@@ -3492,6 +3671,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         state.inviteDraft = { shiftId: null, venueId: "loft1", link: "", memberIds: [] };
         saveLocalSnapshot();
         fillProfile();
+        event.target.closest(".recruiter-more")?.removeAttribute("open");
         render();
         }
       } catch (error) {

@@ -68,8 +68,8 @@ const BOOKING_STATUS_LABELS = {
   noshow: 'Выход не состоялся'
 };
 const TRAINING_LABELS = {
-  passed: 'Тренинг пройден',
-  not_passed: 'Тренинг не пройден'
+  passed: 'Банкетное обслуживание пройдено',
+  not_passed: 'Банкетное обслуживание не пройдено'
 };
 const ATTEMPT_LABELS = {
   first: 'Первая стажировка',
@@ -675,7 +675,7 @@ function traineesCsvFromState(state) {
     'ФИО',
     'Статус',
     'Дата стажировки',
-    'Тренинг',
+    'Банкетное обслуживание',
     'Стажировка',
     'Ограничения',
     'Площадка',
