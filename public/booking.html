@@ -719,6 +719,33 @@
       display: grid;
       gap: 8px;
     }
+    .sent-venue-group {
+      display: grid;
+      gap: 10px;
+    }
+    .workgroup-template {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--accent-soft) 36%, var(--field));
+      padding: 12px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .workgroup-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .workgroup-actions .secondary,
+    .workgroup-actions .quiet {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 999px;
+      text-align: center;
+    }
     .registry-head {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1576,6 +1603,7 @@
         grid-template-columns: 1fr;
       }
       .invite-layout { grid-template-columns: 1fr; }
+      .workgroup-actions { grid-template-columns: 1fr; }
       .registry-head { grid-template-columns: 1fr; }
       .registry-actions {
         display: grid;
@@ -1839,7 +1867,8 @@
             </div>
           </section>
           <section class="panel">
-            <h2>Отправленные группы</h2>
+            <h2>Шаблоны для рабочих групп</h2>
+            <p class="meta">После отправки приглашений здесь появится готовый текст для менеджеров рабочей группы: скопируйте сообщение, откройте группу и отправьте его вручную.</p>
             <div class="list" id="sentGroups"></div>
           </section>
         </section>
@@ -2116,6 +2145,28 @@
       } catch (_) {
         window.open(raw, "_blank", "noopener,noreferrer");
       }
+    }
+
+    async function copyTextToClipboard(text) {
+      const value = String(text || "");
+      if (!value) return false;
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.append(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      if (!copied) throw new Error("Не удалось скопировать текст.");
+      return true;
     }
 
     function telegramInitData() {
@@ -2971,6 +3022,105 @@
       });
     }
 
+    function applicationsForInviteGroup(group) {
+      const ids = Array.isArray(group?.memberIds) ? group.memberIds.map(id => String(id)) : [];
+      const byId = ids
+        .map(id => state.applications.find(app => String(app.id) === id))
+        .filter(Boolean);
+      const byGroup = state.applications.filter(app => String(app.inviteGroupId) === String(group?.id));
+      const seen = new Set();
+      return [...byId, ...byGroup].filter(app => {
+        const key = String(app.id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function traineeWorkgroupLine(app) {
+      const username = String(app?.telegramUsername || "").trim();
+      const normalizedUsername = username ? (username.startsWith("@") ? username : `@${username}`) : "";
+      return [normalizedUsername, app?.name || "Стажёр"].filter(Boolean).join(" ");
+    }
+
+    function composeWorkgroupTemplate(group) {
+      const members = applicationsForInviteGroup(group);
+      const intro = members.length > 1
+        ? "С вами будут работать стажёры (смена на 6 часов) —"
+        : "С вами будет работать стажёр (смена на 6 часов) —";
+      const memberLines = members.length
+        ? members.map(traineeWorkgroupLine).join("\n")
+        : "Стажёры не найдены";
+      return `Добрый день!
+
+${intro}
+${memberLines}
+
+Вам необходимо:
+- изучить всю информацию в группе;
+- выучить меню;
+- взять с собой блокнот, ручку, нарзаник.
+
+Время выхода назначит менеджер Ринат @Ne_radb
+
+#стажировка`;
+    }
+
+    function renderSentGroupTemplates() {
+      if (!state.inviteGroups.length) return `<div class="empty">Пока нет отправленных групп.</div>`;
+      const groupsByVenue = new Map();
+      state.inviteGroups
+        .slice()
+        .sort((left, right) => {
+          const leftVenue = venueById(left.venueId)?.name || left.venueId || "";
+          const rightVenue = venueById(right.venueId)?.name || right.venueId || "";
+          if (leftVenue !== rightVenue) return leftVenue.localeCompare(rightVenue, "ru");
+          const leftShift = state.shifts.find(shift => String(shift.id) === String(left.shiftId))?.date || "";
+          const rightShift = state.shifts.find(shift => String(shift.id) === String(right.shiftId))?.date || "";
+          return rightShift.localeCompare(leftShift) || String(right.id).localeCompare(String(left.id));
+        })
+        .forEach(group => {
+          const key = group.venueId || "unknown";
+          if (!groupsByVenue.has(key)) groupsByVenue.set(key, []);
+          groupsByVenue.get(key).push(group);
+        });
+
+      return [...groupsByVenue.entries()].map(([venueId, groups]) => {
+        const venue = venueById(venueId);
+        return `
+          <section class="sent-venue-group">
+            <div class="section-title">
+              <span>${escapeHtml(venue?.name || "Площадка не указана")}</span>
+              <b class="count">${groups.length}</b>
+            </div>
+            ${groups.map(group => {
+              const groupVenue = venueById(group.venueId);
+              const groupShift = state.shifts.find(shift => String(shift.id) === String(group.shiftId));
+              const members = applicationsForInviteGroup(group);
+              const names = members.map(app => app.name).filter(Boolean).join(", ");
+              const template = composeWorkgroupTemplate(group);
+              return `
+                <article class="sent-group">
+                  <div class="head">
+                    <div>
+                      <b>${escapeHtml(groupVenue?.name || "Площадка")}</b>
+                      <div class="meta">${groupShift ? formatDate(groupShift.date) : "без даты"} · ${escapeHtml(names || "нет кандидатов")}</div>
+                    </div>
+                    <span class="pill ok">Готово</span>
+                  </div>
+                  <div class="workgroup-template">${escapeHtml(template)}</div>
+                  <div class="workgroup-actions">
+                    <button class="secondary" data-copy-workgroup="${group.id}" type="button">Скопировать шаблон</button>
+                    <a class="quiet" href="${escapeHtml(group.link)}" data-external-link target="_blank" rel="noopener">Открыть группу</a>
+                  </div>
+                </article>
+              `;
+            }).join("")}
+          </section>
+        `;
+      }).join("");
+    }
+
     function syncInviteDraftWithEligibleCandidates(draft) {
       const hasSelectedShift = state.shifts.some(shift => String(shift.id) === String(draft.shiftId));
       const selectedHasCandidates = hasSelectedShift && eligibleInviteCandidates(draft.shiftId).length;
@@ -3020,23 +3170,7 @@
       document.getElementById("sendInvitesBtn").disabled = !draft.memberIds.length || !draft.link.trim();
       document.getElementById("sendInvitesBtn").setAttribute("aria-disabled", document.getElementById("sendInvitesBtn").disabled ? "true" : "false");
 
-      document.getElementById("sentGroups").innerHTML = state.inviteGroups.length ? state.inviteGroups.slice().reverse().map(group => {
-        const groupVenue = venueById(group.venueId);
-        const groupShift = state.shifts.find(shift => shift.id === group.shiftId);
-        const names = group.memberIds.map(id => state.applications.find(app => String(app.id) === String(id))?.name).filter(Boolean).join(", ");
-        return `
-          <article class="sent-group">
-            <div class="head">
-              <div>
-                <b>${escapeHtml(groupVenue?.name || "Площадка")}</b>
-                <div class="meta">${groupShift ? formatDate(groupShift.date) : "без даты"} · ${escapeHtml(names || "нет кандидатов")}</div>
-              </div>
-              <span class="pill ok">Отправлено</span>
-            </div>
-            <div class="meta">${escapeHtml(group.link)}</div>
-          </article>
-        `;
-      }).join("") : `<div class="empty">Пока нет отправленных групп.</div>`;
+      document.getElementById("sentGroups").innerHTML = renderSentGroupTemplates();
       saveLocalSnapshot();
     }
 
@@ -3474,6 +3608,27 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         const externalLink = event.target.closest("[data-external-link]");
         if (externalLink) {
           openExternalLink(externalLink.href, event);
+          return;
+        }
+        const copyWorkgroup = event.target.closest("[data-copy-workgroup]");
+        if (copyWorkgroup) {
+          const group = state.inviteGroups.find(item => String(item.id) === String(copyWorkgroup.dataset.copyWorkgroup));
+          if (!group) return;
+          const previousText = copyWorkgroup.textContent;
+          try {
+            await copyTextToClipboard(composeWorkgroupTemplate(group));
+            copyWorkgroup.textContent = "Скопировано";
+            copyWorkgroup.disabled = true;
+            setTimeout(() => {
+              copyWorkgroup.textContent = previousText || "Скопировать шаблон";
+              copyWorkgroup.disabled = false;
+            }, 1600);
+          } catch (error) {
+            copyWorkgroup.textContent = "Не скопировалось";
+            setTimeout(() => {
+              copyWorkgroup.textContent = previousText || "Скопировать шаблон";
+            }, 1800);
+          }
           return;
         }
         const clickedStage = event.target.closest("[data-stage-index]");
