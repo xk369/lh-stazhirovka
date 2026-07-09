@@ -1733,7 +1733,6 @@
               </section>
               <div class="recruiter-extra-actions">
                 <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
-                <button class="subtab" data-section="create" type="button">Создать дату</button>
                 <button class="quiet registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
                 <button class="quiet danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
               </div>
@@ -1742,6 +1741,19 @@
         </nav>
 
         <section id="datesSection">
+          <section class="panel">
+            <h2>Добавить дату</h2>
+            <div class="grid">
+              <label>Дата
+                <input id="newDate" type="date">
+                <div class="quick-dates" id="quickDates"></div>
+              </label>
+              <label>Количество мест
+                <input id="newSeats" type="number" min="1" max="30" value="4">
+              </label>
+            </div>
+            <button class="primary" id="createDateBtn" type="button">Добавить дату</button>
+          </section>
           <div class="date-list" id="recruiterDates"></div>
         </section>
 
@@ -1832,21 +1844,6 @@
           </section>
         </section>
 
-        <section id="createSection" class="hidden">
-          <section class="panel">
-            <h2>Новая дата</h2>
-            <div class="grid">
-              <label>Дата
-                <input id="newDate" type="date">
-                <div class="quick-dates" id="quickDates"></div>
-              </label>
-              <label>Количество мест
-                <input id="newSeats" type="number" min="1" max="30" value="4">
-              </label>
-            </div>
-            <button class="primary" id="createDateBtn" type="button">Создать дату</button>
-          </section>
-        </section>
       </div>
     </section>
   </main>
@@ -2456,7 +2453,7 @@
       const recruiterToolsVisible = unlocked && serverRole === "recruiter";
       document.getElementById("clearBtn").classList.toggle("hidden", !recruiterToolsVisible);
       document.getElementById("exportTraineesBtn").classList.toggle("hidden", !recruiterToolsVisible);
-      document.querySelector(".recruiter-more")?.classList.toggle("active", ["candidates", "create", "registry"].includes(section));
+      document.querySelector(".recruiter-more")?.classList.toggle("active", ["candidates", "registry"].includes(section));
       document.getElementById("exportTraineesBtn")?.classList.toggle("active", section === "registry");
       renderTrainee();
       renderRecruiter();
@@ -2842,7 +2839,7 @@
     function renderRecruiter() {
       if (!unlocked) return;
       document.querySelectorAll(".subtab").forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
-      ["dates", "candidates", "groups", "registry", "create"].forEach(id => {
+      ["dates", "candidates", "groups", "registry"].forEach(id => {
         document.getElementById(`${id}Section`).classList.toggle("hidden", id !== section);
       });
       document.getElementById("statPending").textContent = state.applications.filter(app => app.status === "pending").length;
