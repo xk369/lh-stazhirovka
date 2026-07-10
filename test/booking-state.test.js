@@ -7,6 +7,8 @@ import {
   bookingStateForActor,
   composeBookingStageChangedMessage,
   composeShiftCancellationMessage,
+  composeShiftCapacityChangedMessage,
+  shiftCapacityChangeNotificationPlan,
   traineesCsvFromState
 } from '../src/server.js';
 
@@ -485,4 +487,135 @@ test('exports trainee table as excel-friendly csv', () => {
   assert.match(csv, /LOFT#5 SMALL/);
   assert.match(csv, /@ivanov/);
   assert.match(csv, /Стажировка пройдена/);
+});
+
+test('cancellation message no longer mentions an event', () => {
+  const message = composeShiftCancellationMessage({ date: '2026-07-11' });
+
+  assert.doesNotMatch(message, /мероприятие/i);
+  assert.match(message, /Стажировка отменена/);
+  assert.match(message, /стажировка на .* не состоится/is);
+});
+
+test('recruiter can increase internship capacity for a date', () => {
+  const next = applyBookingCommand(
+    bookingState(),
+    { action: 'update_shift_capacity', baseVersion: 2, shiftId: 1, seats: 6 },
+    recruiterActor
+  );
+
+  assert.equal(next.shifts[0].seats, 6);
+});
+
+test('recruiter can decrease capacity down to (but not below) the assigned-trainee count', () => {
+  const source = bookingState();
+  source.applications = [
+    { id: 10, shiftId: 1, name: 'A', training: 'passed', attempt: 'first', status: 'pending' },
+    { id: 11, shiftId: 1, name: 'B', training: 'passed', attempt: 'first', status: 'confirmed' },
+    { id: 12, shiftId: 1, name: 'C', training: 'passed', attempt: 'first', status: 'invited' },
+    { id: 13, shiftId: 1, name: 'D', training: 'passed', attempt: 'first', status: 'feedback' },
+    { id: 14, shiftId: 1, name: 'E', training: 'passed', attempt: 'first', status: 'passed' }
+  ];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'update_shift_capacity', baseVersion: 2, shiftId: 1, seats: 5 },
+    recruiterActor
+  );
+
+  assert.equal(next.shifts[0].seats, 5);
+  assert.deepEqual(
+    next.applications.map(app => app.status),
+    ['pending', 'confirmed', 'invited', 'feedback', 'passed']
+  );
+});
+
+test('rejects reducing capacity below the number of already assigned trainees', () => {
+  const source = bookingState();
+  source.applications = [
+    { id: 10, shiftId: 1, name: 'A', training: 'passed', attempt: 'first', status: 'pending' },
+    { id: 11, shiftId: 1, name: 'B', training: 'passed', attempt: 'first', status: 'confirmed' },
+    { id: 12, shiftId: 1, name: 'C', training: 'passed', attempt: 'first', status: 'invited' },
+    { id: 13, shiftId: 1, name: 'D', training: 'passed', attempt: 'first', status: 'feedback' },
+    { id: 14, shiftId: 1, name: 'E', training: 'passed', attempt: 'first', status: 'passed' }
+  ];
+
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        source,
+        { action: 'update_shift_capacity', baseVersion: 2, shiftId: 1, seats: 3 },
+        recruiterActor
+      ),
+    error =>
+      error instanceof BookingValidationError &&
+      error.message === 'Нельзя уменьшить количество мест до 3: на эту дату уже записано 5 стажёров.'
+  );
+
+  // rejected change must leave the existing state completely untouched
+  assert.equal(source.shifts[0].seats, 3);
+  assert.equal(source.applications.length, 5);
+  assert.deepEqual(
+    source.applications.map(app => app.status),
+    ['pending', 'confirmed', 'invited', 'feedback', 'passed']
+  );
+});
+
+test('an unchanged capacity produces no notification plan', () => {
+  const previous = bookingState();
+  const next = { ...previous, shifts: previous.shifts.map(shift => ({ ...shift })) };
+
+  assert.equal(shiftCapacityChangeNotificationPlan(previous, next, 1), null);
+});
+
+test('a real capacity change notifies only trainees still upcoming on that date', () => {
+  const previous = bookingState();
+  previous.applications = [
+    { id: 10, shiftId: 1, name: 'A', status: 'pending', telegramChatId: '100001' },
+    { id: 11, shiftId: 1, name: 'B', status: 'confirmed', telegramChatId: '100002' },
+    { id: 12, shiftId: 1, name: 'C', status: 'invited', telegramChatId: '100003' },
+    { id: 13, shiftId: 1, name: 'D', status: 'feedback', telegramChatId: '100004' },
+    { id: 14, shiftId: 1, name: 'E', status: 'passed', telegramChatId: '100005' }
+  ];
+
+  const next = applyBookingCommand(
+    previous,
+    { action: 'update_shift_capacity', baseVersion: 2, shiftId: 1, seats: 5 },
+    recruiterActor
+  );
+
+  const plan = shiftCapacityChangeNotificationPlan(previous, next, 1);
+  assert.ok(plan);
+  assert.equal(plan.shift.seats, 5);
+  assert.deepEqual(plan.applications.map(app => app.id), [10, 11, 12]);
+  // application statuses/assignments themselves must be untouched by the capacity change
+  assert.deepEqual(
+    next.applications.map(app => ({ id: app.id, status: app.status, shiftId: app.shiftId })),
+    previous.applications.map(app => ({ id: app.id, status: app.status, shiftId: app.shiftId }))
+  );
+});
+
+test('capacity change notification does not reveal old or new seat counts', () => {
+  const text = composeShiftCapacityChangedMessage({ date: '2026-07-11' });
+
+  assert.match(text, /Изменения по стажировке/);
+  assert.match(text, /11\.07\.2026/);
+  assert.match(text, /Ваша запись на эту дату сохраняется/);
+  assert.match(text, /Дополнительных действий не требуется/);
+  assert.doesNotMatch(text, /\d+\s*(мест|места|мес)\b/i);
+});
+
+test('closing a date keeps existing trainee assignments untouched', () => {
+  const source = bookingState();
+  source.applications = [{ id: 10, shiftId: 1, name: 'A', training: 'passed', attempt: 'first', status: 'confirmed' }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'toggle_shift', baseVersion: 2, shiftId: 1, open: false },
+    recruiterActor
+  );
+
+  assert.equal(next.shifts[0].open, false);
+  assert.equal(next.applications[0].status, 'confirmed');
+  assert.equal(next.applications[0].shiftId, 1);
 });

@@ -905,11 +905,21 @@ function composeShiftCancellationMessage(shift) {
   return [
     '⚠️ <b>Стажировка отменена</b>',
     '',
-    `К сожалению, мероприятие на <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b> отменено, поэтому стажировка в эту дату не состоится.`,
+    `К сожалению, стажировка на <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b> не состоится.`,
     '',
     'Ваша заявка возвращена в <b>предварительную запись</b>. Откройте мини-приложение и выберите другую доступную дату.',
     '',
     'Если подходящей даты пока нет, заявка останется в предварительной записи — рекрут сможет назначить новую дату позже.'
+  ].join('\n');
+}
+
+function composeShiftCapacityChangedMessage(shift) {
+  return [
+    'ℹ️ <b>Изменения по стажировке</b>',
+    '',
+    `В параметры стажировки на <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b> были внесены изменения.`,
+    '',
+    'Ваша запись на эту дату сохраняется. Дополнительных действий не требуется.'
   ].join('\n');
 }
 
@@ -929,6 +939,33 @@ async function sendShiftCancellationToTrainees(shift, applications) {
       return { applicationId: application.id, status: 'sent' };
     } catch (error) {
       console.error('Shift cancellation delivery error:', error);
+      return { applicationId: application.id, status: 'failed' };
+    }
+  }));
+  return {
+    total: deliveries.length,
+    sent: deliveries.filter(item => item.status === 'sent').length,
+    skipped: deliveries.filter(item => item.status === 'skipped').length,
+    failed: deliveries.filter(item => item.status === 'failed').length
+  };
+}
+
+async function sendShiftCapacityChangedToTrainees(shift, applications) {
+  const deliveries = await Promise.all(applications.map(async application => {
+    if (!application.telegramChatId) {
+      return { applicationId: application.id, status: 'skipped' };
+    }
+    try {
+      await sendTelegramMessage({
+        botToken: config.botToken,
+        chatId: application.telegramChatId,
+        text: composeShiftCapacityChangedMessage(shift),
+        parseMode: 'HTML',
+        disableWebPagePreview: true
+      });
+      return { applicationId: application.id, status: 'sent' };
+    } catch (error) {
+      console.error('Shift capacity change delivery error:', error);
       return { applicationId: application.id, status: 'failed' };
     }
   }));
@@ -1265,6 +1302,38 @@ function applyCreateShift(state, command, actor) {
   return next;
 }
 
+function applyUpdateShiftCapacity(state, command, actor) {
+  requireRecruiterRole(actor);
+  const shiftId = normalizeId(command.shiftId, 'shiftId');
+  const next = mutableStateCopy(state);
+  const shift = requireShift(next, shiftId);
+  const requestedSeats = normalizeId(command.seats, 'shift.seats');
+  const assignedCount = shiftSeatUsage(next, shiftId);
+  if (requestedSeats < assignedCount) {
+    throw new BookingValidationError(
+      `Нельзя уменьшить количество мест до ${requestedSeats}: на эту дату уже записано ${assignedCount} стажёров.`
+    );
+  }
+  shift.seats = requestedSeats;
+  return next;
+}
+
+// Trainees who should hear about a capacity change: the same set of "still
+// upcoming, not yet resolved" applications used for shift cancellation
+// (pending/confirmed/invited). Trainees whose internship on this date has
+// already happened (feedback/passed/failed/noshow) don't need to know the
+// seat count changed after the fact.
+function shiftCapacityChangeNotificationPlan(previousState, nextState, shiftId) {
+  const previousShift = previousState.shifts.find(item => String(item.id) === String(shiftId));
+  const nextShift = nextState.shifts.find(item => String(item.id) === String(shiftId));
+  if (!previousShift || !nextShift) return null;
+  if (Number(previousShift.seats) === Number(nextShift.seats)) return null;
+  return {
+    shift: nextShift,
+    applications: applicationsAffectedByShiftCancellation(nextState, shiftId)
+  };
+}
+
 function applyUpdateComment(state, command, actor) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
@@ -1371,6 +1440,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       break;
     case 'create_shift':
       nextState = applyCreateShift(state, command, actor);
+      break;
+    case 'update_shift_capacity':
+      nextState = applyUpdateShiftCapacity(state, command, actor);
       break;
     case 'update_comment':
       nextState = applyUpdateComment(state, command, actor);
@@ -1564,6 +1636,7 @@ app.post('/api/state', async (request, response, next) => {
   let actor = null;
   let stepBackTransition = null;
   let shiftCancellation = null;
+  let capacityChange = null;
   try {
     actor = bookingActorFromRequest(request);
     const cleanState = await withBookingMutation(async () => {
@@ -1577,6 +1650,9 @@ app.post('/api/state', async (request, response, next) => {
       const canceledApplicationIds = canceledShift
         ? applicationsAffectedByShiftCancellation(currentState, canceledShift.id).map(application => application.id)
         : [];
+      const capacityShiftId = request.body?.action === 'update_shift_capacity'
+        ? request.body?.shiftId
+        : null;
       const nextState = applyBookingCommand(currentState, request.body || {}, actor);
       if (previousApplication) {
         const application = nextState.applications.find(item => String(item.id) === String(previousApplication.id));
@@ -1593,6 +1669,9 @@ app.post('/api/state', async (request, response, next) => {
           shift: nextState.shifts.find(item => String(item.id) === String(canceledShift.id)),
           applications: nextState.applications.filter(application => canceledIds.has(String(application.id)))
         };
+      }
+      if (capacityShiftId !== null) {
+        capacityChange = shiftCapacityChangeNotificationPlan(currentState, nextState, capacityShiftId);
       }
       return writeBookingState(nextState);
     });
@@ -1639,12 +1718,30 @@ app.post('/api/state', async (request, response, next) => {
         timestamp: new Date().toISOString()
       }));
     }
+    const capacityNotifications = capacityChange
+      ? await sendShiftCapacityChangedToTrainees(
+        capacityChange.shift,
+        capacityChange.applications
+      )
+      : null;
+    if (capacityChange) {
+      console.info(JSON.stringify({
+        event: 'booking_shift_capacity_changed',
+        shiftId: capacityChange.shift.id,
+        date: capacityChange.shift.date,
+        seats: capacityChange.shift.seats,
+        recruiterTelegramUserId: actor.telegram.user.id,
+        notifications: capacityNotifications,
+        timestamp: new Date().toISOString()
+      }));
+    }
     response.json({
       ok: true,
       role: actor.role,
       state: bookingStateForActor(cleanState, actor),
       ...(notification ? { notification } : {}),
-      ...(cancellationNotifications ? { cancellationNotifications } : {})
+      ...(cancellationNotifications ? { cancellationNotifications } : {}),
+      ...(capacityNotifications ? { capacityNotifications } : {})
     });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
@@ -2005,8 +2102,10 @@ export {
   composeBookingStageChangedMessage,
   composeMentorTraineeResultMessage,
   composeShiftCancellationMessage,
+  composeShiftCapacityChangedMessage,
   mentorTraineesFromState,
   normalizeBookingState,
+  shiftCapacityChangeNotificationPlan,
   traineesCsvFromState,
   traineeTableRowsFromState
 };

@@ -446,6 +446,7 @@
       padding-top: 12px;
     }
     .shift-admin-actions > :only-child { grid-column: 1 / -1; }
+    .shift-admin-actions .full-row { grid-column: 1 / -1; }
     .shift-admin-actions button {
       width: 100%;
       min-height: 46px;
@@ -3102,8 +3103,9 @@
                 </div>
               ` : ""}
               <div class="shift-admin-actions">
-                <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть запись" : "Открыть запись"}</button>
-                ${shift.canceled ? "" : `<button class="danger" data-cancel-shift="${shift.id}" type="button">Отменить мероприятие${cancellationCandidates.length ? ` · ${cancellationCandidates.length}` : ""}</button>`}
+                <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть дату" : "Открыть дату"}</button>
+                ${shift.canceled ? "" : `<button class="danger" data-cancel-shift="${shift.id}" type="button">Отменить стажировку${cancellationCandidates.length ? ` · ${cancellationCandidates.length}` : ""}</button>`}
+                ${shift.canceled ? "" : `<button class="quiet full-row" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
               </div>
               ${shiftActionMessage ? `<div class="shift-action-status" role="status">${escapeHtml(shiftActionMessage)}</div>` : ""}
             </div>
@@ -3693,14 +3695,36 @@ ${managerLine}
       const affectedText = affected.length
         ? `${affected.length === 1 ? "1 кандидат будет возвращён" : `${affected.length} ${pluralize(affected.length, "кандидат", "кандидата", "кандидатов")} будут возвращены`} в предварительную запись. Всем подключённым стажёрам уйдёт уведомление.`
         : "Активных кандидатов на этой дате нет.";
-      if (!confirm(`Отменить мероприятие ${formatLongDate(shift.date)}?\n\n${affectedText}`)) return;
+      if (!confirm(`Отменить стажировку ${formatLongDate(shift.date)}?\n\n${affectedText}`)) return;
 
       shiftActionMessages.delete(String(shift.id));
       const result = await queueBookingCommand("cancel_shift", { shiftId: Number(shift.id) });
       const delivery = result?.cancellationNotifications || { total: affected.length, sent: 0, skipped: 0, failed: 0 };
       const message = delivery.total
-        ? `Мероприятие отменено. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
-        : "Мероприятие отменено. Активных кандидатов на этой дате не было.";
+        ? `Стажировка отменена. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
+        : "Стажировка отменена. Активных кандидатов на этой дате не было.";
+      shiftActionMessages.set(String(shift.id), message);
+      render();
+    }
+
+    async function editShiftSeats(id) {
+      const shift = state.shifts.find(item => String(item.id) === String(id));
+      if (!shift || shift.canceled) return;
+      const input = prompt(`Сколько мест выделить на ${formatLongDate(shift.date)}?`, String(shift.seats));
+      if (input === null) return;
+      const seats = Number.parseInt(input, 10);
+      if (!Number.isInteger(seats) || seats < 1) {
+        alert("Введите целое число мест не меньше 1.");
+        return;
+      }
+      if (seats === Number(shift.seats)) return;
+
+      shiftActionMessages.delete(String(shift.id));
+      const result = await queueBookingCommand("update_shift_capacity", { shiftId: Number(shift.id), seats });
+      const delivery = result?.capacityNotifications;
+      const message = delivery && delivery.total
+        ? `Количество мест обновлено: ${seats}. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
+        : `Количество мест обновлено: ${seats}.`;
       shiftActionMessages.set(String(shift.id), message);
       render();
     }
@@ -3993,11 +4017,16 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         await cancelRecruiterShift(cancelShift.dataset.cancelShift);
         return;
       }
+      const editSeats = event.target.closest("[data-edit-seats]");
+      if (editSeats) {
+        await editShiftSeats(editSeats.dataset.editSeats);
+        return;
+      }
       const toggle = event.target.closest("[data-toggle-shift]");
       if (toggle) {
         const shift = state.shifts.find(item => String(item.id) === String(toggle.dataset.toggleShift));
         if (!shift) return;
-        if (shift.open && !confirm("Закрыть запись на эту дату? Уже записанные кандидаты останутся на своих этапах и не получат уведомлений.")) return;
+        if (shift.open && !confirm("Закрыть дату? Уже записанные кандидаты останутся на своих этапах и не получат уведомлений.")) return;
         await queueBookingCommand("toggle_shift", { shiftId: Number(toggle.dataset.toggleShift), open: !shift.open });
         render();
         return;

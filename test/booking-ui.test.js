@@ -53,11 +53,30 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
 });
 
-test('recruiter dates expose a distinct event cancellation action', async () => {
+test('recruiter dates expose a distinct internship cancellation action, not an event action', async () => {
   const html = await readPublicFile('booking.html');
 
   assert.match(html, /data-cancel-shift/);
-  assert.match(html, /Отменить мероприятие/);
+  assert.match(html, /Отменить стажировку/);
   assert.match(html, /queueBookingCommand\("cancel_shift"/);
-  assert.match(html, /Закрыть запись/);
+  assert.match(html, /Закрыть дату/);
+  assert.doesNotMatch(html, /мероприятие/i);
+});
+
+test('recruiter date actions render close/cancel in one row and capacity edit as a full-width row below', async () => {
+  const html = await readPublicFile('booking.html');
+  const actionsBlock = html.match(/<div class="shift-admin-actions">[\s\S]*?<\/div>/)?.[0] || '';
+
+  assert.match(actionsBlock, /data-toggle-shift="\$\{shift\.id\}"/);
+  assert.match(actionsBlock, /data-cancel-shift="\$\{shift\.id\}"/);
+  assert.match(actionsBlock, /data-edit-seats="\$\{shift\.id\}"[^>]*>Изменить количество мест/);
+  assert.match(actionsBlock, /class="quiet full-row" data-edit-seats/);
+  assert.match(html, /\.shift-admin-actions \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(html, /\.shift-admin-actions \.full-row \{ grid-column: 1 \/ -1; \}/);
+});
+
+test('capacity edit action calls the dedicated booking command', async () => {
+  const html = await readPublicFile('booking.html');
+
+  assert.match(html, /queueBookingCommand\("update_shift_capacity",\s*\{\s*shiftId: Number\(shift\.id\), seats\s*\}\)/);
 });
