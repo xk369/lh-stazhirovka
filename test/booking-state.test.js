@@ -166,6 +166,42 @@ test('rejects duplicate invite for already invited application', () => {
   );
 });
 
+test('rejects non-Telegram invite group links on the server', () => {
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        {
+          version: 4,
+          updatedAt: '2026-07-03T00:00:00.000Z',
+          shifts: [{ id: 1, date: '2026-07-10', seats: 3, open: true }],
+          applications: [
+            {
+              id: 10,
+              shiftId: 1,
+              name: 'Confirmed Trainee',
+              training: 'passed',
+              attempt: 'first',
+              status: 'confirmed'
+            }
+          ],
+          inviteGroups: []
+        },
+        {
+          action: 'send_invites',
+          baseVersion: 4,
+          shiftId: 1,
+          venueId: 'loft1',
+          link: 'https://example.com/not-a-telegram-group',
+          memberIds: [10]
+        },
+        recruiterActor
+      ),
+    error =>
+      error instanceof BookingValidationError &&
+      /Telegram-ссылка/.test(error.message)
+  );
+});
+
 test('rejects attendance status before group invite is sent', () => {
   assert.throws(
     () =>

@@ -2684,20 +2684,14 @@
           showStatus(`Отчёт успешно отправлен в рабочую группу.${traineeWarning}`, 'ok');
           haptic('heavy');
           try { tg?.HapticFeedback?.notificationOccurred('success') } catch (_) { }
-          const closeMiniApp = () => {
-            try { tg?.disableClosingConfirmation?.(); } catch (_) { }
-            setTimeout(() => { try { tg?.close?.(); } catch (_) { } }, 180);
-          };
+          btn.innerHTML = '<span>Отчёт отправлен</span>';
           try {
             if (tg?.showAlert) {
-              tg.showAlert(`Отчёт успешно отправлен.${traineeWarning ? '\n' + traineeWarning.trim() : ''}`, closeMiniApp);
+              tg.showAlert(`Отчёт успешно отправлен.${traineeWarning ? '\n' + traineeWarning.trim() : ''}`);
             } else {
               window.alert(`Отчёт успешно отправлен.${traineeWarning ? '\n' + traineeWarning.trim() : ''}`);
-              closeMiniApp();
             }
-          } catch (_) {
-            closeMiniApp();
-          }
+          } catch (_) {}
         } catch (error) {
           console.error(error);
           const message = error?.name === 'AbortError'

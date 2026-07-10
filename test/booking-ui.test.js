@@ -80,3 +80,23 @@ test('capacity edit action calls the dedicated booking command', async () => {
 
   assert.match(html, /queueBookingCommand\("update_shift_capacity",\s*\{\s*shiftId: Number\(shift\.id\), seats\s*\}\)/);
 });
+
+test('workgroup links use Telegram link handling and reject non-Telegram URLs in the UI', async () => {
+  const html = await readPublicFile('booking.html');
+  const openExternalLink = html.match(/function openExternalLink\(url, event\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const linkValidator = html.match(/function isValidInviteLink\(value\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.ok(openExternalLink.indexOf('openTelegramLink') > -1);
+  assert.ok(openExternalLink.indexOf('openLink') > -1);
+  assert.ok(openExternalLink.indexOf('openTelegramLink') < openExternalLink.indexOf('openLink'));
+  assert.match(linkValidator, /isTelegramLink\(url\)/);
+  assert.match(html, /Нужна Telegram-ссылка/);
+});
+
+test('report submission success does not auto-close the mini app', async () => {
+  const html = await readPublicFile('index.html');
+  const sendSuccessBlock = html.match(/showStatus\(`Отчёт успешно отправлен[\s\S]*?\n        \} catch \(error\)/)?.[0] || '';
+
+  assert.match(sendSuccessBlock, /Отчёт отправлен/);
+  assert.doesNotMatch(sendSuccessBlock, /tg\?\.close|disableClosingConfirmation|closeMiniApp/);
+});

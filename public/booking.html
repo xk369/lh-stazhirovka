@@ -2290,12 +2290,12 @@
           return;
         }
         const href = parsed.toString();
-        if (tgApp && typeof tgApp.openLink === "function") {
-          tgApp.openLink(href, { try_instant_view: false });
-          return;
-        }
         if (tgApp && isTelegramLink(parsed) && typeof tgApp.openTelegramLink === "function") {
           tgApp.openTelegramLink(href);
+          return;
+        }
+        if (tgApp && typeof tgApp.openLink === "function") {
+          tgApp.openLink(href, { try_instant_view: false });
           return;
         }
         window.open(href, "_blank", "noopener,noreferrer");
@@ -2527,7 +2527,7 @@
       if (!text) return false;
       try {
         const url = new URL(text);
-        return ["http:", "https:"].includes(url.protocol);
+        return ["http:", "https:"].includes(url.protocol) && isTelegramLink(url);
       } catch (_) {
         return false;
       }
@@ -2535,8 +2535,8 @@
 
     function friendlyBookingError(error) {
       const message = String(error?.message || error || "");
-      if (message.includes("inviteGroup.link") || message.includes("valid URL") || message.includes("http or https")) {
-        return "Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...";
+      if (message.includes("inviteGroup.link") || message.includes("valid URL") || message.includes("http or https") || message.includes("Telegram-ссылка")) {
+        return "Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...";
       }
       if (message.includes("Сначала отправьте кандидату приглашение")) {
         return "Сначала отправьте кандидату приглашение в рабочую группу. После этого можно отметить, вышел он или нет.";
@@ -4068,7 +4068,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (!isValidInviteLink(link)) {
           fields.groupLink.closest("label")?.classList.add("invalid");
           fields.groupLink.setAttribute("aria-invalid", "true");
-          setGroupInviteStatus("Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...");
+          setGroupInviteStatus("Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...");
           fields.groupLink.focus();
           return;
         }

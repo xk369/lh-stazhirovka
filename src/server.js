@@ -366,9 +366,13 @@ function normalizeDateValue(value, field) {
 
 function urlValidationMessage(field) {
   if (field === 'inviteGroup.link' || field === 'application.groupLink') {
-    return 'Проверьте ссылку на рабочую группу. Она должна начинаться с https:// или http://, например https://t.me/+...';
+    return 'Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...';
   }
   return `${field} must be a valid URL.`;
+}
+
+function isTelegramGroupUrl(url) {
+  return /(^|\.)t\.me$/i.test(url.hostname) || /(^|\.)telegram\.me$/i.test(url.hostname);
 }
 
 function normalizeUrl(value, field, { required = false } = {}) {
@@ -383,6 +387,9 @@ function normalizeUrl(value, field, { required = false } = {}) {
     throw new BookingValidationError(urlValidationMessage(field));
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new BookingValidationError(urlValidationMessage(field));
+  }
+  if ((field === 'inviteGroup.link' || field === 'application.groupLink') && !isTelegramGroupUrl(parsed)) {
     throw new BookingValidationError(urlValidationMessage(field));
   }
   return text;
