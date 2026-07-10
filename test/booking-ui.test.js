@@ -93,6 +93,14 @@ test('workgroup links use Telegram link handling and reject non-Telegram URLs in
   assert.match(html, /Нужна Telegram-ссылка/);
 });
 
+test('invite group date selector keeps the recruiter-selected date even when it has no candidates', async () => {
+  const html = await readPublicFile('booking.html');
+  const syncInviteDraft = html.match(/function syncInviteDraftWithEligibleCandidates\(draft\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(syncInviteDraft, /if \(hasSelectedShift\) return;/);
+  assert.doesNotMatch(syncInviteDraft, /selectedHasCandidates/);
+});
+
 test('report submission success does not auto-close the mini app', async () => {
   const html = await readPublicFile('index.html');
   const sendSuccessBlock = html.match(/showStatus\(`Отчёт успешно отправлен[\s\S]*?\n        \} catch \(error\)/)?.[0] || '';

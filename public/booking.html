@@ -3333,8 +3333,7 @@ ${managerLine}
 
     function syncInviteDraftWithEligibleCandidates(draft) {
       const hasSelectedShift = state.shifts.some(shift => String(shift.id) === String(draft.shiftId));
-      const selectedHasCandidates = hasSelectedShift && eligibleInviteCandidates(draft.shiftId).length;
-      if (selectedHasCandidates) return;
+      if (hasSelectedShift) return;
       const shiftWithCandidates = state.shifts.find(shift => eligibleInviteCandidates(shift.id).length);
       const nextShiftId = shiftWithCandidates?.id || state.shifts[0]?.id || null;
       if (String(draft.shiftId || "") !== String(nextShiftId || "")) {
