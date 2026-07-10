@@ -54,6 +54,7 @@ const SEAT_HOLDING_STATUSES = new Set([
   'noshow'
 ]);
 const FINAL_BOOKING_STATUSES = new Set(['passed', 'failed', 'noshow']);
+const SHIFT_CANCELLATION_APPLICATION_STATUSES = new Set(['pending', 'confirmed', 'invited']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
@@ -392,7 +393,9 @@ function normalizeShiftForWrite(shift) {
     id: normalizeId(shift?.id, 'shift.id'),
     date: normalizeDateValue(shift?.date, 'shift.date'),
     seats: Math.min(Math.max(normalizeId(shift?.seats || 1, 'shift.seats'), 1), 30),
-    open: typeof shift?.open === 'boolean' ? shift.open : !['closed', 'done', 'canceled', 'full'].includes(shift?.status)
+    open: typeof shift?.open === 'boolean' ? shift.open : !['closed', 'done', 'canceled', 'full'].includes(shift?.status),
+    canceled: Boolean(shift?.canceled || shift?.status === 'canceled'),
+    canceledAt: normalizeOptionalText(shift?.canceledAt, 'shift.canceledAt', 40)
   };
 }
 
@@ -898,6 +901,45 @@ async function sendBookingStageChangedToTrainee(application, previousStatus) {
   }
 }
 
+function composeShiftCancellationMessage(shift) {
+  return [
+    '⚠️ <b>Стажировка отменена</b>',
+    '',
+    `К сожалению, мероприятие на <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b> отменено, поэтому стажировка в эту дату не состоится.`,
+    '',
+    'Ваша заявка возвращена в <b>предварительную запись</b>. Откройте мини-приложение и выберите другую доступную дату.',
+    '',
+    'Если подходящей даты пока нет, заявка останется в предварительной записи — рекрут сможет назначить новую дату позже.'
+  ].join('\n');
+}
+
+async function sendShiftCancellationToTrainees(shift, applications) {
+  const deliveries = await Promise.all(applications.map(async application => {
+    if (!application.telegramChatId) {
+      return { applicationId: application.id, status: 'skipped' };
+    }
+    try {
+      await sendTelegramMessage({
+        botToken: config.botToken,
+        chatId: application.telegramChatId,
+        text: composeShiftCancellationMessage(shift),
+        parseMode: 'HTML',
+        disableWebPagePreview: true
+      });
+      return { applicationId: application.id, status: 'sent' };
+    } catch (error) {
+      console.error('Shift cancellation delivery error:', error);
+      return { applicationId: application.id, status: 'failed' };
+    }
+  }));
+  return {
+    total: deliveries.length,
+    sent: deliveries.filter(item => item.status === 'sent').length,
+    skipped: deliveries.filter(item => item.status === 'skipped').length,
+    failed: deliveries.filter(item => item.status === 'failed').length
+  };
+}
+
 async function sendMentorResultToTrainee(application, resultPayload, now = new Date()) {
   if (!resultPayload || typeof resultPayload !== 'object') {
     return { ok: false, status: 'skipped', skipped: 'empty_result' };
@@ -1157,12 +1199,56 @@ function applyAssignShift(state, command, actor) {
   return next;
 }
 
+function applicationsAffectedByShiftCancellation(state, shiftId) {
+  return state.applications.filter(application => (
+    String(application.shiftId) === String(shiftId)
+    && SHIFT_CANCELLATION_APPLICATION_STATUSES.has(normalizeLegacyStatus(application.status))
+  ));
+}
+
+function applyCancelShift(state, command, actor, now = new Date()) {
+  requireRecruiterRole(actor);
+  const shiftId = normalizeId(command.shiftId, 'shiftId');
+  const next = mutableStateCopy(state);
+  const shift = requireShift(next, shiftId);
+  const affectedIds = new Set(
+    applicationsAffectedByShiftCancellation(next, shiftId).map(application => String(application.id))
+  );
+
+  shift.open = false;
+  shift.canceled = true;
+  shift.canceledAt = now.toISOString();
+  next.applications = next.applications.map(application => {
+    if (!affectedIds.has(String(application.id))) return application;
+    return {
+      ...resetMentorReport(application),
+      shiftId: null,
+      status: 'queue',
+      inviteGroupId: null,
+      venueId: null,
+      groupLink: '',
+      candidateReport: false
+    };
+  });
+  next.inviteGroups = next.inviteGroups
+    .map(group => ({
+      ...group,
+      memberIds: group.memberIds.filter(id => !affectedIds.has(String(id)))
+    }))
+    .filter(group => group.memberIds.length);
+  return next;
+}
+
 function applyToggleShift(state, command, actor) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
   const shift = next.shifts.find(item => String(item.id) === String(command.shiftId));
   if (!shift) throw new BookingValidationError('shift not found.');
   shift.open = typeof command.open === 'boolean' ? command.open : !shift.open;
+  if (shift.open) {
+    shift.canceled = false;
+    shift.canceledAt = '';
+  }
   return next;
 }
 
@@ -1276,6 +1362,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       break;
     case 'assign_shift':
       nextState = applyAssignShift(state, command, actor);
+      break;
+    case 'cancel_shift':
+      nextState = applyCancelShift(state, command, actor, now);
       break;
     case 'toggle_shift':
       nextState = applyToggleShift(state, command, actor);
@@ -1474,6 +1563,7 @@ app.get('/api/state', async (request, response, next) => {
 app.post('/api/state', async (request, response, next) => {
   let actor = null;
   let stepBackTransition = null;
+  let shiftCancellation = null;
   try {
     actor = bookingActorFromRequest(request);
     const cleanState = await withBookingMutation(async () => {
@@ -1481,6 +1571,12 @@ app.post('/api/state', async (request, response, next) => {
       const previousApplication = request.body?.action === 'step_back_application'
         ? currentState.applications.find(item => String(item.id) === String(request.body?.applicationId))
         : null;
+      const canceledShift = request.body?.action === 'cancel_shift'
+        ? currentState.shifts.find(item => String(item.id) === String(request.body?.shiftId))
+        : null;
+      const canceledApplicationIds = canceledShift
+        ? applicationsAffectedByShiftCancellation(currentState, canceledShift.id).map(application => application.id)
+        : [];
       const nextState = applyBookingCommand(currentState, request.body || {}, actor);
       if (previousApplication) {
         const application = nextState.applications.find(item => String(item.id) === String(previousApplication.id));
@@ -1490,6 +1586,13 @@ app.post('/api/state', async (request, response, next) => {
             application
           };
         }
+      }
+      if (canceledShift) {
+        const canceledIds = new Set(canceledApplicationIds.map(String));
+        shiftCancellation = {
+          shift: nextState.shifts.find(item => String(item.id) === String(canceledShift.id)),
+          applications: nextState.applications.filter(application => canceledIds.has(String(application.id)))
+        };
       }
       return writeBookingState(nextState);
     });
@@ -1520,11 +1623,28 @@ app.post('/api/state', async (request, response, next) => {
         timestamp: new Date().toISOString()
       }));
     }
+    const cancellationNotifications = shiftCancellation
+      ? await sendShiftCancellationToTrainees(
+        shiftCancellation.shift,
+        shiftCancellation.applications
+      )
+      : null;
+    if (shiftCancellation) {
+      console.info(JSON.stringify({
+        event: 'booking_shift_canceled',
+        shiftId: shiftCancellation.shift.id,
+        date: shiftCancellation.shift.date,
+        recruiterTelegramUserId: actor.telegram.user.id,
+        notifications: cancellationNotifications,
+        timestamp: new Date().toISOString()
+      }));
+    }
     response.json({
       ok: true,
       role: actor.role,
       state: bookingStateForActor(cleanState, actor),
-      ...(notification ? { notification } : {})
+      ...(notification ? { notification } : {}),
+      ...(cancellationNotifications ? { cancellationNotifications } : {})
     });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
@@ -1884,6 +2004,7 @@ export {
   bookingStateForActor,
   composeBookingStageChangedMessage,
   composeMentorTraineeResultMessage,
+  composeShiftCancellationMessage,
   mentorTraineesFromState,
   normalizeBookingState,
   traineesCsvFromState,

@@ -52,3 +52,12 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.doesNotMatch(renderCandidates, /data-comment|<textarea/);
   assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
 });
+
+test('recruiter dates expose a distinct event cancellation action', async () => {
+  const html = await readPublicFile('booking.html');
+
+  assert.match(html, /data-cancel-shift/);
+  assert.match(html, /Отменить мероприятие/);
+  assert.match(html, /queueBookingCommand\("cancel_shift"/);
+  assert.match(html, /Закрыть запись/);
+});

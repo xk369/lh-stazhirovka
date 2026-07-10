@@ -438,6 +438,29 @@
       font-weight: 800;
       line-height: 1.35;
     }
+    .shift-admin-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .shift-admin-actions > :only-child { grid-column: 1 / -1; }
+    .shift-admin-actions button {
+      width: 100%;
+      min-height: 46px;
+      padding: 8px 11px;
+      font-size: 13px;
+    }
+    .shift-action-status {
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
+      color: var(--muted);
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
     .badges, .compact-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .candidate-actions {
       display: grid;
@@ -1696,6 +1719,7 @@
       .candidate-card { gap: 12px; padding: 14px; }
       .candidate-card .name { font-size: 19px; }
       .candidate-info-grid { gap: 11px 12px; padding: 11px; }
+      .shift-admin-actions { grid-template-columns: 1fr; }
       .status-hero-title { grid-template-columns: 1fr; }
       .status-date b { font-size: 20px; }
       .choice-grid { grid-template-columns: 1fr; gap: 10px; }
@@ -2073,6 +2097,7 @@
       noshow: "invited"
     };
     const candidateActionMessages = new Map();
+    const shiftActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const venues = [
@@ -2190,7 +2215,9 @@
         seats: Number(shift.seats || 1),
         bookedSeats: bookedSeats !== null && bookedSeats !== undefined && Number.isFinite(Number(bookedSeats)) ? Number(bookedSeats) : null,
         remainingSeats: remainingSeats !== null && remainingSeats !== undefined && Number.isFinite(Number(remainingSeats)) ? Number(remainingSeats) : null,
-        open: typeof shift.open === "boolean" ? shift.open : !["closed", "done", "canceled", "full"].includes(shift.status)
+        open: typeof shift.open === "boolean" ? shift.open : !["closed", "done", "canceled", "full"].includes(shift.status),
+        canceled: Boolean(shift.canceled || shift.status === "canceled"),
+        canceledAt: shift.canceledAt || ""
       };
     }
 
@@ -3039,6 +3066,11 @@
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
         const booked = state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed", "failed", "noshow"].includes(app.status));
+        const cancellationCandidates = state.applications.filter(app => (
+          app.shiftId === shift.id && ["pending", "confirmed", "invited"].includes(app.status)
+        ));
+        const shiftActionMessage = shiftActionMessages.get(String(shift.id)) || "";
+        const shiftStateLabel = shift.canceled ? "Отменена" : shift.open ? "Открыта" : "Закрыта";
         return `
           <article class="date-card shift-card">
             <div class="shift-header">
@@ -3050,7 +3082,7 @@
                   <div class="metric"><b>${booked.length}</b><span>записаны</span></div>
                 </div>
               </div>
-              <span class="pill ${shift.open ? "ok" : "bad"}">${shift.open ? "Открыта" : "Закрыта"}</span>
+              <span class="pill ${shift.open ? "ok" : "bad"}">${shiftStateLabel}</span>
             </div>
             <div class="shift-body">
               <div class="section-title"><span>Новые заявки</span><b class="count">${apps.length}</b></div>
@@ -3069,7 +3101,11 @@
                   </div>
                 </div>
               ` : ""}
-              <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.open ? "Закрыть дату" : "Открыть дату"}</button>
+              <div class="shift-admin-actions">
+                <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть запись" : "Открыть запись"}</button>
+                ${shift.canceled ? "" : `<button class="danger" data-cancel-shift="${shift.id}" type="button">Отменить мероприятие${cancellationCandidates.length ? ` · ${cancellationCandidates.length}` : ""}</button>`}
+              </div>
+              ${shiftActionMessage ? `<div class="shift-action-status" role="status">${escapeHtml(shiftActionMessage)}</div>` : ""}
             </div>
           </article>
         `;
@@ -3647,6 +3683,28 @@ ${managerLine}
       render();
     }
 
+    async function cancelRecruiterShift(id) {
+      const shift = state.shifts.find(item => String(item.id) === String(id));
+      if (!shift || shift.canceled) return;
+      const affected = state.applications.filter(app => (
+        String(app.shiftId) === String(shift.id)
+        && ["pending", "confirmed", "invited"].includes(app.status)
+      ));
+      const affectedText = affected.length
+        ? `${affected.length === 1 ? "1 кандидат будет возвращён" : `${affected.length} ${pluralize(affected.length, "кандидат", "кандидата", "кандидатов")} будут возвращены`} в предварительную запись. Всем подключённым стажёрам уйдёт уведомление.`
+        : "Активных кандидатов на этой дате нет.";
+      if (!confirm(`Отменить мероприятие ${formatLongDate(shift.date)}?\n\n${affectedText}`)) return;
+
+      shiftActionMessages.delete(String(shift.id));
+      const result = await queueBookingCommand("cancel_shift", { shiftId: Number(shift.id) });
+      const delivery = result?.cancellationNotifications || { total: affected.length, sent: 0, skipped: 0, failed: 0 };
+      const message = delivery.total
+        ? `Мероприятие отменено. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
+        : "Мероприятие отменено. Активных кандидатов на этой дате не было.";
+      shiftActionMessages.set(String(shift.id), message);
+      render();
+    }
+
     function composeConfirmedMessage(app) {
       const shift = state.shifts.find(item => item.id === app.shiftId);
       return `<b>🎉 Ваша запись на стажировку подтверждена!</b>
@@ -3930,11 +3988,16 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         render();
         return;
       }
+      const cancelShift = event.target.closest("[data-cancel-shift]");
+      if (cancelShift) {
+        await cancelRecruiterShift(cancelShift.dataset.cancelShift);
+        return;
+      }
       const toggle = event.target.closest("[data-toggle-shift]");
       if (toggle) {
         const shift = state.shifts.find(item => String(item.id) === String(toggle.dataset.toggleShift));
         if (!shift) return;
-        if (shift.open && !confirm("Точно закрыть эту дату? Она уйдет в список закрытых дат.")) return;
+        if (shift.open && !confirm("Закрыть запись на эту дату? Уже записанные кандидаты останутся на своих этапах и не получат уведомлений.")) return;
         await queueBookingCommand("toggle_shift", { shiftId: Number(toggle.dataset.toggleShift), open: !shift.open });
         render();
         return;

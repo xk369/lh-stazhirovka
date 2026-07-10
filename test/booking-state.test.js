@@ -6,6 +6,7 @@ import {
   applyBookingCommand,
   bookingStateForActor,
   composeBookingStageChangedMessage,
+  composeShiftCancellationMessage,
   traineesCsvFromState
 } from '../src/server.js';
 
@@ -326,6 +327,116 @@ test('formats a clear status-change notification for the trainee', () => {
   assert.match(message, /Этап стажировки изменён/);
   assert.match(message, /Стажировка пройдена/);
   assert.match(message, /Текущий статус:<\/b> Ждем отчет/);
+});
+
+test('cancels a shift and returns only pre-attendance candidates to the queue', () => {
+  const source = bookingState();
+  source.applications = [
+    {
+      id: 10,
+      shiftId: 1,
+      name: 'Pending Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'pending'
+    },
+    {
+      id: 11,
+      shiftId: 1,
+      name: 'Invited Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'invited',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group'
+    },
+    {
+      id: 12,
+      shiftId: 1,
+      name: 'Attended Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'feedback',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group'
+    }
+  ];
+  source.inviteGroups = [{
+    id: 20,
+    shiftId: 1,
+    venueId: 'loft1',
+    link: 'https://t.me/+group',
+    memberIds: [11, 12],
+    sentAt: '2026-07-10T12:00:00.000Z'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'cancel_shift', baseVersion: 2, shiftId: 1 },
+    recruiterActor,
+    new Date('2026-07-10T14:00:00.000Z')
+  );
+
+  assert.equal(next.shifts[0].open, false);
+  assert.equal(next.shifts[0].canceled, true);
+  assert.equal(next.shifts[0].canceledAt, '2026-07-10T14:00:00.000Z');
+  assert.deepEqual(
+    next.applications.slice(0, 2).map(application => ({
+      status: application.status,
+      shiftId: application.shiftId,
+      inviteGroupId: application.inviteGroupId,
+      groupLink: application.groupLink
+    })),
+    [
+      { status: 'queue', shiftId: null, inviteGroupId: null, groupLink: '' },
+      { status: 'queue', shiftId: null, inviteGroupId: null, groupLink: '' }
+    ]
+  );
+  assert.equal(next.applications[2].status, 'feedback');
+  assert.deepEqual(next.inviteGroups[0].memberIds, [12]);
+});
+
+test('formats the shift cancellation message with a new-date instruction', () => {
+  const message = composeShiftCancellationMessage({ date: '2026-07-11' });
+
+  assert.match(message, /Стажировка отменена/);
+  assert.match(message, /11\.07\.2026/);
+  assert.match(message, /выберите другую доступную дату/);
+});
+
+test('allows a canceled trainee returned to queue to choose another shift', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: null,
+    name: 'Queued Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'queue',
+    telegramUserId: '999'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 2,
+      application: {
+        id: 10,
+        shiftId: 1,
+        name: 'Queued Trainee',
+        training: 'passed',
+        attempt: 'first',
+        status: 'pending'
+      }
+    },
+    traineeActor
+  );
+
+  assert.equal(next.applications[0].shiftId, 1);
+  assert.equal(next.applications[0].status, 'pending');
 });
 
 test('exports trainee table as excel-friendly csv', () => {
