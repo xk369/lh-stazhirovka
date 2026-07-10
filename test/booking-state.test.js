@@ -5,6 +5,7 @@ import {
   BookingValidationError,
   applyBookingCommand,
   bookingStateForActor,
+  composeBookingStageChangedMessage,
   traineesCsvFromState
 } from '../src/server.js';
 
@@ -225,6 +226,106 @@ test('allows attendance status after group invite is sent', () => {
   );
 
   assert.equal(next.applications[0].status, 'feedback');
+});
+
+test('steps a completed candidate back to feedback and clears the previous mentor result', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Completed Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'passed',
+    inviteGroupId: 20,
+    venueId: 'loft1',
+    groupLink: 'https://t.me/+group',
+    mentorReport: true,
+    mentorReportAt: '2026-07-10T18:00:00.000Z',
+    mentorReporterTelegramUserId: '100',
+    mentorDecision: 'Стажировка пройдена',
+    mentorCommentForTrainee: 'Old result',
+    mentorCommentDeliveryStatus: 'sent'
+  }];
+  source.inviteGroups = [{
+    id: 20,
+    shiftId: 1,
+    venueId: 'loft1',
+    link: 'https://t.me/+group',
+    memberIds: [10],
+    sentAt: '2026-07-10T12:00:00.000Z'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'step_back_application', baseVersion: 2, applicationId: 10 },
+    recruiterActor
+  );
+
+  assert.equal(next.applications[0].status, 'feedback');
+  assert.equal(next.applications[0].mentorReport, false);
+  assert.equal(next.applications[0].mentorDecision, '');
+  assert.equal(next.applications[0].mentorCommentDeliveryStatus, '');
+});
+
+test('steps a no-show candidate back to the invitation stage', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'No-show Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'noshow',
+    inviteGroupId: 20,
+    venueId: 'loft1',
+    groupLink: 'https://t.me/+group'
+  }];
+  source.inviteGroups = [{
+    id: 20,
+    shiftId: 1,
+    venueId: 'loft1',
+    link: 'https://t.me/+group',
+    memberIds: [10],
+    sentAt: '2026-07-10T12:00:00.000Z'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'step_back_application', baseVersion: 2, applicationId: 10 },
+    recruiterActor
+  );
+
+  assert.equal(next.applications[0].status, 'invited');
+});
+
+test('rejects step back when the current status has no correction path', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Confirmed Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'confirmed'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      { action: 'step_back_application', baseVersion: 2, applicationId: 10 },
+      recruiterActor
+    ),
+    BookingValidationError
+  );
+});
+
+test('formats a clear status-change notification for the trainee', () => {
+  const message = composeBookingStageChangedMessage({ status: 'feedback' }, 'passed');
+
+  assert.match(message, /Этап стажировки изменён/);
+  assert.match(message, /Стажировка пройдена/);
+  assert.match(message, /Текущий статус:<\/b> Ждем отчет/);
 });
 
 test('exports trainee table as excel-friendly csv', () => {

@@ -39,3 +39,13 @@ test('registry search updates results asynchronously without replacing its input
   assert.match(inputHandler, /scheduleRegistryRender\(\)/);
   assert.doesNotMatch(inputHandler, /render\(\)|renderRegistry\(\)/);
 });
+
+test('candidate cards are numbered, comment-free and use one step-back action', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
+
+  assert.match(renderCandidates, /candidate-number/);
+  assert.match(renderCandidates, /data-step-back/);
+  assert.doesNotMatch(renderCandidates, /data-comment|<textarea/);
+  assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
+});

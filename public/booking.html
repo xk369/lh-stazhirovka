@@ -323,6 +323,92 @@
       text-align: center;
       overflow-wrap: anywhere;
     }
+    .candidate-card {
+      display: grid;
+      gap: 12px;
+      padding: 15px;
+    }
+    .candidate-card .candidate-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+    }
+    .candidate-title-block { min-width: 0; }
+    .candidate-title-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      min-width: 0;
+    }
+    .candidate-number {
+      flex: 0 0 auto;
+      min-width: 30px;
+      min-height: 26px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--muted);
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 950;
+      line-height: 1;
+    }
+    .candidate-card .name {
+      min-width: 0;
+      font-size: clamp(18px, 3.2vw, 22px);
+      line-height: 1.12;
+      overflow-wrap: anywhere;
+    }
+    .candidate-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px 12px;
+      margin: 7px 0 0 39px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+    .candidate-meta-row b { color: var(--text); font-weight: 900; }
+    .candidate-card .badges,
+    .candidate-card .candidate-stage,
+    .candidate-card-actions {
+      border-top: 1px solid var(--line);
+      padding-top: 11px;
+    }
+    .candidate-card-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .candidate-card-actions > :only-child { grid-column: 1 / -1; }
+    .candidate-card-actions button {
+      width: 100%;
+      min-height: 46px;
+      padding: 8px 11px;
+    }
+    .candidate-step-back {
+      display: grid;
+      gap: 2px;
+      justify-items: center;
+    }
+    .candidate-step-back small {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .candidate-action-status {
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+      color: var(--muted);
+      padding: 9px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
     .badges, .compact-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .candidate-actions {
       display: grid;
@@ -1892,7 +1978,6 @@
     const telegramLinkingIds = new Set();
     const telegramLinkErrors = new Map();
     const stagePopoverTimers = new Map();
-    const commentSaveTimers = new Map();
     let profileSaveTimer = null;
     let bookingCommandQueue = Promise.resolve();
     let activeStageInfoId = "";
@@ -1950,6 +2035,13 @@
       failed: "bad",
       noshow: "bad"
     };
+    const stepBackStatus = {
+      feedback: "invited",
+      passed: "feedback",
+      failed: "feedback",
+      noshow: "invited"
+    };
+    const candidateActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const venues = [
@@ -2716,7 +2808,6 @@
           ${renderStageTrack(app)}
           ${app.status === "invited" ? renderTraineeInvite(app) : ""}
           ${renderMentorReportNotice(app)}
-          ${app.comment ? `<div class="notice">Комментарий рекрута: ${escapeHtml(app.comment)}</div>` : ""}
           ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
           ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись заново</button>` : ""}
         </article>
@@ -3013,7 +3104,7 @@
             <div class="candidate-actions">
               ${canManageAttendance ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>` : ""}
               ${canManageAttendance ? `<button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>` : ""}
-              ${app.status === "feedback" ? `<button class="secondary" data-status="invited" data-id="${app.id}" type="button">Откатить к приглашению</button>` : ""}
+              ${app.status === "feedback" ? `<button class="secondary" data-step-back="${app.id}" type="button">На этап назад</button>` : ""}
               <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
             </div>
           ` : ""}
@@ -3229,17 +3320,23 @@ ${managerLine}
       const apps = state.applications
         .filter(app => filter === "all" || (filter === "active" ? active.includes(app.status) : app.status === filter))
         .sort((a, b) => b.id - a.id);
-      document.getElementById("candidateList").innerHTML = apps.length ? apps.map(app => {
+      document.getElementById("candidateList").innerHTML = apps.length ? apps.map((app, index) => {
         const shift = state.shifts.find(item => item.id === app.shiftId);
         const showAttendanceActions = app.status === "invited";
-        const showFeedbackCorrection = app.status === "feedback";
-        const isFinal = ["passed", "failed", "noshow"].includes(app.status);
+        const previousStatus = stepBackStatus[app.status] || "";
+        const actionMessage = candidateActionMessages.get(String(app.id)) || "";
         return `
-          <article class="card">
+          <article class="card candidate-card">
             <div class="candidate-head">
-              <div>
-                <div class="name">${escapeHtml(app.name)}</div>
-                <p class="meta">${shift ? `Дата: ${formatDate(shift.date)}` : "Предварительная запись"}<br>Ограничения: ${escapeHtml(app.limits || "нет")}</p>
+              <div class="candidate-title-block">
+                <div class="candidate-title-line">
+                  <span class="candidate-number">${index + 1}</span>
+                  <div class="name">${escapeHtml(app.name)}</div>
+                </div>
+                <div class="candidate-meta-row">
+                  <span><b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b></span>
+                  <span>Ограничения: <b>${escapeHtml(app.limits || "нет")}</b></span>
+                </div>
               </div>
               <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
             </div>
@@ -3249,26 +3346,21 @@ ${managerLine}
               ${renderMentorReportBadges(app)}
             </div>
             ${renderCandidateStage(app, "recruiter-list")}
-            <label>Комментарий
-              <textarea data-comment="${app.id}" placeholder="Внутренний комментарий рекрута">${escapeHtml(app.comment || "")}</textarea>
-            </label>
             ${showAttendanceActions ? `
-              <div class="compact-actions">
+              <div class="candidate-card-actions">
                 <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>
                 <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
               </div>
             ` : ""}
-            ${showFeedbackCorrection ? `
-              <div class="compact-actions">
-                <button class="secondary" data-status="invited" data-id="${app.id}" type="button">Откатить к приглашению</button>
+            ${previousStatus ? `
+              <div class="candidate-card-actions">
+                <button class="quiet candidate-step-back" data-step-back="${app.id}" type="button" aria-label="Вернуть ${escapeHtml(app.name)} на этап ${escapeHtml(statusNames[previousStatus])}">
+                  <span>На этап назад</span>
+                  <small>${escapeHtml(statusNames[previousStatus])}</small>
+                </button>
               </div>
             ` : ""}
-            ${isFinal ? `
-              <div class="compact-actions">
-                <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Откатить к отчету</button>
-                <button class="quiet" data-status="invited" data-id="${app.id}" type="button">Откатить к приглашению</button>
-              </div>
-            ` : ""}
+            ${actionMessage ? `<div class="candidate-action-status" role="status">${escapeHtml(actionMessage)}</div>` : ""}
           </article>
         `;
       }).join("") : `<div class="panel empty">Кандидатов на этом этапе нет.</div>`;
@@ -3497,6 +3589,29 @@ ${managerLine}
       if (status === "passed") notifyApplication(app, composePassedMessage());
       if (status === "failed") notifyApplication(app, composeFailedMessage());
       if (status === "noshow") notifyApplication(app, composeNoShowMessage());
+      render();
+    }
+
+    async function stepBackCandidate(id) {
+      const app = state.applications.find(item => String(item.id) === String(id));
+      const previousStatus = stepBackStatus[app?.status];
+      if (!app || !previousStatus) return;
+      const targetLabel = statusNames[previousStatus] || previousStatus;
+      if (!confirm(`Вернуть «${app.name}» на этап «${targetLabel}»? Стажёр получит уведомление об изменении.`)) return;
+
+      candidateActionMessages.delete(String(app.id));
+      const result = await queueBookingCommand("step_back_application", {
+        applicationId: Number(app.id)
+      });
+      const deliveryStatus = result?.notification?.status;
+      const message = deliveryStatus === "sent"
+        ? `Этап изменён на «${targetLabel}». Стажёр уведомлён.`
+        : deliveryStatus === "skipped"
+          ? `Этап изменён на «${targetLabel}», но Telegram стажёра не подключён.`
+          : deliveryStatus === "failed"
+            ? `Этап изменён на «${targetLabel}», но уведомление не доставлено.`
+            : `Этап изменён на «${targetLabel}».`;
+      candidateActionMessages.set(String(app.id), message);
       render();
     }
 
@@ -3738,6 +3853,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         await setStatus(status.dataset.id, status.dataset.status);
         return;
       }
+      const stepBack = event.target.closest("[data-step-back]");
+      if (stepBack) {
+        await stepBackCandidate(stepBack.dataset.stepBack);
+        return;
+      }
       const retryTelegram = event.target.closest("[data-retry-telegram]");
       if (retryTelegram) {
         telegramLinkErrors.delete(String(retryTelegram.dataset.retryTelegram));
@@ -3917,20 +4037,6 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();
         return;
-      }
-      const comment = event.target.closest("[data-comment]");
-      if (comment) {
-        const app = state.applications.find(item => String(item.id) === String(comment.dataset.comment));
-        if (!app) return;
-        app.comment = comment.value;
-        clearTimeout(commentSaveTimers.get(String(app.id)));
-        commentSaveTimers.set(String(app.id), setTimeout(() => {
-          queueBookingCommand(
-            "update_comment",
-            { applicationId: Number(app.id), comment: app.comment },
-            { notify: false }
-          ).catch(() => {});
-        }, 650));
       }
       if (event.target === fields.workgroupManager) {
         const draft = ensureInviteDraft();

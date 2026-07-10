@@ -67,6 +67,12 @@ const BOOKING_STATUS_LABELS = {
   failed: 'Нужна повторная запись',
   noshow: 'Выход не состоялся'
 };
+const BOOKING_STEP_BACK_STATUSES = {
+  feedback: 'invited',
+  passed: 'feedback',
+  failed: 'feedback',
+  noshow: 'invited'
+};
 const TRAINING_LABELS = {
   passed: 'Банкетное обслуживание пройдено',
   not_passed: 'Банкетное обслуживание не пройдено'
@@ -850,6 +856,48 @@ function composeMentorTraineeResultMessage(application, resultPayload) {
   return lines.join('\n').trim();
 }
 
+function composeBookingStageChangedMessage(application, previousStatus) {
+  const currentStatus = normalizeLegacyStatus(application?.status);
+  const currentLabel = BOOKING_STATUS_LABELS[currentStatus] || currentStatus;
+  const previousLabel = BOOKING_STATUS_LABELS[normalizeLegacyStatus(previousStatus)] || previousStatus;
+  const nextStepText = currentStatus === 'feedback'
+    ? 'Сейчас ожидается новый отчёт наставника по вашей стажировке.'
+    : 'Вы снова на этапе приглашения. Следите за сообщениями рекрута и информацией в рабочей группе.';
+  return [
+    '↩️ <b>Этап стажировки изменён</b>',
+    '',
+    `Рекрут вернул вашу заявку с этапа «${escapeTelegramHtml(previousLabel)}» на один шаг назад.`,
+    '',
+    `<b>Текущий статус:</b> ${escapeTelegramHtml(currentLabel)}.`,
+    nextStepText,
+    '',
+    'Актуальный этап всегда можно посмотреть в мини-приложении.'
+  ].join('\n');
+}
+
+async function sendBookingStageChangedToTrainee(application, previousStatus) {
+  if (!application?.telegramChatId) {
+    return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
+  }
+  try {
+    const message = await sendTelegramMessage({
+      botToken: config.botToken,
+      chatId: application.telegramChatId,
+      text: composeBookingStageChangedMessage(application, previousStatus),
+      parseMode: 'HTML',
+      disableWebPagePreview: true
+    });
+    return { ok: true, status: 'sent', messageId: message.message_id };
+  } catch (error) {
+    console.error('Booking stage change delivery error:', error);
+    return {
+      ok: false,
+      status: 'failed',
+      error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
+    };
+  }
+}
+
 async function sendMentorResultToTrainee(application, resultPayload, now = new Date()) {
   if (!resultPayload || typeof resultPayload !== 'object') {
     return { ok: false, status: 'skipped', skipped: 'empty_result' };
@@ -1051,6 +1099,37 @@ function applySetApplicationStatus(state, command, actor) {
   return next;
 }
 
+function resetMentorReport(application) {
+  return {
+    ...application,
+    mentorReport: false,
+    mentorReportAt: '',
+    mentorReporterTelegramUserId: '',
+    mentorDecision: '',
+    mentorCommentForTrainee: '',
+    mentorCommentSentAt: '',
+    mentorCommentDeliveryStatus: '',
+    mentorCommentDeliveryError: ''
+  };
+}
+
+function applyStepBackApplication(state, command, actor) {
+  requireRecruiterRole(actor);
+  const next = mutableStateCopy(state);
+  const { index, application } = requireApplication(next, command.applicationId);
+  const currentStatus = normalizeLegacyStatus(application.status);
+  const previousStatus = BOOKING_STEP_BACK_STATUSES[currentStatus];
+  if (!previousStatus) {
+    throw new BookingValidationError('Кандидата нельзя вернуть на предыдущий этап из текущего статуса.');
+  }
+
+  const cleanApplication = ['passed', 'failed'].includes(currentStatus)
+    ? resetMentorReport(application)
+    : application;
+  next.applications[index] = { ...cleanApplication, status: previousStatus };
+  return next;
+}
+
 function applyReturnToQueue(state, command, actor) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
@@ -1188,6 +1267,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       break;
     case 'set_application_status':
       nextState = applySetApplicationStatus(state, command, actor);
+      break;
+    case 'step_back_application':
+      nextState = applyStepBackApplication(state, command, actor);
       break;
     case 'return_to_queue':
       nextState = applyReturnToQueue(state, command, actor);
@@ -1391,11 +1473,24 @@ app.get('/api/state', async (request, response, next) => {
 
 app.post('/api/state', async (request, response, next) => {
   let actor = null;
+  let stepBackTransition = null;
   try {
     actor = bookingActorFromRequest(request);
     const cleanState = await withBookingMutation(async () => {
       const currentState = await readBookingState();
+      const previousApplication = request.body?.action === 'step_back_application'
+        ? currentState.applications.find(item => String(item.id) === String(request.body?.applicationId))
+        : null;
       const nextState = applyBookingCommand(currentState, request.body || {}, actor);
+      if (previousApplication) {
+        const application = nextState.applications.find(item => String(item.id) === String(previousApplication.id));
+        if (application) {
+          stepBackTransition = {
+            previousStatus: normalizeLegacyStatus(previousApplication.status),
+            application
+          };
+        }
+      }
       return writeBookingState(nextState);
     });
     if (actor.role === 'recruiter' && request.body?.action === 'clear_state') {
@@ -1408,7 +1503,29 @@ app.post('/api/state', async (request, response, next) => {
         })
       );
     }
-    response.json({ ok: true, role: actor.role, state: bookingStateForActor(cleanState, actor) });
+    const notification = stepBackTransition
+      ? await sendBookingStageChangedToTrainee(
+        stepBackTransition.application,
+        stepBackTransition.previousStatus
+      )
+      : null;
+    if (stepBackTransition) {
+      console.info(JSON.stringify({
+        event: 'booking_application_stepped_back',
+        applicationId: stepBackTransition.application.id,
+        fromStatus: stepBackTransition.previousStatus,
+        toStatus: stepBackTransition.application.status,
+        recruiterTelegramUserId: actor.telegram.user.id,
+        notificationStatus: notification?.status || 'unknown',
+        timestamp: new Date().toISOString()
+      }));
+    }
+    response.json({
+      ok: true,
+      role: actor.role,
+      state: bookingStateForActor(cleanState, actor),
+      ...(notification ? { notification } : {})
+    });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
     if (error instanceof BookingConflictError && actor) {
@@ -1765,6 +1882,7 @@ export {
   applyMentorReportResultToBookingState,
   applyBookingCommand,
   bookingStateForActor,
+  composeBookingStageChangedMessage,
   composeMentorTraineeResultMessage,
   mentorTraineesFromState,
   normalizeBookingState,
