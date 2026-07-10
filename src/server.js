@@ -1283,6 +1283,34 @@ function applyCancelShift(state, command, actor, now = new Date()) {
   return next;
 }
 
+function applyCancelInternship(state, command, actor) {
+  requireRecruiterRole(actor);
+  const applicationId = normalizeId(command.applicationId, 'applicationId');
+  const next = mutableStateCopy(state);
+  const { index, application } = requireApplication(next, applicationId);
+  const status = normalizeLegacyStatus(application.status);
+  if (!SHIFT_CANCELLATION_APPLICATION_STATUSES.has(status)) {
+    throw new BookingValidationError('Стажировку можно отменить только до выхода стажёра.');
+  }
+
+  next.applications[index] = {
+    ...resetMentorReport(application),
+    shiftId: null,
+    status: 'queue',
+    inviteGroupId: null,
+    venueId: null,
+    groupLink: '',
+    candidateReport: false
+  };
+  next.inviteGroups = next.inviteGroups
+    .map(group => ({
+      ...group,
+      memberIds: group.memberIds.filter(id => String(id) !== String(applicationId))
+    }))
+    .filter(group => group.memberIds.length);
+  return next;
+}
+
 function applyToggleShift(state, command, actor) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
@@ -1441,6 +1469,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       break;
     case 'cancel_shift':
       nextState = applyCancelShift(state, command, actor, now);
+      break;
+    case 'cancel_internship':
+      nextState = applyCancelInternship(state, command, actor);
       break;
     case 'toggle_shift':
       nextState = applyToggleShift(state, command, actor);
@@ -1643,6 +1674,7 @@ app.post('/api/state', async (request, response, next) => {
   let actor = null;
   let stepBackTransition = null;
   let shiftCancellation = null;
+  let internshipCancellation = null;
   let capacityChange = null;
   try {
     actor = bookingActorFromRequest(request);
@@ -1657,6 +1689,12 @@ app.post('/api/state', async (request, response, next) => {
       const canceledApplicationIds = canceledShift
         ? applicationsAffectedByShiftCancellation(currentState, canceledShift.id).map(application => application.id)
         : [];
+      const canceledInternshipApplication = request.body?.action === 'cancel_internship'
+        ? currentState.applications.find(item => String(item.id) === String(request.body?.applicationId))
+        : null;
+      const canceledInternshipShift = canceledInternshipApplication?.shiftId
+        ? currentState.shifts.find(item => String(item.id) === String(canceledInternshipApplication.shiftId))
+        : null;
       const capacityShiftId = request.body?.action === 'update_shift_capacity'
         ? request.body?.shiftId
         : null;
@@ -1675,6 +1713,13 @@ app.post('/api/state', async (request, response, next) => {
         shiftCancellation = {
           shift: nextState.shifts.find(item => String(item.id) === String(canceledShift.id)),
           applications: nextState.applications.filter(application => canceledIds.has(String(application.id)))
+        };
+      }
+      if (canceledInternshipApplication && canceledInternshipShift) {
+        const application = nextState.applications.find(item => String(item.id) === String(canceledInternshipApplication.id));
+        internshipCancellation = {
+          shift: canceledInternshipShift,
+          application
         };
       }
       if (capacityShiftId !== null) {
@@ -1709,10 +1754,16 @@ app.post('/api/state', async (request, response, next) => {
         timestamp: new Date().toISOString()
       }));
     }
-    const cancellationNotifications = shiftCancellation
+    const cancellationTarget = shiftCancellation || (internshipCancellation?.application
+      ? {
+          shift: internshipCancellation.shift,
+          applications: [internshipCancellation.application]
+        }
+      : null);
+    const cancellationNotifications = cancellationTarget
       ? await sendShiftCancellationToTrainees(
-        shiftCancellation.shift,
-        shiftCancellation.applications
+        cancellationTarget.shift,
+        cancellationTarget.applications
       )
       : null;
     if (shiftCancellation) {
@@ -1720,6 +1771,17 @@ app.post('/api/state', async (request, response, next) => {
         event: 'booking_shift_canceled',
         shiftId: shiftCancellation.shift.id,
         date: shiftCancellation.shift.date,
+        recruiterTelegramUserId: actor.telegram.user.id,
+        notifications: cancellationNotifications,
+        timestamp: new Date().toISOString()
+      }));
+    }
+    if (internshipCancellation) {
+      console.info(JSON.stringify({
+        event: 'booking_internship_canceled',
+        applicationId: internshipCancellation.application?.id,
+        shiftId: internshipCancellation.shift?.id,
+        date: internshipCancellation.shift?.date,
         recruiterTelegramUserId: actor.telegram.user.id,
         notifications: cancellationNotifications,
         timestamp: new Date().toISOString()

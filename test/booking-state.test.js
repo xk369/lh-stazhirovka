@@ -436,6 +436,98 @@ test('cancels a shift and returns only pre-attendance candidates to the queue', 
   assert.deepEqual(next.inviteGroups[0].memberIds, [12]);
 });
 
+test('cancels one trainee internship without affecting other trainees on the same shift', () => {
+  const source = bookingState();
+  source.applications = [
+    {
+      id: 10,
+      shiftId: 1,
+      name: 'Canceled Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'invited',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group',
+      mentorReport: true,
+      mentorDecision: 'Стажировка пройдена'
+    },
+    {
+      id: 11,
+      shiftId: 1,
+      name: 'Active Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'invited',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group'
+    }
+  ];
+  source.inviteGroups = [{
+    id: 20,
+    shiftId: 1,
+    venueId: 'loft1',
+    link: 'https://t.me/+group',
+    memberIds: [10, 11],
+    sentAt: '2026-07-10T12:00:00.000Z'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'cancel_internship', baseVersion: 2, applicationId: 10 },
+    recruiterActor
+  );
+
+  assert.equal(next.shifts[0].open, true);
+  assert.equal(next.shifts[0].canceled, false);
+  assert.deepEqual(
+    {
+      status: next.applications[0].status,
+      shiftId: next.applications[0].shiftId,
+      inviteGroupId: next.applications[0].inviteGroupId,
+      venueId: next.applications[0].venueId,
+      groupLink: next.applications[0].groupLink,
+      mentorReport: next.applications[0].mentorReport
+    },
+    {
+      status: 'queue',
+      shiftId: null,
+      inviteGroupId: null,
+      venueId: null,
+      groupLink: '',
+      mentorReport: false
+    }
+  );
+  assert.equal(next.applications[1].status, 'invited');
+  assert.equal(next.applications[1].shiftId, 1);
+  assert.deepEqual(next.inviteGroups[0].memberIds, [11]);
+});
+
+test('does not cancel internship after trainee attendance is already marked', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Attended Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'feedback',
+    inviteGroupId: 20,
+    venueId: 'loft1',
+    groupLink: 'https://t.me/+group'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      { action: 'cancel_internship', baseVersion: 2, applicationId: 10 },
+      recruiterActor
+    ),
+    BookingValidationError
+  );
+});
+
 test('formats the shift cancellation message with a new-date instruction', () => {
   const message = composeShiftCancellationMessage({ date: '2026-07-11' });
 

@@ -44,7 +44,8 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   const html = await readPublicFile('booking.html');
   const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
 
-  assert.match(renderCandidates, /candidate-number/);
+  assert.match(renderCandidates, /<span class="candidate-number">\$\{index \+ 1\}<\/span>/);
+  assert.doesNotMatch(renderCandidates, /№/);
   assert.match(renderCandidates, /candidate-status/);
   assert.match(renderCandidates, /candidate-info-grid/);
   assert.match(renderCandidates, /data-step-back/);
@@ -53,26 +54,37 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
 });
 
-test('recruiter dates expose a distinct internship cancellation action, not an event action', async () => {
+test('recruiter date cards attach internship cancellation to trainee cards', async () => {
   const html = await readPublicFile('booking.html');
+  const renderPendingCandidate = html.match(/function renderPendingCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function renderBookedCandidate/)?.[0] || '';
+  const renderBookedCandidate = html.match(/function renderBookedCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function eligibleInviteCandidates/)?.[0] || '';
+  const actionsBlock = html.match(/<div class="shift-admin-actions">[\s\S]*?<\/div>/)?.[0] || '';
 
-  assert.match(html, /data-cancel-shift/);
-  assert.match(html, /Отменить стажировку/);
-  assert.match(html, /queueBookingCommand\("cancel_shift"/);
+  assert.doesNotMatch(actionsBlock, /data-cancel-shift|Отменить стажировку/);
+  assert.match(renderPendingCandidate, /data-cancel-internship="\$\{app\.id\}"/);
+  assert.match(renderBookedCandidate, /data-cancel-internship="\$\{app\.id\}"/);
+  assert.match(html, /queueBookingCommand\("cancel_internship"/);
   assert.match(html, /Закрыть дату/);
   assert.doesNotMatch(html, /мероприятие/i);
 });
 
-test('recruiter date actions render close/cancel in one row and capacity edit as a full-width row below', async () => {
+test('recruiter date actions render date-level controls only', async () => {
   const html = await readPublicFile('booking.html');
   const actionsBlock = html.match(/<div class="shift-admin-actions">[\s\S]*?<\/div>/)?.[0] || '';
 
   assert.match(actionsBlock, /data-toggle-shift="\$\{shift\.id\}"/);
-  assert.match(actionsBlock, /data-cancel-shift="\$\{shift\.id\}"/);
   assert.match(actionsBlock, /data-edit-seats="\$\{shift\.id\}"[^>]*>Изменить количество мест/);
-  assert.match(actionsBlock, /class="quiet full-row" data-edit-seats/);
+  assert.doesNotMatch(actionsBlock, /data-cancel-shift|data-cancel-internship|full-row/);
   assert.match(html, /\.shift-admin-actions \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.match(html, /\.shift-admin-actions \.full-row \{ grid-column: 1 \/ -1; \}/);
+});
+
+test('recruiter date cards do not manage attendance directly', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderBookedCandidate = html.match(/function renderBookedCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function eligibleInviteCandidates/)?.[0] || '';
+  const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
+
+  assert.doesNotMatch(renderBookedCandidate, />Вышел<|>Не вышел</);
+  assert.match(renderCandidates, />Вышел<|>Не вышел</);
 });
 
 test('capacity edit action calls the dedicated booking command', async () => {

@@ -335,15 +335,22 @@
     }
     .candidate-title-line {
       display: flex;
-      align-items: baseline;
-      gap: 8px;
+      align-items: center;
+      gap: 10px;
       min-width: 0;
     }
     .candidate-number {
-      flex: 0 0 auto;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 850;
+      flex: 0 0 32px;
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 950;
       line-height: 1;
     }
     .candidate-card .name {
@@ -446,7 +453,6 @@
       padding-top: 12px;
     }
     .shift-admin-actions > :only-child { grid-column: 1 / -1; }
-    .shift-admin-actions .full-row { grid-column: 1 / -1; }
     .shift-admin-actions button {
       width: 100%;
       min-height: 46px;
@@ -3067,9 +3073,6 @@
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
         const booked = state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed", "failed", "noshow"].includes(app.status));
-        const cancellationCandidates = state.applications.filter(app => (
-          app.shiftId === shift.id && ["pending", "confirmed", "invited"].includes(app.status)
-        ));
         const shiftActionMessage = shiftActionMessages.get(String(shift.id)) || "";
         const shiftStateLabel = shift.canceled ? "Отменена" : shift.open ? "Открыта" : "Закрыта";
         return `
@@ -3104,8 +3107,7 @@
               ` : ""}
               <div class="shift-admin-actions">
                 <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть дату" : "Открыть дату"}</button>
-                ${shift.canceled ? "" : `<button class="danger" data-cancel-shift="${shift.id}" type="button">Отменить стажировку${cancellationCandidates.length ? ` · ${cancellationCandidates.length}` : ""}</button>`}
-                ${shift.canceled ? "" : `<button class="quiet full-row" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
+                ${shift.canceled ? "" : `<button class="quiet" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
               </div>
               ${shiftActionMessage ? `<div class="shift-action-status" role="status">${escapeHtml(shiftActionMessage)}</div>` : ""}
             </div>
@@ -3145,7 +3147,7 @@
           ${renderCandidateStage(app, "recruiter-pending")}
           <div class="candidate-actions">
             <button class="primary" data-status="confirmed" data-id="${app.id}" type="button">Подтвердить стажировку</button>
-            <button class="secondary" data-return-queue="${app.id}" type="button">Вернуть в предзапись</button>
+            <button class="danger" data-cancel-internship="${app.id}" type="button">Отменить стажировку</button>
           </div>
         </article>
       `;
@@ -3153,8 +3155,8 @@
 
     function renderBookedCandidate(app) {
       const venue = venueById(app.venueId);
-      const canManageBookedCandidate = ["confirmed", "invited", "feedback"].includes(app.status);
-      const canManageAttendance = app.status === "invited";
+      const canCancelInternship = ["confirmed", "invited"].includes(app.status);
+      const canManageBookedCandidate = canCancelInternship || app.status === "feedback";
       return `
         <article class="card">
           <div class="candidate-head">
@@ -3173,8 +3175,7 @@
           ${renderCandidateStage(app, "recruiter-booked")}
           ${canManageBookedCandidate ? `
             <div class="candidate-actions">
-              ${canManageAttendance ? `<button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>` : ""}
-              ${canManageAttendance ? `<button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>` : ""}
+              ${canCancelInternship ? `<button class="danger" data-cancel-internship="${app.id}" type="button">Отменить стажировку</button>` : ""}
               ${app.status === "feedback" ? `<button class="secondary" data-step-back="${app.id}" type="button">На этап назад</button>` : ""}
               <button class="quiet" data-status="pending" data-id="${app.id}" type="button">Вернуть в новые заявки</button>
             </div>
@@ -3401,7 +3402,7 @@ ${managerLine}
           <article class="card candidate-card">
             <div class="candidate-card-head">
               <div class="candidate-title-line">
-                <span class="candidate-number">№ ${index + 1}</span>
+                <span class="candidate-number">${index + 1}</span>
                 <div class="name">${escapeHtml(app.name)}</div>
               </div>
               <span class="pill candidate-status ${statusPill[app.status]}">${statusNames[app.status]}</span>
@@ -3684,25 +3685,22 @@ ${managerLine}
       render();
     }
 
-    async function cancelRecruiterShift(id) {
-      const shift = state.shifts.find(item => String(item.id) === String(id));
-      if (!shift || shift.canceled) return;
-      const affected = state.applications.filter(app => (
-        String(app.shiftId) === String(shift.id)
-        && ["pending", "confirmed", "invited"].includes(app.status)
-      ));
-      const affectedText = affected.length
-        ? `${affected.length === 1 ? "1 кандидат будет возвращён" : `${affected.length} ${pluralize(affected.length, "кандидат", "кандидата", "кандидатов")} будут возвращены`} в предварительную запись. Всем подключённым стажёрам уйдёт уведомление.`
-        : "Активных кандидатов на этой дате нет.";
-      if (!confirm(`Отменить стажировку ${formatLongDate(shift.date)}?\n\n${affectedText}`)) return;
+    async function cancelCandidateInternship(id) {
+      const app = state.applications.find(item => String(item.id) === String(id));
+      if (!app || !["pending", "confirmed", "invited"].includes(app.status)) return;
+      const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+      if (!shift) return;
+      const shiftDate = formatLongDate(shift.date);
+      const message = `Отменить стажировку для «${app.name}» на ${shiftDate}?\n\nСтажёр вернётся в предварительную запись и получит уведомление, если Telegram подключён.`;
+      if (!confirm(message)) return;
 
       shiftActionMessages.delete(String(shift.id));
-      const result = await queueBookingCommand("cancel_shift", { shiftId: Number(shift.id) });
-      const delivery = result?.cancellationNotifications || { total: affected.length, sent: 0, skipped: 0, failed: 0 };
-      const message = delivery.total
-        ? `Стажировка отменена. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
-        : "Стажировка отменена. Активных кандидатов на этой дате не было.";
-      shiftActionMessages.set(String(shift.id), message);
+      const result = await queueBookingCommand("cancel_internship", { applicationId: Number(app.id) });
+      const delivery = result?.cancellationNotifications || { total: 0, sent: 0, skipped: 0, failed: 0 };
+      const statusText = delivery.total
+        ? `Стажировка для «${app.name}» отменена. Уведомлено: ${delivery.sent} из ${delivery.total}.${delivery.skipped ? ` Без подключённого Telegram: ${delivery.skipped}.` : ""}${delivery.failed ? ` Не доставлено: ${delivery.failed}.` : ""}`
+        : `Стажировка для «${app.name}» отменена.`;
+      shiftActionMessages.set(String(shift.id), statusText);
       render();
     }
 
@@ -3961,6 +3959,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         await createApplication("queue", null);
         return;
       }
+      const cancelInternship = event.target.closest("[data-cancel-internship]");
+      if (cancelInternship) {
+        await cancelCandidateInternship(cancelInternship.dataset.cancelInternship);
+        return;
+      }
       const status = event.target.closest("[data-status]");
       if (status) {
         await setStatus(status.dataset.id, status.dataset.status);
@@ -4009,11 +4012,6 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           shiftId: Number(assign.dataset.shift)
         });
         render();
-        return;
-      }
-      const cancelShift = event.target.closest("[data-cancel-shift]");
-      if (cancelShift) {
-        await cancelRecruiterShift(cancelShift.dataset.cancelShift);
         return;
       }
       const editSeats = event.target.closest("[data-edit-seats]");
