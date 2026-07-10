@@ -1477,7 +1477,7 @@
     }
     .recruiter-nav {
       display: grid;
-      grid-template-columns: minmax(150px, 1fr) minmax(120px, .85fr) minmax(120px, .85fr) auto;
+      grid-template-columns: minmax(150px, 1fr) repeat(3, minmax(108px, .8fr)) auto;
       gap: 10px;
       align-items: stretch;
       margin: 10px 0 12px;
@@ -1591,13 +1591,13 @@
         grid-column: 1 / -1;
       }
       .recruiter-more {
-        position: static;
-        grid-column: 1 / -1;
+        position: relative;
       }
       .recruiter-more-menu {
-        position: static;
-        width: 100%;
-        margin-top: 8px;
+        position: absolute;
+        right: 0;
+        width: min(420px, calc(100vw - 24px));
+        margin-top: 0;
       }
       .recruiter-extra-actions {
         grid-template-columns: 1fr;
@@ -1749,6 +1749,7 @@
         <nav class="recruiter-nav" aria-label="Разделы рекрута">
           <button class="secondary" data-role-switch data-role-switch-text type="button">К форме записи</button>
           <button class="subtab active" data-section="dates" type="button">Даты</button>
+          <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
           <button class="subtab" data-section="groups" type="button">Группы</button>
           <details class="recruiter-more">
             <summary>Еще</summary>
@@ -1760,7 +1761,6 @@
                 <div class="stat"><b id="statQueue">0</b><span>предзапись</span></div>
               </section>
               <div class="recruiter-extra-actions">
-                <button class="subtab" data-section="candidates" type="button">Кандидаты</button>
                 <button class="quiet registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
                 <button class="quiet danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
               </div>
@@ -1816,7 +1816,7 @@
             </div>
             <div class="registry-controls">
               <label>Поиск
-                <input id="registrySearch" placeholder="ФИО, Telegram, площадка">
+                <input id="registrySearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО, Telegram, площадка">
               </label>
               <label>Статус
                 <select id="registryStatusFilter">
@@ -1972,6 +1972,7 @@
     let state = load();
     let registrySearch = "";
     let registryStatusFilter = "all";
+    let registryRenderFrame = 0;
 
     const fields = {
       traineeName: document.getElementById("traineeName"),
@@ -2509,7 +2510,7 @@
       const recruiterToolsVisible = unlocked && serverRole === "recruiter";
       document.getElementById("clearBtn").classList.toggle("hidden", !recruiterToolsVisible);
       document.getElementById("exportTraineesBtn").classList.toggle("hidden", !recruiterToolsVisible);
-      document.querySelector(".recruiter-more")?.classList.toggle("active", ["candidates", "registry"].includes(section));
+      document.querySelector(".recruiter-more")?.classList.toggle("active", section === "registry");
       document.getElementById("exportTraineesBtn")?.classList.toggle("active", section === "registry");
       renderTrainee();
       renderRecruiter();
@@ -3440,6 +3441,14 @@ ${managerLine}
       `;
     }
 
+    function scheduleRegistryRender() {
+      cancelAnimationFrame(registryRenderFrame);
+      registryRenderFrame = requestAnimationFrame(() => {
+        registryRenderFrame = 0;
+        renderRegistry();
+      });
+    }
+
     async function createApplication(type, shiftId) {
       clearTimeout(profileSaveTimer);
       syncProfile({ persist: false });
@@ -3954,7 +3963,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       }
       if (event.target.id === "registrySearch") {
         registrySearch = event.target.value;
-        renderRegistry();
+        scheduleRegistryRender();
       }
     });
 
