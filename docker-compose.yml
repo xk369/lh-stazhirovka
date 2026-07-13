@@ -1,12 +1,12 @@
 services:
   loft-internship-unified:
     build: .
-    container_name: loft-internship-unified
+    container_name: ${CONTAINER_NAME:-loft-internship-unified}
     restart: unless-stopped
     env_file:
       - .env
     ports:
-      - "127.0.0.1:3500:3000"
+      - "127.0.0.1:${HOST_PORT:-3500}:3000"
     volumes:
       - ./data:/app/data
     networks:
