@@ -8,6 +8,10 @@ async function readPublicFile(name) {
   return readFile(new URL(`public/${name}`, projectRoot), 'utf8');
 }
 
+async function readSourceFile(name) {
+  return readFile(new URL(`src/${name}`, projectRoot), 'utf8');
+}
+
 test('home menu names describe the user action behind every entry', async () => {
   const html = await readPublicFile('index.html');
 
@@ -143,4 +147,21 @@ test('report submission success does not auto-close the mini app', async () => {
 
   assert.match(sendSuccessBlock, /Отчёт отправлен/);
   assert.doesNotMatch(sendSuccessBlock, /tg\?\.close|disableClosingConfirmation|closeMiniApp/);
+});
+
+test('mentor report allows manual trainee data when booking list is unavailable', async () => {
+  const html = await readPublicFile('index.html');
+  const splitProfileNameFields = html.match(/function splitProfileNameFields\(fields\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const validateReport = html.match(/function validateReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const postReport = html.match(/async function postReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const server = await readSourceFile('server.js');
+
+  assert.match(splitProfileNameFields, /field_key: 'traineeApplicationId'/);
+  assert.match(splitProfileNameFields, /field_key: 'traineeFio'/);
+  assert.match(splitProfileNameFields, /label: 'ФИО стажёра'/);
+  assert.match(validateReport, /state\.profile\.traineeFio/);
+  assert.doesNotMatch(validateReport, /Выберите стажёра из списка приглашённых/);
+  assert.match(postReport, /selectedMentorTrainee\(\) \? state\.profile\.traineeApplicationId : undefined/);
+  assert.match(server, /hasLinkedMentorApplication/);
+  assert.match(server, /if \(hasLinkedMentorApplication\)/);
 });

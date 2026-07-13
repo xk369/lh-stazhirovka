@@ -2173,14 +2173,25 @@
                 field_key: 'traineeApplicationId',
                 label: 'Стажёр из записи на стажировку',
                 answer_type: 'trainee_select',
+                required: false,
                 placeholder: '',
                 item_order: 4
+              },
+              {
+                ...field,
+                id: `${field.id}-manual`,
+                field_key: 'traineeFio',
+                label: 'ФИО стажёра',
+                answer_type: 'text',
+                placeholder: 'Петров Пётр',
+                required: true,
+                item_order: 5
               }
             ];
           }
           const orderShifts = field.role === 'trainee'
             ? { telegram: 3, date: 4 }
-            : { telegram: 3, traineeTelegram: 5, date: 6, hall: 7 };
+            : { telegram: 3, traineeApplicationId: 4, traineeFio: 5, traineeTelegram: 6, date: 7, hall: 8 };
           return [{ ...field, item_order: orderShifts[field.field_key] || field.item_order }];
         });
       }
@@ -2363,8 +2374,8 @@
             : '';
         const helper = state.mentorTraineesError
           ? `<span class="field-help">${escapeHtml(state.mentorTraineesError)}</span>`
-          : '<span class="field-help">В списке только стажёры, которым рекрут уже отправил приглашение в рабочую группу.</span>';
-        return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><span class="trainee-select-wrap"><span class="trainee-select-control"><select class="input trainee-select" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" ${disabled ? 'disabled' : ''}>${options}</select></span>${preview}</span>${helper}<span class="error">Выберите стажёра из списка</span></label>`;
+          : '<span class="field-help">Можно выбрать стажёра из списка для автозаполнения или ниже ввести данные вручную.</span>';
+        return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><span class="trainee-select-wrap"><span class="trainee-select-control"><select class="input trainee-select" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" ${disabled ? 'disabled' : ''}>${options}</select></span>${preview}</span>${helper}<span class="error">Выберите стажёра из списка или заполните ФИО вручную</span></label>`;
       }
       function renderProfileFields() {
         $('#profileFields').innerHTML = roleProfileFields().map(field => {
@@ -2376,8 +2387,10 @@
           const isTelegram = /telegram/i.test(field.field_key);
           const helper = isTelegram
             ? state.role === 'mentor' && field.field_key === 'traineeTelegram'
-              ? '<span class="field-help">Подтягивается из заявки стажёра, при необходимости можно поправить вручную.</span>'
+              ? '<span class="field-help">Подтягивается из заявки стажёра, при необходимости можно заполнить или поправить вручную.</span>'
               : '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>'
+            : state.role === 'mentor' && field.field_key === 'traineeFio'
+              ? '<span class="field-help">Если стажёра нет в списке выше, заполните ФИО вручную.</span>'
             : '';
           return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}">${helper}<span class="error">Заполните поле</span></label>`
         }).join('');
@@ -2391,7 +2404,7 @@
           if (field.field_key === 'traineeApplicationId') {
             state.profile[field.field_key] = value;
             const selected = selectedMentorTrainee();
-            const invalid = field.required && !selected;
+            const invalid = Boolean(value) && !selected;
             input?.closest('.field')?.classList.toggle('invalid', invalid);
             if (selected) applyMentorTraineeProfile(selected, { save: false });
             if (invalid) ok = false;
@@ -2608,7 +2621,7 @@
       }
       function validateReport() {
         if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
-        if (state.role === 'mentor' && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка приглашённых.', 'error'); return false }
+        if (state.role === 'mentor' && !String(state.profile.traineeFio || '').trim()) { showStatus('Укажите ФИО стажёра или выберите его из списка.', 'error'); return false }
         const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
         const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
         return true;
@@ -2636,7 +2649,7 @@
               initData: tg?.initData || '',
               role: state.role,
               reportText: reportText(),
-              applicationId: state.role === 'mentor' ? state.profile.traineeApplicationId : undefined,
+              applicationId: state.role === 'mentor' && selectedMentorTrainee() ? state.profile.traineeApplicationId : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
               mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined
