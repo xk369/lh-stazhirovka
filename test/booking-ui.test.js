@@ -78,6 +78,17 @@ test('recruiter date actions render date-level controls only', async () => {
   assert.match(html, /\.shift-admin-actions \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 });
 
+test('date creation gives recruiter feedback and blocks duplicate dates in the UI', async () => {
+  const html = await readPublicFile('booking.html');
+  const createDateBlock = html.match(/if \(event\.target\.id === "createDateBtn"\) \{[\s\S]*?\n      \}/)?.[0] || '';
+
+  assert.match(html, /id="createDateStatus"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(html, /function setCreateDateStatus/);
+  assert.match(createDateBlock, /state\.shifts\.find\(shift => shift\.date === dateValue\)/);
+  assert.match(createDateBlock, /Такая дата уже есть/);
+  assert.match(createDateBlock, /Дата \$\{formatDate\(dateValue\)\} создана/);
+});
+
 test('recruiter date cards do not manage attendance directly', async () => {
   const html = await readPublicFile('booking.html');
   const renderBookedCandidate = html.match(/function renderBookedCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function eligibleInviteCandidates/)?.[0] || '';
@@ -91,6 +102,19 @@ test('capacity edit action calls the dedicated booking command', async () => {
   const html = await readPublicFile('booking.html');
 
   assert.match(html, /queueBookingCommand\("update_shift_capacity",\s*\{\s*shiftId: Number\(shift\.id\), seats\s*\}\)/);
+});
+
+test('workgroup templates keep a separate manager per sent group', async () => {
+  const html = await readPublicFile('booking.html');
+  const templatesSection = html.match(/<section class="panel">\s*<h2>Шаблоны для рабочих групп<\/h2>[\s\S]*?<div class="list" id="sentGroups"><\/div>/)?.[0] || '';
+  const inputHandler = html.match(/const workgroupManagerInput = event\.target\.closest\("\[data-workgroup-manager\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
+
+  assert.doesNotMatch(templatesSection, /id="workgroupManager"/);
+  assert.match(html, /workgroupManagers: \{\}/);
+  assert.match(html, /data-workgroup-manager="\$\{group\.templateIndex\}"/);
+  assert.match(html, /data-workgroup-template="\$\{group\.templateIndex\}"/);
+  assert.match(inputHandler, /workgroupManagers\(\)\[group\.key\]/);
+  assert.doesNotMatch(inputHandler, /renderSentGroupTemplates\(\)/);
 });
 
 test('workgroup links use Telegram link handling and reject non-Telegram URLs in the UI', async () => {

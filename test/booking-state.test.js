@@ -59,6 +59,17 @@ test('applies booking command when baseVersion is fresh', () => {
   assert.equal(next.shifts.length, 2);
 });
 
+test('rejects duplicate internship dates', () => {
+  assert.throws(
+    () => applyBookingCommand(
+      bookingState(),
+      { action: 'create_shift', baseVersion: 2, date: '2026-07-10', seats: 2 },
+      recruiterActor
+    ),
+    /Такая дата стажировки уже создана/
+  );
+});
+
 test('public booking state exposes server-side seat availability without leaking other applications', () => {
   const result = bookingStateForActor(
     {

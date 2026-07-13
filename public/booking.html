@@ -243,6 +243,16 @@
       font-size: 13px;
       font-weight: 800;
     }
+    .form-status.ok {
+      border-color: color-mix(in srgb, var(--good) 34%, var(--line));
+      background: color-mix(in srgb, var(--good) 10%, var(--surface));
+      color: var(--good);
+    }
+    .form-status.warn {
+      border-color: color-mix(in srgb, var(--warn) 38%, var(--line));
+      background: color-mix(in srgb, var(--warn) 11%, var(--surface));
+      color: var(--warn);
+    }
     .tab, .subtab, .secondary, .danger, .quiet {
       min-height: 44px;
       border: 1px solid var(--line);
@@ -878,6 +888,9 @@
       color: var(--text);
       font-size: 14px;
       line-height: 1.45;
+    }
+    .workgroup-manager-field {
+      margin-top: 2px;
     }
     .workgroup-actions {
       display: grid;
@@ -1929,6 +1942,7 @@
               </label>
             </div>
             <button class="primary" id="createDateBtn" type="button">Добавить дату</button>
+            <div class="form-status hidden" id="createDateStatus" role="status" aria-live="polite"></div>
           </section>
           <div class="date-list" id="recruiterDates"></div>
         </section>
@@ -2016,11 +2030,7 @@
           </section>
           <section class="panel">
             <h2>Шаблоны для рабочих групп</h2>
-            <p class="meta">После отправки приглашений здесь появится готовый текст для менеджеров рабочей группы: скопируйте сообщение, откройте группу и отправьте его вручную.</p>
-            <label>Менеджер, который назначит время выхода
-              <input id="workgroupManager" placeholder="Например: Анастасия @username">
-              <span class="field-help">Если поле оставить пустым, в шаблоне останется место, куда рекрут допишет менеджера вручную.</span>
-            </label>
+            <p class="meta">После отправки приглашений здесь появится готовый текст для каждой рабочей группы. Менеджера укажите отдельно в нужной карточке, затем скопируйте сообщение и отправьте его в группу.</p>
             <div class="list" id="sentGroups"></div>
           </section>
         </section>
@@ -2142,10 +2152,10 @@
       candidateFilter: document.getElementById("candidateFilter"),
       newDate: document.getElementById("newDate"),
       newSeats: document.getElementById("newSeats"),
+      createDateStatus: document.getElementById("createDateStatus"),
       groupShift: document.getElementById("groupShift"),
       groupVenue: document.getElementById("groupVenue"),
       groupLink: document.getElementById("groupLink"),
-      workgroupManager: document.getElementById("workgroupManager"),
       groupInviteStatus: document.getElementById("groupInviteStatus")
     };
 
@@ -2173,7 +2183,7 @@
           { id: 3, date: "2026-07-02", seats: 5, open: true }
         ],
         applications: [],
-        inviteDraft: { shiftId: 1, venueId: "loft1", link: "", memberIds: [], workgroupManager: "" },
+        inviteDraft: { shiftId: 1, venueId: "loft1", link: "", memberIds: [], workgroupManagers: {} },
         inviteGroups: []
       };
     }
@@ -2208,7 +2218,10 @@
         inviteGroups: Array.isArray(source.inviteGroups) ? source.inviteGroups : []
       };
       loaded.profile.activeAppId = loaded.profile.activeAppId || null;
-      loaded.inviteDraft = { shiftId: loaded.shifts[0]?.id || null, venueId: "loft1", link: "", memberIds: [], workgroupManager: "", ...(loaded.inviteDraft || {}) };
+      loaded.inviteDraft = { shiftId: loaded.shifts[0]?.id || null, venueId: "loft1", link: "", memberIds: [], workgroupManagers: {}, ...(loaded.inviteDraft || {}) };
+      if (!loaded.inviteDraft.workgroupManagers || typeof loaded.inviteDraft.workgroupManagers !== "object" || Array.isArray(loaded.inviteDraft.workgroupManagers)) {
+        loaded.inviteDraft.workgroupManagers = {};
+      }
       loaded.inviteGroups = loaded.inviteGroups || [];
       return loaded;
     }
@@ -2528,6 +2541,14 @@
       fields.groupInviteStatus.classList.toggle("hidden", !message);
     }
 
+    function setCreateDateStatus(message, type = "") {
+      if (!fields.createDateStatus) return;
+      fields.createDateStatus.textContent = message || "";
+      fields.createDateStatus.classList.toggle("hidden", !message);
+      fields.createDateStatus.classList.toggle("ok", type === "ok");
+      fields.createDateStatus.classList.toggle("warn", type === "warn");
+    }
+
     function isValidInviteLink(value) {
       const text = String(value || "").trim();
       if (!text) return false;
@@ -2549,6 +2570,9 @@
       }
       if (message.includes("not eligible")) {
         return "Кандидат уже не доступен для приглашения. Обновите список и выберите только тех, кому приглашение еще не отправляли.";
+      }
+      if (message.includes("Такая дата стажировки уже создана")) {
+        return "Такая дата уже есть в списке. Откройте существующую дату или измените количество мест в её карточке.";
       }
       return message || "Не удалось выполнить действие. Проверьте данные и попробуйте еще раз.";
     }
@@ -3212,6 +3236,18 @@
       return [normalizedUsername, app?.name || "Стажёр"].filter(Boolean).join(" ");
     }
 
+    function workgroupManagers() {
+      const draft = ensureInviteDraft();
+      if (!draft.workgroupManagers || typeof draft.workgroupManagers !== "object" || Array.isArray(draft.workgroupManagers)) {
+        draft.workgroupManagers = {};
+      }
+      return draft.workgroupManagers;
+    }
+
+    function workgroupManagerForGroup(group) {
+      return String(workgroupManagers()[group?.key] || "").trim();
+    }
+
     function composeWorkgroupTemplate(group) {
       const members = Array.isArray(group?.members) ? group.members : applicationsForInviteGroup(group);
       const intro = members.length > 1
@@ -3220,7 +3256,7 @@
       const memberLines = members.length
         ? members.map(traineeWorkgroupLine).join("\n")
         : "Стажёры не найдены";
-      const manager = String(state.inviteDraft?.workgroupManager || "").trim();
+      const manager = workgroupManagerForGroup(group);
       const managerLine = manager
         ? `Время выхода назначит менеджер: ${manager}`
         : "Время выхода назначит менеджер: __________";
@@ -3310,6 +3346,7 @@ ${managerLine}
               const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
               const names = group.members.map(app => app.name).filter(Boolean).join(", ");
               const template = composeWorkgroupTemplate(group);
+              const manager = workgroupManagerForGroup(group);
               return `
                 <article class="sent-group">
                   <div class="head">
@@ -3319,7 +3356,11 @@ ${managerLine}
                     </div>
                     <span class="pill ok">${group.members.length} чел.</span>
                   </div>
-                  <div class="workgroup-template">${escapeHtml(template)}</div>
+                  <label class="workgroup-manager-field">Менеджер для этой группы
+                    <input data-workgroup-manager="${group.templateIndex}" value="${escapeHtml(manager)}" placeholder="Например: Анастасия @username">
+                    <span class="field-help">У каждой рабочей группы может быть свой менеджер. Если оставить пустым, в тексте останется место для ручного заполнения.</span>
+                  </label>
+                  <div class="workgroup-template" data-workgroup-template="${group.templateIndex}">${escapeHtml(template)}</div>
                   <div class="workgroup-actions">
                     <button class="secondary" data-copy-workgroup="${group.templateIndex}" type="button">Скопировать шаблон</button>
                     <a class="quiet" href="${escapeHtml(group.link)}" data-external-link target="_blank" rel="noopener">Открыть группу</a>
@@ -3351,8 +3392,6 @@ ${managerLine}
       fields.groupShift.innerHTML = shiftOptions || `<option value="">Нет дат</option>`;
       fields.groupVenue.innerHTML = venueOptions;
       fields.groupLink.value = draft.link || "";
-      if (fields.workgroupManager) fields.workgroupManager.value = draft.workgroupManager || "";
-
       const venue = venueById(draft.venueId) || venues[0];
       document.getElementById("venueCard").innerHTML = `
         <div class="venue-photo ${venue.photo ? "" : "no-photo"}" style="${venue.photo ? `--venue-image: url('${escapeHtml(venue.photo)}')` : ""}">
@@ -3769,11 +3808,13 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     }
 
     function ensureInviteDraft() {
-      state.inviteDraft = { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [], workgroupManager: "", ...(state.inviteDraft || {}) };
+      state.inviteDraft = { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [], workgroupManagers: {}, ...(state.inviteDraft || {}) };
       if (!state.inviteDraft.shiftId && state.shifts.length) state.inviteDraft.shiftId = state.shifts[0].id;
       if (!state.inviteDraft.venueId) state.inviteDraft.venueId = venues[0].id;
       state.inviteDraft.memberIds = state.inviteDraft.memberIds || [];
-      state.inviteDraft.workgroupManager = String(state.inviteDraft.workgroupManager || "");
+      if (!state.inviteDraft.workgroupManagers || typeof state.inviteDraft.workgroupManagers !== "object" || Array.isArray(state.inviteDraft.workgroupManagers)) {
+        state.inviteDraft.workgroupManagers = {};
+      }
       return state.inviteDraft;
     }
 
@@ -4033,23 +4074,49 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         return;
       }
       if (event.target.id === "createDateBtn") {
+        const dateValue = fields.newDate.value;
+        const seats = Math.max(Number(fields.newSeats.value || 1), 1);
+        fields.newDate.closest("label")?.classList.remove("invalid");
+        fields.newDate.removeAttribute("aria-invalid");
+        setCreateDateStatus("");
         if (!fields.newDate.value) {
+          fields.newDate.closest("label")?.classList.add("invalid");
+          fields.newDate.setAttribute("aria-invalid", "true");
+          setCreateDateStatus("Выберите дату стажировки.", "warn");
           fields.newDate.focus();
           return;
         }
-        await queueBookingCommand("create_shift", {
-          date: fields.newDate.value,
-          seats: Math.max(Number(fields.newSeats.value || 1), 1)
-        });
+        const existingShift = state.shifts.find(shift => shift.date === dateValue);
+        if (existingShift) {
+          fields.newDate.closest("label")?.classList.add("invalid");
+          fields.newDate.setAttribute("aria-invalid", "true");
+          const stateText = existingShift.canceled ? "отменённых" : existingShift.open ? "открытых" : "закрытых";
+          setCreateDateStatus(`Такая дата уже есть: ${formatDate(dateValue)} в ${stateText}. Используйте существующую карточку даты или измените количество мест.`, "warn");
+          return;
+        }
+        try {
+          await queueBookingCommand(
+            "create_shift",
+            { date: dateValue, seats },
+            { notify: false }
+          );
+        } catch (error) {
+          setCreateDateStatus(friendlyBookingError(error));
+          return;
+        }
         fields.newDate.value = "";
         fields.newSeats.value = 4;
         section = "dates";
+        setCreateDateStatus(`Дата ${formatDate(dateValue)} создана. Мест: ${seats}.`, "ok");
         render();
         return;
       }
       const quickDate = event.target.closest("[data-quick-date]");
       if (quickDate) {
         fields.newDate.value = quickDate.dataset.quickDate;
+        fields.newDate.closest("label")?.classList.remove("invalid");
+        fields.newDate.removeAttribute("aria-invalid");
+        setCreateDateStatus("");
         renderQuickDates();
         return;
       }
@@ -4119,7 +4186,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (serverRole !== "recruiter" || !unlocked) return;
         if (!confirm("Точно очистить все даты, заявки и группы? Действие затронет общий серверный state.")) return;
         await queueBookingCommand("clear_state");
-        state.inviteDraft = { shiftId: null, venueId: "loft1", link: "", memberIds: [], workgroupManager: state.inviteDraft?.workgroupManager || "" };
+        state.inviteDraft = { shiftId: null, venueId: "loft1", link: "", memberIds: [], workgroupManagers: state.inviteDraft?.workgroupManagers || {} };
         saveLocalSnapshot();
         fillProfile();
         event.target.closest(".recruiter-more")?.removeAttribute("open");
@@ -4159,11 +4226,14 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         renderTrainee();
         return;
       }
-      if (event.target === fields.workgroupManager) {
-        const draft = ensureInviteDraft();
-        draft.workgroupManager = fields.workgroupManager.value.trim();
+      const workgroupManagerInput = event.target.closest("[data-workgroup-manager]");
+      if (workgroupManagerInput) {
+        const group = workgroupTemplateGroups()[Number(workgroupManagerInput.dataset.workgroupManager)];
+        if (!group) return;
+        workgroupManagers()[group.key] = workgroupManagerInput.value.trim();
         saveLocalSnapshot();
-        document.getElementById("sentGroups").innerHTML = renderSentGroupTemplates();
+        const template = document.querySelector(`[data-workgroup-template="${CSS.escape(workgroupManagerInput.dataset.workgroupManager)}"]`);
+        if (template) template.textContent = composeWorkgroupTemplate(group);
         return;
       }
       if ([fields.groupShift, fields.groupVenue, fields.groupLink].includes(event.target)) {
@@ -4186,6 +4256,9 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         }
       }
       if (event.target === fields.newDate) {
+        fields.newDate.closest("label")?.classList.remove("invalid");
+        fields.newDate.removeAttribute("aria-invalid");
+        setCreateDateStatus("");
         renderQuickDates();
       }
       if (event.target.id === "registrySearch") {

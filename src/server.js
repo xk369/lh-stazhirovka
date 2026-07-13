@@ -1333,6 +1333,9 @@ function applyCreateShift(state, command, actor) {
     seats: command.seats,
     open: true
   });
+  if (next.shifts.some(item => item.date === shift.date)) {
+    throw new BookingValidationError('Такая дата стажировки уже создана.');
+  }
   next.shifts.push(shift);
   return next;
 }
