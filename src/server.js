@@ -2036,8 +2036,9 @@ app.post('/api/report', async (request, response) => {
       ? normalizeMentorTraineeResult(rawMentorTraineeResult)
       : null;
     let mentorApplication = null;
+    const hasLinkedMentorApplication = role === 'mentor' && String(applicationId || '').trim();
 
-    if (role === 'mentor') {
+    if (hasLinkedMentorApplication) {
       const state = await readBookingState();
       mentorApplication = requireMentorReportApplication(state, applicationId);
     }

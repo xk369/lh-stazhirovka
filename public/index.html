@@ -1986,6 +1986,7 @@
       const $$ = s => [...document.querySelectorAll(s)];
       const screens = { home: $('#homeScreen'), profile: $('#profileScreen'), checklist: $('#checklistScreen'), review: $('#reviewScreen') };
       const roleLabels = { trainee: 'СТАЖЕР', mentor: 'НАСТАВНИК' };
+      const MANUAL_TRAINEE_VALUE = '__manual_trainee__';
       const draftKey = role => `lh_internship_checklist_v5_${role}`;
       const legacyDraftKeys = role => [`lh_internship_checklist_v4_${role}`, `lh_internship_checklist_v3_${role}`, `lh_internship_checklist_v2_${role}`];
 
@@ -2175,12 +2176,22 @@
                 answer_type: 'trainee_select',
                 placeholder: '',
                 item_order: 4
+              },
+              {
+                ...field,
+                id: `${field.id}-manual`,
+                field_key: 'traineeFio',
+                label: 'ФИО стажёра',
+                answer_type: 'text',
+                placeholder: 'Петров Пётр',
+                required: true,
+                item_order: 5
               }
             ];
           }
           const orderShifts = field.role === 'trainee'
             ? { telegram: 3, date: 4 }
-            : { telegram: 3, traineeTelegram: 5, date: 6, hall: 7 };
+            : { telegram: 3, traineeApplicationId: 4, traineeFio: 5, traineeTelegram: 6, date: 7, hall: 8 };
           return [{ ...field, item_order: orderShifts[field.field_key] || field.item_order }];
         });
       }
@@ -2202,7 +2213,23 @@
       }
       function selectedMentorTrainee() {
         const selectedId = String(state.profile.traineeApplicationId || '');
+        if (selectedId === MANUAL_TRAINEE_VALUE) return null;
         return state.mentorTrainees.find(item => String(item.applicationId) === selectedId) || null;
+      }
+      function mentorManualTraineeMode() {
+        return String(state.profile.traineeApplicationId || '') === MANUAL_TRAINEE_VALUE;
+      }
+      function syncManualTraineeName() {
+        const name = splitPersonName(state.profile.traineeFio);
+        state.profile.traineeFirstName = name.firstName || '';
+        state.profile.traineeLastName = name.lastName || '';
+      }
+      function clearLinkedMentorTraineeProfile() {
+        state.profile.bookingStatus = '';
+        state.profile.bookingStatusLabel = '';
+        state.profile.bookingVenueId = '';
+        state.profile.mentorReportAlreadySent = false;
+        syncManualTraineeName();
       }
       function traineeOptionLabel(trainee) {
         const parts = [
@@ -2342,7 +2369,7 @@
       function renderMentorTraineeField(field, id, value) {
         const selected = selectedMentorTrainee();
         const loading = state.mentorTraineesStatus === 'loading';
-        const disabled = loading || state.mentorTraineesStatus === 'error' || !state.mentorTrainees.length;
+        const disabled = loading;
         const emptyLabel = loading
           ? 'Загружаем приглашённых стажёров…'
           : state.mentorTraineesStatus === 'error'
@@ -2352,22 +2379,32 @@
               : 'Нет приглашённых стажёров';
         const options = [
           `<option value="">${escapeHtml(emptyLabel)}</option>`,
-          ...state.mentorTrainees.map(trainee => `<option value="${escapeHtml(trainee.applicationId)}" ${String(value) === String(trainee.applicationId) ? 'selected' : ''}>${escapeHtml(traineeOptionLabel(trainee))}</option>`)
+          ...state.mentorTrainees.map(trainee => `<option value="${escapeHtml(trainee.applicationId)}" ${String(value) === String(trainee.applicationId) ? 'selected' : ''}>${escapeHtml(traineeOptionLabel(trainee))}</option>`),
+          `<option value="${MANUAL_TRAINEE_VALUE}" ${String(value) === MANUAL_TRAINEE_VALUE ? 'selected' : ''}>Нет нужного стажёра в списке</option>`
         ].join('');
         const warning = mentorTraineeWarning(selected);
-        const staleSelection = value && !selected && state.mentorTraineesStatus === 'ready';
+        const staleSelection = value && value !== MANUAL_TRAINEE_VALUE && !selected && state.mentorTraineesStatus === 'ready';
         const preview = selected
           ? `<div class="trainee-preview ${warning ? 'warning' : ''}"><strong>${escapeHtml(selected.name)}</strong><span>${escapeHtml([selected.date ? formatDate(selected.date) : '', selected.telegramUsername || 'Telegram не указан'].filter(Boolean).join(' · '))}</span><span class="trainee-status">${escapeHtml(selected.statusLabel || 'Приглашён')}</span>${warning ? `<span>${escapeHtml(warning)}</span>` : ''}</div>`
+          : mentorManualTraineeMode()
+            ? `<div class="trainee-preview"><strong>Ручной ввод стажёра</strong><span>Заполните ФИО и Telegram ниже. Отчёт уйдёт в группу наставников без привязки к заявке.</span><span class="trainee-status">ручной режим</span></div>`
           : staleSelection
             ? `<div class="trainee-preview warning"><strong>Выбранный стажёр больше недоступен</strong><span>Проверьте, что он ещё находится на этапе приглашения или ожидания отчёта.</span></div>`
             : '';
         const helper = state.mentorTraineesError
           ? `<span class="field-help">${escapeHtml(state.mentorTraineesError)}</span>`
-          : '<span class="field-help">В списке только стажёры, которым рекрут уже отправил приглашение в рабочую группу.</span>';
+          : '<span class="field-help">Выберите стажёра из записи. Если его нет, выберите «Нет нужного стажёра в списке» и заполните данные вручную.</span>';
         return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><span class="trainee-select-wrap"><span class="trainee-select-control"><select class="input trainee-select" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" ${disabled ? 'disabled' : ''}>${options}</select></span>${preview}</span>${helper}<span class="error">Выберите стажёра из списка</span></label>`;
       }
+      function visibleProfileFields() {
+        return roleProfileFields().filter(field => {
+          if (state.role !== 'mentor') return true;
+          if (!['traineeFio', 'traineeTelegram'].includes(field.field_key)) return true;
+          return mentorManualTraineeMode();
+        });
+      }
       function renderProfileFields() {
-        $('#profileFields').innerHTML = roleProfileFields().map(field => {
+        $('#profileFields').innerHTML = visibleProfileFields().map(field => {
           const id = `profile-${field.field_key}`;
           const value = state.profile[field.field_key] ?? (field.field_key === 'date' ? today() : '');
           if (field.field_key === 'traineeApplicationId') return renderMentorTraineeField(field, id, value);
@@ -2376,8 +2413,10 @@
           const isTelegram = /telegram/i.test(field.field_key);
           const helper = isTelegram
             ? state.role === 'mentor' && field.field_key === 'traineeTelegram'
-              ? '<span class="field-help">Подтягивается из заявки стажёра, при необходимости можно поправить вручную.</span>'
+              ? '<span class="field-help">Заполните тег, если он известен. Если username не установлен, оставьте поле пустым.</span>'
               : '<span class="field-help">Если username не установлен, оставьте поле пустым.</span>'
+            : state.role === 'mentor' && field.field_key === 'traineeFio'
+              ? '<span class="field-help">Заполните вручную, если стажёра нет в списке заявок.</span>'
             : '';
           return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span>${!field.required ? '<em>необязательно</em>' : ''}</span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="${field.answer_type === 'date' ? 'date' : 'text'}" autocomplete="${autocomplete}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.placeholder)}">${helper}<span class="error">Заполните поле</span></label>`
         }).join('');
@@ -2385,20 +2424,22 @@
       function fillProfile() { renderProfileFields() }
       function validateProfile() {
         let ok = true;
-        roleProfileFields().forEach(field => {
+        visibleProfileFields().forEach(field => {
           const input = document.querySelector(`[data-profile-key="${CSS.escape(field.field_key)}"]`);
           let value = (input?.value || '').trim();
           if (field.field_key === 'traineeApplicationId') {
             state.profile[field.field_key] = value;
             const selected = selectedMentorTrainee();
-            const invalid = field.required && !selected;
+            const invalid = field.required && (!value || (value !== MANUAL_TRAINEE_VALUE && !selected));
             input?.closest('.field')?.classList.toggle('invalid', invalid);
             if (selected) applyMentorTraineeProfile(selected, { save: false });
+            if (value === MANUAL_TRAINEE_VALUE) clearLinkedMentorTraineeProfile();
             if (invalid) ok = false;
             return;
           }
           if (/telegram/i.test(field.field_key) && value && !value.startsWith('@')) value = '@' + value;
           state.profile[field.field_key] = value;
+          if (field.field_key === 'traineeFio') syncManualTraineeName();
           input?.closest('.field')?.classList.toggle('invalid', field.required && !value);
           if (field.required && !value) ok = false;
         });
@@ -2572,6 +2613,7 @@
       function profileDisplayValue(field) {
         if (field.field_key === 'traineeApplicationId') {
           const selected = selectedMentorTrainee();
+          if (mentorManualTraineeMode()) return 'Нет нужного стажёра в списке';
           return selected ? traineeOptionLabel(selected) : state.profile.traineeFio || '—';
         }
         const raw = state.profile[field.field_key];
@@ -2584,7 +2626,7 @@
         const no=items.filter(i=>state.answers[i.id]?.status==='no').length;
         const empty=items.length-yes-no;
         $('#yesCount').textContent=yes; $('#noCount').textContent=no; $('#emptyCount').textContent=empty;
-        const meta=[['Роль',roleLabels[state.role]],...roleProfileFields().map(field=>{
+        const meta=[['Роль',roleLabels[state.role]],...visibleProfileFields().map(field=>{
           return [field.label.replace(/\s*\(необязательно\)\s*/i,''),profileDisplayValue(field)];
         })];
         $('#reviewMeta').innerHTML=meta.map(([label,value])=>`<div class="meta-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
@@ -2608,7 +2650,8 @@
       }
       function validateReport() {
         if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
-        if (state.role === 'mentor' && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка приглашённых.', 'error'); return false }
+        if (state.role === 'mentor' && !mentorManualTraineeMode() && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка или пункт «Нет нужного стажёра в списке».', 'error'); return false }
+        if (state.role === 'mentor' && mentorManualTraineeMode() && !String(state.profile.traineeFio || '').trim()) { showStatus('Укажите ФИО стажёра для ручного отчёта.', 'error'); return false }
         const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
         const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
         return true;
@@ -2636,7 +2679,7 @@
               initData: tg?.initData || '',
               role: state.role,
               reportText: reportText(),
-              applicationId: state.role === 'mentor' ? state.profile.traineeApplicationId : undefined,
+              applicationId: state.role === 'mentor' && selectedMentorTrainee() ? state.profile.traineeApplicationId : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
               mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined
@@ -2804,11 +2847,13 @@
           state.profile[key] = e.target.value;
           const selected = selectedMentorTrainee();
           if (selected) applyMentorTraineeProfile(selected);
+          if (mentorManualTraineeMode()) clearLinkedMentorTraineeProfile();
           e.target.closest('.field')?.classList.remove('invalid');
           fillProfile();
           return;
         }
         state.profile[key] = e.target.value;
+        if (key === 'traineeFio') syncManualTraineeName();
         e.target.closest('.field')?.classList.remove('invalid');
         saveDraft();
       }

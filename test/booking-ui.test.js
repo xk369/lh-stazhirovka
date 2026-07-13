@@ -8,6 +8,10 @@ async function readPublicFile(name) {
   return readFile(new URL(`public/${name}`, projectRoot), 'utf8');
 }
 
+async function readSourceFile(name) {
+  return readFile(new URL(`src/${name}`, projectRoot), 'utf8');
+}
+
 test('home menu names describe the user action behind every entry', async () => {
   const html = await readPublicFile('index.html');
 
@@ -143,4 +147,24 @@ test('report submission success does not auto-close the mini app', async () => {
 
   assert.match(sendSuccessBlock, /Отчёт отправлен/);
   assert.doesNotMatch(sendSuccessBlock, /tg\?\.close|disableClosingConfirmation|closeMiniApp/);
+});
+
+test('mentor manual trainee fields appear only after selecting the fallback option', async () => {
+  const html = await readPublicFile('index.html');
+  const splitProfileNameFields = html.match(/function splitProfileNameFields\(fields\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const visibleProfileFields = html.match(/function visibleProfileFields\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const renderMentorTraineeField = html.match(/function renderMentorTraineeField\(field, id, value\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const validateReport = html.match(/function validateReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const postReport = html.match(/async function postReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const server = await readSourceFile('server.js');
+
+  assert.match(html, /MANUAL_TRAINEE_VALUE/);
+  assert.match(renderMentorTraineeField, /Нет нужного стажёра в списке/);
+  assert.match(splitProfileNameFields, /field_key: 'traineeFio'/);
+  assert.match(visibleProfileFields, /mentorManualTraineeMode\(\)/);
+  assert.match(validateReport, /mentorManualTraineeMode\(\)/);
+  assert.match(validateReport, /Укажите ФИО стажёра для ручного отчёта/);
+  assert.match(postReport, /selectedMentorTrainee\(\) \? state\.profile\.traineeApplicationId : undefined/);
+  assert.match(server, /hasLinkedMentorApplication/);
+  assert.match(server, /if \(hasLinkedMentorApplication\)/);
 });
