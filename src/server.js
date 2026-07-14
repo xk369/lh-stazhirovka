@@ -58,6 +58,8 @@ const SHIFT_CANCELLATION_APPLICATION_STATUSES = new Set(['pending', 'confirmed',
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
+const EXPERIENCE_VALUES = new Set(['experienced']);
+const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
 const BOOKING_STATUS_LABELS = {
   pending: 'Заявка отправлена',
   queue: 'Предварительная запись',
@@ -476,7 +478,11 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
   }
 
   const experience = normalizeOptionalText(app?.experience, 'application.experience', 40);
-  if (experience) clean.experience = experience;
+  if (EXPERIENCE_VALUES.has(experience)) {
+    clean.experience = experience;
+  } else if (experience && !LEGACY_EXPERIENCE_VALUES.has(experience)) {
+    throw new BookingValidationError('application.experience is invalid.');
+  }
   const createdAt = normalizeOptionalText(app?.createdAt, 'application.createdAt', 40);
   if (createdAt) clean.createdAt = createdAt;
   return clean;
@@ -673,6 +679,7 @@ function traineeTableRowsFromState(state) {
         mentorReportAt: application.mentorReportAt || '',
         mentorDecision: application.mentorDecision || '',
         mentorMessageStatus: application.mentorCommentDeliveryStatus || '',
+        experience: application.experience === 'experienced' ? 'Опытный стажёр' : '',
         createdAt: application.createdAt || '',
         stateUpdatedAt: cleanState.updatedAt
       };
@@ -703,6 +710,7 @@ function traineesCsvFromState(state) {
     'Дата отчета наставника',
     'Итог наставника',
     'Статус ЛС стажеру',
+    'Статус опыта',
     'Создано',
     'State обновлен'
   ];
@@ -723,6 +731,7 @@ function traineesCsvFromState(state) {
     row.mentorReportAt,
     row.mentorDecision,
     row.mentorMessageStatus,
+    row.experience,
     row.createdAt,
     row.stateUpdatedAt
   ]));
@@ -1181,7 +1190,11 @@ function applySetApplicationStatus(state, command, actor) {
   if (['feedback', 'noshow'].includes(status) && !applicationHasInviteGroup(application)) {
     throw new BookingValidationError('Сначала отправьте кандидату приглашение в рабочую группу.');
   }
-  next.applications[index] = { ...application, status };
+  next.applications[index] = {
+    ...application,
+    status,
+    experience: status === 'passed' ? application.experience || '' : ''
+  };
   return next;
 }
 
@@ -1195,7 +1208,8 @@ function resetMentorReport(application) {
     mentorCommentForTrainee: '',
     mentorCommentSentAt: '',
     mentorCommentDeliveryStatus: '',
-    mentorCommentDeliveryError: ''
+    mentorCommentDeliveryError: '',
+    experience: ''
   };
 }
 
@@ -1213,6 +1227,20 @@ function applyStepBackApplication(state, command, actor) {
     ? resetMentorReport(application)
     : application;
   next.applications[index] = { ...cleanApplication, status: previousStatus };
+  return next;
+}
+
+function applyMarkExperienced(state, command, actor) {
+  requireRecruiterRole(actor);
+  const next = mutableStateCopy(state);
+  const { index, application } = requireApplication(next, command.applicationId);
+  if (normalizeLegacyStatus(application.status) !== 'passed') {
+    throw new BookingValidationError('Опытным стажёром можно отметить только того, кто прошёл стажировку.');
+  }
+  next.applications[index] = {
+    ...application,
+    experience: 'experienced'
+  };
   return next;
 }
 
@@ -1463,6 +1491,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       break;
     case 'step_back_application':
       nextState = applyStepBackApplication(state, command, actor);
+      break;
+    case 'mark_experienced':
+      nextState = applyMarkExperienced(state, command, actor);
       break;
     case 'return_to_queue':
       nextState = applyReturnToQueue(state, command, actor);

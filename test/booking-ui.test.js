@@ -104,6 +104,28 @@ test('capacity edit action calls the dedicated booking command', async () => {
   assert.match(html, /queueBookingCommand\("update_shift_capacity",\s*\{\s*shiftId: Number\(shift\.id\), seats\s*\}\)/);
 });
 
+test('recruiter queue is searchable, grouped by priority and exposes Telegram copy', async () => {
+  const html = await readPublicFile('booking.html');
+  const datesSection = html.match(/<section id="datesSection">[\s\S]*?<div class="date-list" id="recruiterDates"><\/div>/)?.[0] || '';
+
+  assert.match(datesSection, /id="queueSearch"[^>]*type="search"/);
+  assert.match(html, /const queuePriorityGroups = \[/);
+  assert.match(html, /Обучение пройдено · первая стажировка/);
+  assert.match(html, /function renderQueueForShift\(queue, shift\)/);
+  assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
+  assert.match(html, /data-assign="\$\{app\.id\}" data-shift="\$\{shift\.id\}"/);
+});
+
+test('passed candidates can be marked as experienced without changing their base status', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
+
+  assert.match(renderCandidates, /data-mark-experienced="\$\{app\.id\}"/);
+  assert.match(renderCandidates, /experienceLabel\(app\)/);
+  assert.match(html, /queueBookingCommand\("mark_experienced"/);
+  assert.match(html, /<option value="experienced">Опытный стажёр<\/option>/);
+});
+
 test('workgroup templates keep a separate manager per sent group', async () => {
   const html = await readPublicFile('booking.html');
   const templatesSection = html.match(/<section class="panel">\s*<h2>Шаблоны для рабочих групп<\/h2>[\s\S]*?<div class="list" id="sentGroups"><\/div>/)?.[0] || '';

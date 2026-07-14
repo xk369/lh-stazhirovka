@@ -9,6 +9,7 @@ import {
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
   shiftCapacityChangeNotificationPlan,
+  traineeTableRowsFromState,
   traineesCsvFromState
 } from '../src/server.js';
 
@@ -295,7 +296,8 @@ test('steps a completed candidate back to feedback and clears the previous mento
     mentorReporterTelegramUserId: '100',
     mentorDecision: 'Стажировка пройдена',
     mentorCommentForTrainee: 'Old result',
-    mentorCommentDeliveryStatus: 'sent'
+    mentorCommentDeliveryStatus: 'sent',
+    experience: 'experienced'
   }];
   source.inviteGroups = [{
     id: 20,
@@ -316,6 +318,7 @@ test('steps a completed candidate back to feedback and clears the previous mento
   assert.equal(next.applications[0].mentorReport, false);
   assert.equal(next.applications[0].mentorDecision, '');
   assert.equal(next.applications[0].mentorCommentDeliveryStatus, '');
+  assert.equal(next.applications[0].experience, undefined);
 });
 
 test('steps a no-show candidate back to the invitation stage', () => {
@@ -368,6 +371,88 @@ test('rejects step back when the current status has no correction path', () => {
     ),
     BookingValidationError
   );
+});
+
+test('marks only passed trainees as experienced', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Passed Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'passed'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'mark_experienced', baseVersion: 2, applicationId: 10 },
+    recruiterActor
+  );
+
+  assert.equal(next.applications[0].experience, 'experienced');
+});
+
+test('rejects experienced status before the trainee passes internship', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Feedback Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'feedback'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      { action: 'mark_experienced', baseVersion: 2, applicationId: 10 },
+      recruiterActor
+    ),
+    /Опытным стажёром можно отметить только того, кто прошёл стажировку/
+  );
+});
+
+test('legacy yes/no experience values do not block booking writes', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Legacy Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'queue',
+    experience: 'yes'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'create_shift', baseVersion: 2, date: '2026-07-11', seats: 2 },
+    recruiterActor
+  );
+
+  assert.equal(next.applications[0].experience, undefined);
+});
+
+test('trainee registry export includes experienced status', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Experienced Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'passed',
+    experience: 'experienced'
+  }];
+
+  const rows = traineeTableRowsFromState(source);
+  const csv = traineesCsvFromState(source);
+
+  assert.equal(rows[0].experience, 'Опытный стажёр');
+  assert.match(csv, /Статус опыта/);
+  assert.match(csv, /Опытный стажёр/);
 });
 
 test('formats a clear status-change notification for the trainee', () => {

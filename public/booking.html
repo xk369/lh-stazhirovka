@@ -445,6 +445,24 @@
       font-size: 10px;
       font-weight: 800;
     }
+    .candidate-experience-button {
+      grid-column: 1 / -1;
+    }
+    .candidate-final-note {
+      grid-column: 1 / -1;
+      min-height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--ok) 25%, var(--line));
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--ok) 9%, var(--surface));
+      color: var(--ok);
+      padding: 8px 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.25;
+    }
     .candidate-action-status {
       border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
       border-radius: 14px;
@@ -522,6 +540,137 @@
       color: var(--bad);
       border-color: color-mix(in srgb, var(--bad) 25%, var(--line));
       background: color-mix(in srgb, var(--bad) 8%, var(--surface));
+    }
+    .queue-search-panel {
+      display: grid;
+      gap: 8px;
+    }
+    .queue-notice-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .queue-notice-head b {
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .queue-notice-head span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .queue-priority-list {
+      display: grid;
+      gap: 10px;
+    }
+    .queue-priority-list.empty-queue {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      text-align: center;
+      padding: 10px;
+    }
+    .queue-priority-group {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 78%, var(--field));
+      padding: 10px;
+    }
+    .queue-priority-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+    }
+    .queue-priority-head b {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 950;
+      line-height: 1.2;
+    }
+    .queue-priority-head span:not(.count) {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.3;
+      margin-top: 2px;
+    }
+    .queue-candidate-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .queue-candidate-card {
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+      border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+      border-radius: 16px;
+      background: var(--surface);
+      padding: 10px;
+    }
+    .queue-candidate-main {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .queue-candidate-name {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 950;
+      line-height: 1.18;
+      overflow-wrap: anywhere;
+    }
+    .queue-telegram {
+      width: fit-content;
+      max-width: 100%;
+      min-height: 28px;
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0 9px;
+      font-size: 12px;
+      font-weight: 950;
+      line-height: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .queue-telegram.muted {
+      display: inline-flex;
+      align-items: center;
+      border-color: var(--line);
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+    .queue-candidate-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .queue-candidate-tags .badge {
+      min-height: 26px;
+      white-space: normal;
+      text-align: center;
+    }
+    .queue-candidate-limits {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .queue-assign-button {
+      width: 100%;
+      min-height: 38px;
+      border-radius: 999px;
     }
     .date-title, .name { font-weight: 950; line-height: 1.25; }
     .date-title { font-size: 19px; }
@@ -937,7 +1086,7 @@
     }
     .registry-summary {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
       gap: 10px;
     }
     .registry-summary .metric {
@@ -1735,6 +1884,9 @@
       .metric { min-height: 46px; padding: 6px 4px; }
       .metric b { font-size: 17px; }
       .metric span { font-size: 10px; }
+      .queue-candidate-list { grid-template-columns: 1fr; }
+      .queue-priority-group { padding: 9px; }
+      .queue-priority-head { gap: 8px; }
       .candidate-actions { grid-template-columns: 1fr; }
       .candidate-card { gap: 12px; padding: 14px; }
       .candidate-card .name { font-size: 19px; }
@@ -1944,6 +2096,12 @@
             <button class="primary" id="createDateBtn" type="button">Добавить дату</button>
             <div class="form-status hidden" id="createDateStatus" role="status" aria-live="polite"></div>
           </section>
+          <section class="panel queue-search-panel">
+            <label>Поиск в предварительной записи
+              <input id="queueSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО или Telegram">
+            </label>
+            <p class="meta">Очередь внутри каждой даты сгруппирована по приоритету: обучение, первая/повторная стажировка.</p>
+          </section>
           <div class="date-list" id="recruiterDates"></div>
         </section>
 
@@ -1956,6 +2114,7 @@
                 <option value="invited">Приглашение отправлено</option>
                 <option value="feedback">Ждет отчет</option>
                 <option value="passed">Прошел</option>
+                <option value="experienced">Опытный стажёр</option>
                 <option value="failed">Не прошел</option>
                 <option value="noshow">Не вышел</option>
               </select>
@@ -1990,6 +2149,7 @@
                   <option value="invited">Приглашение отправлено</option>
                   <option value="feedback">Ждет отчет</option>
                   <option value="passed">Прошел</option>
+                  <option value="experienced">Опытный стажёр</option>
                   <option value="failed">Не прошел</option>
                   <option value="noshow">Не вышел</option>
                 </select>
@@ -2117,6 +2277,36 @@
     const shiftActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
+    const queuePriorityGroups = [
+      {
+        key: "trained-first",
+        title: "Обучение пройдено · первая стажировка",
+        hint: "Самый приоритетный список для назначения на ближайшие даты.",
+        training: "passed",
+        attempt: "first"
+      },
+      {
+        key: "trained-repeat",
+        title: "Обучение пройдено · повторная",
+        hint: "Уже знают базу, но идут на повторную стажировку.",
+        training: "passed",
+        attempt: "repeat"
+      },
+      {
+        key: "untrained-first",
+        title: "Без обучения · первая стажировка",
+        hint: "Нужно внимательнее проверить готовность перед назначением.",
+        training: "not_passed",
+        attempt: "first"
+      },
+      {
+        key: "untrained-repeat",
+        title: "Без обучения · повторная",
+        hint: "Низший приоритет в очереди, если есть обученные кандидаты.",
+        training: "not_passed",
+        attempt: "repeat"
+      }
+    ];
     const venues = [
       { id: "loft1", name: "LOFT#1", address: "ул. Ленинская Слобода, 26, стр. 35", photo: "assets/venues/loft1.jpg" },
       { id: "loft2", name: "LOFT#2", address: "ул. Ленинская Слобода, 26с11", photo: "assets/venues/loft2.jpg" },
@@ -2137,6 +2327,7 @@
     let state = load();
     let registrySearch = "";
     let registryStatusFilter = "all";
+    let queueSearch = "";
     let registryRenderFrame = 0;
 
     const fields = {
@@ -2258,7 +2449,8 @@
         mentorReportAt: app.mentorReportAt || "",
         mentorDecision: app.mentorDecision || "",
         mentorCommentDeliveryStatus: app.mentorCommentDeliveryStatus || "",
-        mentorCommentDeliveryError: app.mentorCommentDeliveryError || ""
+        mentorCommentDeliveryError: app.mentorCommentDeliveryError || "",
+        experience: app.experience === "experienced" ? "experienced" : ""
       };
     }
 
@@ -2870,6 +3062,10 @@
       return "";
     }
 
+    function experienceLabel(app) {
+      return app?.experience === "experienced" ? "Опытный стажёр" : "";
+    }
+
     function renderMentorReportNotice(app) {
       return "";
     }
@@ -3092,7 +3288,101 @@
       renderQuickDates();
     }
 
+    function traineeTelegramTag(app) {
+      const username = String(app?.telegramUsername || "").trim().replace(/^@/, "");
+      return username ? `@${username}` : "";
+    }
+
+    function queueSearchHaystack(app) {
+      return [
+        app.name,
+        traineeTelegramTag(app),
+        app.telegramUserId,
+        app.telegramChatId,
+        trainingNames[app.training],
+        attemptNames[app.attempt],
+        app.limits
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function filteredQueueApplications(queue) {
+      const query = queueSearch.trim().toLowerCase();
+      const items = query
+        ? queue.filter(app => queueSearchHaystack(app).includes(query))
+        : queue;
+      return [...items].sort((left, right) => {
+        const leftGroup = queuePriorityGroups.findIndex(group => group.training === left.training && group.attempt === left.attempt);
+        const rightGroup = queuePriorityGroups.findIndex(group => group.training === right.training && group.attempt === right.attempt);
+        const leftOrder = leftGroup >= 0 ? leftGroup : queuePriorityGroups.length;
+        const rightOrder = rightGroup >= 0 ? rightGroup : queuePriorityGroups.length;
+        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        return String(left.name || "").localeCompare(String(right.name || ""), "ru");
+      });
+    }
+
+    function groupedQueueApplications(queue) {
+      const filtered = filteredQueueApplications(queue);
+      return queuePriorityGroups.map(group => ({
+        ...group,
+        items: filtered.filter(app => app.training === group.training && app.attempt === group.attempt)
+      })).filter(group => group.items.length);
+    }
+
+    function renderQueueTelegram(app) {
+      const tag = traineeTelegramTag(app);
+      if (!tag) return `<span class="queue-telegram muted">Telegram не указан</span>`;
+      return `<button class="queue-telegram" data-copy-telegram="${app.id}" type="button" title="Скопировать Telegram">${escapeHtml(tag)}</button>`;
+    }
+
+    function renderQueueCandidate(app, shift) {
+      return `
+        <article class="queue-candidate-card">
+          <div class="queue-candidate-main">
+            <div class="queue-candidate-name">${escapeHtml(app.name)}</div>
+            ${renderQueueTelegram(app)}
+          </div>
+          <div class="queue-candidate-tags">
+            ${badge(app.training === "passed", trainingNames[app.training])}
+            ${badge(app.attempt === "first", attemptNames[app.attempt])}
+          </div>
+          ${app.limits ? `<p class="queue-candidate-limits">Ограничения: ${escapeHtml(app.limits)}</p>` : ""}
+          <button class="quiet queue-assign-button" data-assign="${app.id}" data-shift="${shift.id}" type="button">Записать на эту дату</button>
+        </article>
+      `;
+    }
+
+    function renderQueueForShift(queue, shift) {
+      const groups = groupedQueueApplications(queue);
+      if (!groups.length) {
+        return `
+          <div class="queue-priority-list empty-queue">
+            ${queueSearch.trim() ? "По этому поиску в предварительной записи никого нет." : "Предварительная запись пока пустая."}
+          </div>
+        `;
+      }
+      return `
+        <div class="queue-priority-list">
+          ${groups.map(group => `
+            <section class="queue-priority-group">
+              <div class="queue-priority-head">
+                <div>
+                  <b>${escapeHtml(group.title)}</b>
+                  <span>${escapeHtml(group.hint)}</span>
+                </div>
+                <span class="count">${group.items.length}</span>
+              </div>
+              <div class="queue-candidate-list">
+                ${group.items.map(app => renderQueueCandidate(app, shift)).join("")}
+              </div>
+            </section>
+          `).join("")}
+        </div>
+      `;
+    }
+
     function renderRecruiterDates() {
+      const queueSearchInput = document.getElementById("queueSearch");
+      if (queueSearchInput && queueSearchInput.value !== queueSearch) queueSearchInput.value = queueSearch;
       const queue = state.applications.filter(app => app.status === "queue");
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
@@ -3123,10 +3413,11 @@
               </div>
               ${queue.length && shift.open ? `
                 <div class="notice">
-                  <b>Предварительная запись</b>
-                  <div class="compact-actions" style="margin-top:8px">
-                    ${queue.map(app => `<button class="quiet" data-assign="${app.id}" data-shift="${shift.id}" type="button">${escapeHtml(app.name)}</button>`).join("")}
+                  <div class="queue-notice-head">
+                    <b>Предварительная запись</b>
+                    <span>${queueSearch.trim() ? "с учетом поиска" : "по приоритету"}</span>
                   </div>
+                  ${renderQueueForShift(queue, shift)}
                 </div>
               ` : ""}
               <div class="shift-admin-actions">
@@ -3428,7 +3719,9 @@ ${managerLine}
       const filter = fields.candidateFilter.value;
       const active = ["confirmed", "invited", "feedback", "passed", "failed", "noshow"];
       const apps = state.applications
-        .filter(app => filter === "all" || (filter === "active" ? active.includes(app.status) : app.status === filter))
+        .filter(app => filter === "all"
+          || (filter === "active" ? active.includes(app.status) : app.status === filter)
+          || (filter === "experienced" && app.experience === "experienced"))
         .sort((a, b) => b.id - a.id);
       document.getElementById("candidateList").innerHTML = apps.length ? apps.map((app, index) => {
         const shift = state.shifts.find(item => item.id === app.shiftId);
@@ -3437,6 +3730,7 @@ ${managerLine}
         const actionMessage = candidateActionMessages.get(String(app.id)) || "";
         const trainingLabel = app.training === "passed" ? "Пройдено" : "Не пройдено";
         const attemptLabel = app.attempt === "first" ? "Первая" : "Повторная";
+        const experience = experienceLabel(app);
         return `
           <article class="card candidate-card">
             <div class="candidate-card-head">
@@ -3444,13 +3738,14 @@ ${managerLine}
                 <span class="candidate-number">${index + 1}</span>
                 <div class="name">${escapeHtml(app.name)}</div>
               </div>
-              <span class="pill candidate-status ${statusPill[app.status]}">${statusNames[app.status]}</span>
+              <span class="pill candidate-status ${experience ? "ok" : statusPill[app.status]}">${escapeHtml(experience || statusNames[app.status])}</span>
             </div>
             <div class="candidate-info-grid">
               <div class="candidate-info-item"><span>Дата</span><b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b></div>
               <div class="candidate-info-item"><span>Ограничения</span><b>${escapeHtml(app.limits || "Нет")}</b></div>
               <div class="candidate-info-item"><span>Обслуживание</span><b class="${app.training === "passed" ? "good" : "attention"}">${trainingLabel}</b></div>
               <div class="candidate-info-item"><span>Стажировка</span><b>${attemptLabel}</b></div>
+              ${experience ? `<div class="candidate-info-item"><span>Опыт</span><b class="good">${escapeHtml(experience)}</b></div>` : ""}
             </div>
             ${renderCandidateStage(app, "recruiter-list")}
             ${showAttendanceActions ? `
@@ -3458,6 +3753,14 @@ ${managerLine}
                 <span class="candidate-action-label">Отметить выход</span>
                 <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>
                 <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
+              </div>
+            ` : ""}
+            ${app.status === "passed" ? `
+              <div class="candidate-card-actions">
+                <span class="candidate-action-label">Проверка после стажировки</span>
+                ${experience
+                  ? `<span class="candidate-final-note">Статус опытного стажёра уже присвоен.</span>`
+                  : `<button class="secondary candidate-experience-button" data-mark-experienced="${app.id}" type="button">Опытный стажёр</button>`}
               </div>
             ` : ""}
             ${previousStatus ? `
@@ -3500,7 +3803,8 @@ ${managerLine}
             telegram,
             mentorReport: app.mentorReport ? "Получен" : "Нет",
             mentorDecision: app.mentorDecision || "—",
-            mentorDelivery: app.mentorCommentDeliveryStatus || "—"
+            mentorDelivery: app.mentorCommentDeliveryStatus || "—",
+            experience: app.experience === "experienced" ? "Опытный стажёр" : ""
           };
         })
         .sort((left, right) => {
@@ -3517,7 +3821,8 @@ ${managerLine}
       return registryRows().filter(row => {
         const matchesStatus = registryStatusFilter === "all"
           || row.status === registryStatusFilter
-          || (registryStatusFilter === "active" && activeStatuses.includes(row.status));
+          || (registryStatusFilter === "active" && activeStatuses.includes(row.status))
+          || (registryStatusFilter === "experienced" && row.experience);
         if (!matchesStatus) return false;
         if (!query) return true;
         const haystack = [
@@ -3528,7 +3833,8 @@ ${managerLine}
           row.attempt,
           row.venue,
           row.telegram,
-          row.mentorDecision
+          row.mentorDecision,
+          row.experience
         ].join(" ").toLowerCase();
         return haystack.includes(query);
       });
@@ -3539,12 +3845,14 @@ ${managerLine}
       const invited = state.applications.filter(app => app.status === "invited").length;
       const feedback = state.applications.filter(app => app.status === "feedback").length;
       const final = state.applications.filter(app => ["passed", "failed", "noshow"].includes(app.status)).length;
+      const experienced = state.applications.filter(app => app.experience === "experienced").length;
       return `
         <div class="registry-summary">
           <div class="metric"><b>${total}</b><span>всего</span></div>
           <div class="metric"><b>${invited}</b><span>приглашены</span></div>
           <div class="metric"><b>${feedback}</b><span>ждут отчет</span></div>
           <div class="metric"><b>${final}</b><span>с итогом</span></div>
+          <div class="metric"><b>${experienced}</b><span>опытные</span></div>
         </div>
         ${rows.length !== total ? `<p class="meta">Показано: ${rows.length} из ${total}</p>` : ""}
       `;
@@ -3557,7 +3865,7 @@ ${managerLine}
     }
 
     function renderRegistryStatus(row) {
-      return `<span class="pill ${statusPill[row.status] || "wait"}">${escapeHtml(row.statusLabel)}</span>`;
+      return `<span class="pill ${row.experience ? "ok" : statusPill[row.status] || "wait"}">${escapeHtml(row.experience || row.statusLabel)}</span>`;
     }
 
     function registryTrainingTags(row) {
@@ -3565,6 +3873,7 @@ ${managerLine}
         <div class="registry-tags">
           <span class="registry-tag ${row.training === "Банкетное обслуживание пройдено" ? "ok" : ""}">${escapeHtml(row.training)}</span>
           <span class="registry-tag">${escapeHtml(row.attempt)}</span>
+          ${row.experience ? `<span class="registry-tag ok">${escapeHtml(row.experience)}</span>` : ""}
           <span class="registry-tag ${row.mentorReport === "Получен" ? "ok" : ""}">Отчет: ${escapeHtml(row.mentorReport.toLowerCase())}</span>
         </div>
       `;
@@ -3721,6 +4030,16 @@ ${managerLine}
             ? `Этап изменён на «${targetLabel}», но уведомление не доставлено.`
             : `Этап изменён на «${targetLabel}».`;
       candidateActionMessages.set(String(app.id), message);
+      render();
+    }
+
+    async function markExperiencedCandidate(id) {
+      const app = state.applications.find(item => String(item.id) === String(id));
+      if (!app || app.status !== "passed") return;
+      if (!confirm(`Отметить «${app.name}» как опытного стажёра? Статус появится в кандидатах и реестре.`)) return;
+      candidateActionMessages.delete(String(app.id));
+      await queueBookingCommand("mark_experienced", { applicationId: Number(app.id) });
+      candidateActionMessages.set(String(app.id), "Статус опытного стажёра присвоен.");
       render();
     }
 
@@ -3935,6 +4254,28 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           openExternalLink(externalLink.href, event);
           return;
         }
+        const copyTelegram = event.target.closest("[data-copy-telegram]");
+        if (copyTelegram) {
+          const app = state.applications.find(item => String(item.id) === String(copyTelegram.dataset.copyTelegram));
+          const tag = traineeTelegramTag(app);
+          if (!tag) return;
+          const previousText = copyTelegram.textContent;
+          try {
+            await copyTextToClipboard(tag);
+            copyTelegram.textContent = "Скопировано";
+            copyTelegram.disabled = true;
+            setTimeout(() => {
+              copyTelegram.textContent = previousText || tag;
+              copyTelegram.disabled = false;
+            }, 1400);
+          } catch (error) {
+            copyTelegram.textContent = "Не скопировалось";
+            setTimeout(() => {
+              copyTelegram.textContent = previousText || tag;
+            }, 1600);
+          }
+          return;
+        }
         const copyWorkgroup = event.target.closest("[data-copy-workgroup]");
         if (copyWorkgroup) {
           const group = workgroupTemplateGroups()[Number(copyWorkgroup.dataset.copyWorkgroup)];
@@ -4013,6 +4354,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       const stepBack = event.target.closest("[data-step-back]");
       if (stepBack) {
         await stepBackCandidate(stepBack.dataset.stepBack);
+        return;
+      }
+      const markExperienced = event.target.closest("[data-mark-experienced]");
+      if (markExperienced) {
+        await markExperiencedCandidate(markExperienced.dataset.markExperienced);
         return;
       }
       const retryTelegram = event.target.closest("[data-retry-telegram]");
@@ -4264,6 +4610,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target.id === "registrySearch") {
         registrySearch = event.target.value;
         scheduleRegistryRender();
+      }
+      if (event.target.id === "queueSearch") {
+        queueSearch = event.target.value;
+        renderRecruiterDates();
       }
     });
 
