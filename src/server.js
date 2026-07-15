@@ -235,6 +235,7 @@ function seedBookingState() {
         id: 101,
         shiftId: 2,
         name: 'Петрова Алина',
+        phone: '+7 999 111-22-33',
         training: 'passed',
         attempt: 'first',
         experience: 'yes',
@@ -249,6 +250,7 @@ function seedBookingState() {
         id: 102,
         shiftId: 1,
         name: 'Смирнов Никита',
+        phone: '+7 999 222-33-44',
         training: 'not_passed',
         attempt: 'repeat',
         experience: 'yes',
@@ -263,6 +265,7 @@ function seedBookingState() {
         id: 103,
         shiftId: null,
         name: 'Козлова Мария',
+        phone: '+7 999 333-44-55',
         training: 'passed',
         attempt: 'first',
         experience: 'no',
@@ -354,6 +357,18 @@ function normalizeUsername(value) {
   return text;
 }
 
+function normalizePhone(value, field, { required = false } = {}) {
+  const text = required
+    ? normalizeRequiredText(value, field, 40)
+    : normalizeOptionalText(value, field, 40);
+  if (!text) return '';
+  const digits = text.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 20) {
+    throw new BookingValidationError('Проверьте номер телефона: должно быть от 7 до 20 цифр.');
+  }
+  return text;
+}
+
 function normalizeDateValue(value, field) {
   const text = normalizeRequiredText(value, field, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
@@ -434,6 +449,7 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
     id: normalizeId(app?.id, 'application.id'),
     shiftId,
     name: normalizeRequiredText(app?.name, 'application.name', 120),
+    phone: normalizePhone(app?.phone, 'application.phone', { required: role === 'trainee' }),
     training,
     attempt,
     limits: normalizeOptionalText(app?.limits, 'application.limits', 600),
@@ -659,6 +675,7 @@ function traineeTableRowsFromState(state) {
       return {
         id: application.id,
         name: application.name,
+        phone: application.phone || '',
         status,
         statusLabel: BOOKING_STATUS_LABELS[status] || status,
         date: shift?.date || '',
@@ -696,6 +713,7 @@ function traineesCsvFromState(state) {
   const headers = [
     'ID',
     'ФИО',
+    'Телефон',
     'Статус',
     'Дата стажировки',
     'Банкетное обслуживание',
@@ -717,6 +735,7 @@ function traineesCsvFromState(state) {
   const lines = traineeTableRowsFromState(state).map(row => csvLine([
     row.id,
     row.name,
+    row.phone,
     row.statusLabel,
     row.date,
     row.trainingLabel,

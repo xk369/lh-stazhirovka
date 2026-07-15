@@ -121,6 +121,30 @@ test('rejects trainee booking when shift has no free seats', () => {
             id: 20,
             shiftId: 1,
             name: 'New Trainee',
+            phone: '+7 999 123-45-67',
+            training: 'passed',
+            attempt: 'first',
+            status: 'pending'
+          }
+        },
+        traineeActor
+      ),
+    BookingValidationError
+  );
+});
+
+test('rejects trainee booking without registration phone', () => {
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        bookingState(),
+        {
+          action: 'upsert_trainee_application',
+          baseVersion: 2,
+          application: {
+            id: 20,
+            shiftId: 1,
+            name: 'New Trainee',
             training: 'passed',
             attempt: 'first',
             status: 'pending'
@@ -653,6 +677,7 @@ test('allows a canceled trainee returned to queue to choose another shift', () =
         id: 10,
         shiftId: 1,
         name: 'Queued Trainee',
+        phone: '+7 999 000-11-22',
         training: 'passed',
         attempt: 'first',
         status: 'pending'
@@ -675,6 +700,7 @@ test('exports trainee table as excel-friendly csv', () => {
         id: 10,
         shiftId: 1,
         name: 'Иванов Иван',
+        phone: '+7 999 123-45-67',
         training: 'passed',
         attempt: 'repeat',
         limits: 'После 17:00',
@@ -704,8 +730,9 @@ test('exports trainee table as excel-friendly csv', () => {
     ]
   });
 
-  assert.ok(csv.startsWith('\uFEFFID;ФИО;Статус;'));
+  assert.ok(csv.startsWith('\uFEFFID;ФИО;Телефон;Статус;'));
   assert.match(csv, /Иванов Иван/);
+  assert.match(csv, /\+7 999 123-45-67/);
   assert.match(csv, /Ждем отчет/);
   assert.match(csv, /2026-07-10/);
   assert.match(csv, /LOFT#5 SMALL/);

@@ -2115,6 +2115,11 @@
             <input id="traineeName" autocomplete="name" required aria-describedby="traineeNameError" placeholder="Например: Иванов Иван">
             <span class="field-error" id="traineeNameError"></span>
           </label>
+          <label data-field="traineePhone">Номер телефона при регистрации в боте
+            <input id="traineePhone" type="tel" inputmode="tel" autocomplete="tel" required aria-describedby="traineePhoneHelp traineePhoneError" placeholder="+7 999 123-45-67">
+            <span class="field-help" id="traineePhoneHelp">Укажите тот номер, который использовали при регистрации в боте.</span>
+            <span class="field-error" id="traineePhoneError"></span>
+          </label>
           <div class="choice-grid">
             <label class="has-select-hint" data-field="traineeTraining">Банкетное обслуживание
               <select id="traineeTraining" required aria-describedby="traineeTrainingHint traineeTrainingError">
@@ -2439,6 +2444,8 @@
     const fields = {
       traineeName: document.getElementById("traineeName"),
       traineeNameError: document.getElementById("traineeNameError"),
+      traineePhone: document.getElementById("traineePhone"),
+      traineePhoneError: document.getElementById("traineePhoneError"),
       traineeFormStatus: document.getElementById("traineeFormStatus"),
       traineeTraining: document.getElementById("traineeTraining"),
       traineeTrainingError: document.getElementById("traineeTrainingError"),
@@ -2543,6 +2550,7 @@
         ...app,
         status: normalizeStatus(app.status),
         comment: app.comment ?? app.recruiterComment ?? "",
+        phone: app.phone || "",
         limits: app.limits || "",
         inviteGroupId: app.inviteGroupId ?? null,
         venueId: app.venueId ?? null,
@@ -2561,7 +2569,7 @@
     }
 
     function defaultProfile() {
-      return { name: "", training: "", attempt: "", limits: "", telegramCode: "", activeAppId: null };
+      return { name: "", phone: "", training: "", attempt: "", limits: "", telegramCode: "", activeAppId: null };
     }
 
     function getTelegramCode() {
@@ -2762,6 +2770,7 @@
 
     function fillProfile() {
       fields.traineeName.value = state.profile.name || "";
+      fields.traineePhone.value = state.profile.phone || "";
       fields.traineeTraining.value = state.profile.training || "";
       fields.traineeAttempt.value = state.profile.attempt || "";
       fields.traineeLimits.value = state.profile.limits || "";
@@ -2772,6 +2781,7 @@
         id: app.id,
         shiftId: app.shiftId ?? null,
         name: app.name,
+        phone: app.phone || "",
         training: app.training,
         attempt: app.attempt,
         limits: app.limits || "",
@@ -2802,6 +2812,7 @@
       const activeId = state.profile.activeAppId || null;
       state.profile = {
         name: fields.traineeName.value.trim(),
+        phone: fields.traineePhone.value.trim(),
         training: fields.traineeTraining.value,
         attempt: fields.traineeAttempt.value,
         limits: fields.traineeLimits.value.trim(),
@@ -2811,6 +2822,7 @@
       const app = currentApplication();
       if (app && ["pending", "queue"].includes(app.status)) {
         app.name = state.profile.name;
+        app.phone = state.profile.phone;
         app.training = state.profile.training;
         app.attempt = state.profile.attempt;
         app.limits = state.profile.limits;
@@ -2933,6 +2945,7 @@
     function clearTraineeValidation() {
       [
         [fields.traineeName, fields.traineeNameError],
+        [fields.traineePhone, fields.traineePhoneError],
         [fields.traineeTraining, fields.traineeTrainingError],
         [fields.traineeAttempt, fields.traineeAttemptError]
       ].forEach(([field, error]) => {
@@ -2943,11 +2956,21 @@
       setTraineeFormStatus("");
     }
 
+    function isValidPhone(value) {
+      const digits = String(value || "").replace(/\D/g, "");
+      return digits.length >= 7 && digits.length <= 20;
+    }
+
     function validateTraineeProfile() {
       clearTraineeValidation();
       const invalidFields = [];
       if (!state.profile.name) {
         invalidFields.push([fields.traineeName, fields.traineeNameError, "Укажите ФИО, чтобы рекрут понял, чья это заявка."]);
+      }
+      if (!state.profile.phone) {
+        invalidFields.push([fields.traineePhone, fields.traineePhoneError, "Укажите номер телефона, который вы использовали при регистрации в боте."]);
+      } else if (!isValidPhone(state.profile.phone)) {
+        invalidFields.push([fields.traineePhone, fields.traineePhoneError, "Проверьте номер телефона: должно быть от 7 до 20 цифр."]);
       }
       if (!state.profile.training) {
         invalidFields.push([fields.traineeTraining, fields.traineeTrainingError, "Выберите, проходили ли вы обучение по банкетному обслуживанию."]);
@@ -3406,6 +3429,7 @@
         traineeTelegramTag(app),
         app.telegramUserId,
         app.telegramChatId,
+        app.phone,
         trainingNames[app.training],
         attemptNames[app.attempt],
         app.limits
@@ -3461,6 +3485,7 @@
             <div class="queue-candidate-name">${escapeHtml(app.name)}</div>
             ${renderQueueTelegram(app)}
           </div>
+          ${app.phone ? `<p class="queue-candidate-limits">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
           <div class="queue-candidate-tags">
             ${badge(app.training === "passed", trainingNames[app.training])}
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
@@ -3603,6 +3628,7 @@
           <div class="candidate-head">
             <div>
               <div class="name">${escapeHtml(app.name)}</div>
+              ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
               <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
             </div>
             <span class="pill new">Новая</span>
@@ -3630,6 +3656,7 @@
           <div class="candidate-head">
             <div>
               <div class="name">${escapeHtml(app.name)}</div>
+              ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
               <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
             </div>
             <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
@@ -3677,7 +3704,9 @@
     function traineeWorkgroupLine(app) {
       const username = String(app?.telegramUsername || "").trim();
       const normalizedUsername = username ? (username.startsWith("@") ? username : `@${username}`) : "";
-      return [normalizedUsername, app?.name || "Стажёр"].filter(Boolean).join(" ");
+      const identity = [normalizedUsername, app?.name || "Стажёр"].filter(Boolean).join(" ");
+      const phone = String(app?.phone || "").trim();
+      return [identity, phone ? `тел. ${phone}` : ""].filter(Boolean).join(" · ");
     }
 
     function workgroupManagers() {
@@ -3895,6 +3924,7 @@ ${managerLine}
             </div>
             <div class="candidate-info-grid">
               <div class="candidate-info-item"><span>Дата</span><b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b></div>
+              <div class="candidate-info-item"><span>Телефон</span><b>${escapeHtml(app.phone || "Не указан")}</b></div>
               <div class="candidate-info-item"><span>Ограничения</span><b>${escapeHtml(app.limits || "Нет")}</b></div>
               <div class="candidate-info-item"><span>Обслуживание</span><b class="${app.training === "passed" ? "good" : "attention"}">${trainingLabel}</b></div>
               <div class="candidate-info-item"><span>Стажировка</span><b>${attemptLabel}</b></div>
@@ -3954,6 +3984,7 @@ ${managerLine}
             venue: venue?.name || app.venueId || group?.venueId || "Не назначена",
             groupLink: app.groupLink || group?.link || "",
             telegram,
+            phone: app.phone || "",
             mentorReport: app.mentorReport ? "Получен" : "Нет",
             mentorDecision: app.mentorDecision || "—",
             mentorDelivery: app.mentorCommentDeliveryStatus || "—",
@@ -3986,6 +4017,7 @@ ${managerLine}
           row.attempt,
           row.venue,
           row.telegram,
+          row.phone,
           row.mentorDecision,
           row.experience
         ].join(" ").toLowerCase();
@@ -4125,6 +4157,7 @@ ${managerLine}
       const payload = {
         shiftId: type === "queue" ? null : shiftId,
         name: state.profile.name,
+        phone: state.profile.phone,
         training: state.profile.training,
         attempt: state.profile.attempt,
         limits: state.profile.limits,
@@ -4744,9 +4777,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     });
 
     document.addEventListener("input", event => {
-      if ([fields.traineeName, fields.traineeTraining, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
+      if ([fields.traineeName, fields.traineePhone, fields.traineeTraining, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
         syncProfile();
         if (event.target === fields.traineeName) clearFieldValidation(fields.traineeName, fields.traineeNameError);
+        if (event.target === fields.traineePhone) clearFieldValidation(fields.traineePhone, fields.traineePhoneError);
         if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
         if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();

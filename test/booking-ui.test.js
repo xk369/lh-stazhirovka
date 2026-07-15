@@ -40,6 +40,22 @@ test('registry search updates results asynchronously without replacing its input
   assert.doesNotMatch(inputHandler, /render\(\)|renderRegistry\(\)/);
 });
 
+test('trainee booking form requires phone and sends it with applications', async () => {
+  const html = await readPublicFile('booking.html');
+  const traineeView = html.match(/<section id="traineeView">[\s\S]*?<section id="recruiterView"/)?.[0] || '';
+  const applicationPayload = html.match(/function applicationCommandPayload\(app\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const syncProfile = html.match(/function syncProfile\(options = \{\}\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const validation = html.match(/function validateTraineeProfile\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const workgroupLine = html.match(/function traineeWorkgroupLine\(app\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(traineeView, /id="traineePhone"[^>]*type="tel"[^>]*required/);
+  assert.match(traineeView, /Номер телефона при регистрации в боте/);
+  assert.match(applicationPayload, /phone: app\.phone \|\| ""/);
+  assert.match(syncProfile, /phone: fields\.traineePhone\.value\.trim\(\)/);
+  assert.match(validation, /isValidPhone\(state\.profile\.phone\)/);
+  assert.match(workgroupLine, /тел\. \$\{phone\}/);
+});
+
 test('candidate cards are numbered, comment-free and use one step-back action', async () => {
   const html = await readPublicFile('booking.html');
   const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
