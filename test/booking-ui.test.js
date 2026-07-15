@@ -117,6 +117,37 @@ test('recruiter queue is searchable, grouped by priority and exposes Telegram co
   assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
   assert.match(html, /data-assign-selected="\$\{app\.id\}"/);
   assert.doesNotMatch(renderRecruiterDates, /renderQueuePool|renderQueueForShift|queue-priority-group/);
+  assert.doesNotMatch(datesSection, /Самый приоритетный|Нужно внимательнее|Низший приоритет|Очередь отображается/);
+});
+
+test('recruiter date cards are collapsible and sorted from earlier dates first', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderRecruiterDates = html.match(/function renderRecruiterDates\(\) \{[\s\S]*?\n    \}\n\n    function renderPendingCandidate/)?.[0] || '';
+  const clickHandler = html.match(/const shiftDetails = event\.target\.closest\("\[data-toggle-shift-details\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
+
+  assert.match(html, /const expandedShiftIds = new Set\(\)/);
+  assert.match(html, /function sortedShiftsByDate\(shifts\)/);
+  assert.match(renderRecruiterDates, /data-toggle-shift-details="\$\{shiftId\}"/);
+  assert.match(renderRecruiterDates, /shift-body-shell/);
+  assert.match(renderRecruiterDates, /sortedShiftsByDate\(state\.shifts\.filter\(shift => shift\.open\)\)/);
+  assert.match(renderRecruiterDates, /sortedShiftsByDate\(state\.shifts\.filter\(shift => !shift\.open\)\)/);
+  assert.match(clickHandler, /expandedShiftIds\.has\(shiftId\)/);
+  assert.match(html, /\.shift-card\.expanded \.shift-body-shell \{[\s\S]*?grid-template-rows: 1fr;/);
+});
+
+test('registry hides limitations and lets recruiters copy Telegram', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderRegistryTable = html.match(/function renderRegistryTable\(rows\) \{[\s\S]*?\n    \}\n\n    function renderRegistry/)?.[0] || '';
+  const renderRegistryTelegram = html.match(/function renderRegistryTelegram\(row\) \{[\s\S]*?\n    \}\n\n    function renderRegistryStatus/)?.[0] || '';
+  const copyHandler = html.match(/const copyTelegram = event\.target\.closest\("\[data-copy-telegram\]"\);[\s\S]*?return;\n        \}/)?.[0] || '';
+
+  assert.match(html, /function renderRegistryTelegram\(row\)/);
+  assert.match(renderRegistryTable, /renderRegistryTelegram\(row\)/);
+  assert.match(renderRegistryTelegram, /class="registry-telegram"/);
+  assert.match(renderRegistryTelegram, /data-copy-value="\$\{escapeHtml\(row\.telegram\)\}"/);
+  assert.doesNotMatch(renderRegistryTable, />Ограничения</);
+  assert.doesNotMatch(renderRegistryTable, /row\.limits/);
+  assert.match(copyHandler, /copyTelegram\.dataset\.copyValue \|\| traineeTelegramTag\(app\)/);
 });
 
 test('passed candidates can be marked as experienced without changing their base status', async () => {

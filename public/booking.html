@@ -134,14 +134,71 @@
       grid-template-columns: 1fr auto;
       gap: 10px;
       align-items: start;
+      width: 100%;
       padding: 14px;
+      border: 0;
       background: linear-gradient(180deg, var(--accent-soft), var(--surface));
       border-bottom: 1px solid var(--line);
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .shift-header:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      outline-offset: -4px;
+    }
+    .shift-header-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+    .shift-toggle-icon {
+      width: 34px;
+      height: 34px;
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--surface) 88%, var(--accent-soft));
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      transition: transform .22s ease-in-out, background .18s ease-in-out, border-color .18s ease-in-out;
+    }
+    .shift-toggle-icon::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: translateY(-2px) rotate(45deg);
+    }
+    .shift-card.expanded .shift-toggle-icon {
+      transform: rotate(180deg);
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+    }
+    .shift-card.collapsed .shift-header {
+      border-bottom-color: transparent;
+    }
+    .shift-body-shell {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      overflow: hidden;
+      transition: grid-template-rows .24s ease-in-out, opacity .18s ease-in-out;
+    }
+    .shift-card.expanded .shift-body-shell {
+      grid-template-rows: 1fr;
+      opacity: 1;
     }
     .shift-body {
       display: grid;
       gap: 12px;
       padding: 12px;
+      overflow: hidden;
     }
     .shift-title {
       display: grid;
@@ -548,6 +605,7 @@
     .queue-pool-panel {
       display: grid;
       gap: 10px;
+      margin-top: 20px;
     }
     .queue-notice-head {
       display: flex;
@@ -596,14 +654,6 @@
       font-size: 13px;
       font-weight: 950;
       line-height: 1.2;
-    }
-    .queue-priority-head span:not(.count) {
-      display: block;
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 750;
-      line-height: 1.3;
-      margin-top: 2px;
     }
     .queue-candidate-list {
       display: grid;
@@ -1290,6 +1340,35 @@
       text-decoration: none;
       overflow-wrap: anywhere;
     }
+    .registry-telegram {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      min-height: 28px;
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+      color: var(--accent);
+      padding: 0 10px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 950;
+      line-height: 1.15;
+      text-align: left;
+      overflow-wrap: anywhere;
+      cursor: pointer;
+    }
+    .registry-telegram:hover,
+    .registry-telegram:focus-visible {
+      border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+      background: var(--accent-soft);
+      outline: none;
+    }
+    .registry-telegram:disabled {
+      cursor: default;
+      opacity: .78;
+    }
     .registry-card-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -1548,7 +1627,7 @@
     }
     .panel { padding: 18px; margin-bottom: 14px; }
     .card, .date-card { padding: 15px; }
-    .shift-card { border-radius: 24px; box-shadow: var(--shadow-soft); }
+    .shift-card { padding: 0; border-radius: 24px; box-shadow: var(--shadow-soft); }
     .shift-header {
       padding: 16px;
       background: linear-gradient(145deg, var(--accent-soft), transparent 70%);
@@ -2130,7 +2209,6 @@
             <label>Поиск в предварительной записи
               <input id="queueSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО или Telegram">
             </label>
-            <p class="meta">Очередь отображается после дат и сгруппирована по приоритету: обучение, первая/повторная стажировка.</p>
           </section>
           <div class="date-list" id="recruiterDates"></div>
           <div id="queuePool"></div>
@@ -2312,28 +2390,24 @@
       {
         key: "trained-first",
         title: "Обучение пройдено · первая стажировка",
-        hint: "Самый приоритетный список для назначения на ближайшие даты.",
         training: "passed",
         attempt: "first"
       },
       {
         key: "trained-repeat",
         title: "Обучение пройдено · повторная",
-        hint: "Уже знают базу, но идут на повторную стажировку.",
         training: "passed",
         attempt: "repeat"
       },
       {
         key: "untrained-first",
         title: "Без обучения · первая стажировка",
-        hint: "Нужно внимательнее проверить готовность перед назначением.",
         training: "not_passed",
         attempt: "first"
       },
       {
         key: "untrained-repeat",
         title: "Без обучения · повторная",
-        hint: "Низший приоритет в очереди, если есть обученные кандидаты.",
         training: "not_passed",
         attempt: "repeat"
       }
@@ -2360,6 +2434,7 @@
     let registryStatusFilter = "all";
     let queueSearch = "";
     let registryRenderFrame = 0;
+    const expandedShiftIds = new Set();
 
     const fields = {
       traineeName: document.getElementById("traineeName"),
@@ -3312,8 +3387,8 @@
       document.getElementById("statConfirmed").textContent = state.applications.filter(app => ["confirmed", "invited"].includes(app.status)).length;
       document.getElementById("statFeedback").textContent = state.applications.filter(app => app.status === "feedback").length;
       document.getElementById("statQueue").textContent = state.applications.filter(app => app.status === "queue").length;
-      renderQueuePool();
       renderRecruiterDates();
+      renderQueuePool();
       renderCandidates();
       renderInviteGroups();
       renderRegistry();
@@ -3441,7 +3516,6 @@
                 <div class="queue-priority-head">
                   <div>
                     <b>${escapeHtml(group.title)}</b>
-                    <span>${escapeHtml(group.hint)}</span>
                   </div>
                   <span class="count">${group.items.length}</span>
                 </div>
@@ -3455,15 +3529,26 @@
       `;
     }
 
+    function sortedShiftsByDate(shifts) {
+      return [...shifts].sort((left, right) => {
+        const leftDate = String(left.date || "");
+        const rightDate = String(right.date || "");
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        return Number(left.id || 0) - Number(right.id || 0);
+      });
+    }
+
     function renderRecruiterDates() {
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
         const booked = state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed", "failed", "noshow"].includes(app.status));
         const shiftActionMessage = shiftActionMessages.get(String(shift.id)) || "";
         const shiftStateLabel = shift.canceled ? "Отменена" : shift.open ? "Открыта" : "Закрыта";
+        const shiftId = String(shift.id);
+        const expanded = expandedShiftIds.has(shiftId);
         return `
-          <article class="date-card shift-card">
-            <div class="shift-header">
+          <article class="date-card shift-card ${expanded ? "expanded" : "collapsed"}">
+            <button class="shift-header" data-toggle-shift-details="${shiftId}" type="button" aria-expanded="${expanded ? "true" : "false"}" aria-controls="shift-body-${shiftId}">
               <div class="shift-title">
                 <div class="date-title">${formatDate(shift.date)}</div>
                 <div class="shift-metrics">
@@ -3472,28 +3557,33 @@
                   <div class="metric"><b>${booked.length}</b><span>записаны</span></div>
                 </div>
               </div>
-              <span class="pill ${shift.open ? "ok" : "bad"}">${shiftStateLabel}</span>
-            </div>
-            <div class="shift-body">
-              <div class="section-title"><span>Новые заявки</span><b class="count">${apps.length}</b></div>
-              <div class="list">
-                ${apps.length ? apps.map(renderPendingCandidate).join("") : `<div class="empty tight">Новых заявок на эту дату нет.</div>`}
+              <span class="shift-header-actions">
+                <span class="pill ${shift.open ? "ok" : "bad"}">${shiftStateLabel}</span>
+                <span class="shift-toggle-icon" aria-hidden="true"></span>
+              </span>
+            </button>
+            <div class="shift-body-shell" id="shift-body-${shiftId}" aria-hidden="${expanded ? "false" : "true"}" ${expanded ? "" : "inert"}>
+              <div class="shift-body">
+                <div class="section-title"><span>Новые заявки</span><b class="count">${apps.length}</b></div>
+                <div class="list">
+                  ${apps.length ? apps.map(renderPendingCandidate).join("") : `<div class="empty tight">Новых заявок на эту дату нет.</div>`}
+                </div>
+                <div class="section-title"><span>Записаны на дату</span><b class="count">${booked.length}</b></div>
+                <div class="list">
+                  ${booked.length ? booked.map(renderBookedCandidate).join("") : `<div class="empty tight">Подтвержденных кандидатов пока нет.</div>`}
+                </div>
+                <div class="shift-admin-actions">
+                  <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть дату" : "Открыть дату"}</button>
+                  ${shift.canceled ? "" : `<button class="quiet" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
+                </div>
+                ${shiftActionMessage ? `<div class="shift-action-status" role="status">${escapeHtml(shiftActionMessage)}</div>` : ""}
               </div>
-              <div class="section-title"><span>Записаны на дату</span><b class="count">${booked.length}</b></div>
-              <div class="list">
-                ${booked.length ? booked.map(renderBookedCandidate).join("") : `<div class="empty tight">Подтвержденных кандидатов пока нет.</div>`}
-              </div>
-              <div class="shift-admin-actions">
-                <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть дату" : "Открыть дату"}</button>
-                ${shift.canceled ? "" : `<button class="quiet" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
-              </div>
-              ${shiftActionMessage ? `<div class="shift-action-status" role="status">${escapeHtml(shiftActionMessage)}</div>` : ""}
             </div>
           </article>
         `;
       };
-      const openShiftsList = state.shifts.filter(shift => shift.open);
-      const closedShiftsList = state.shifts.filter(shift => !shift.open);
+      const openShiftsList = sortedShiftsByDate(state.shifts.filter(shift => shift.open));
+      const closedShiftsList = sortedShiftsByDate(state.shifts.filter(shift => !shift.open));
       document.getElementById("recruiterDates").innerHTML = `
         ${openShiftsList.length ? openShiftsList.map(renderShift).join("") : `<div class="panel empty">Открытых дат пока нет.</div>`}
         ${closedShiftsList.length ? `
@@ -3927,6 +4017,11 @@ ${managerLine}
         : "—";
     }
 
+    function renderRegistryTelegram(row) {
+      if (!row.telegram) return "—";
+      return `<button class="registry-telegram" data-copy-telegram="${row.id}" data-copy-value="${escapeHtml(row.telegram)}" type="button" title="Скопировать Telegram">${escapeHtml(row.telegram)}</button>`;
+    }
+
     function renderRegistryStatus(row) {
       return `<span class="pill ${row.experience ? "ok" : statusPill[row.status] || "wait"}">${escapeHtml(row.experience || row.statusLabel)}</span>`;
     }
@@ -3956,7 +4051,6 @@ ${managerLine}
                 <th>Группа</th>
                 <th>Telegram</th>
                 <th>Наставник</th>
-                <th>Ограничения</th>
               </tr>
             </thead>
             <tbody>
@@ -3967,9 +4061,8 @@ ${managerLine}
                   <td><b>${escapeHtml(row.dateText)}</b><br><span class="meta">${escapeHtml(row.venue)}</span></td>
                   <td>${registryTrainingTags(row)}</td>
                   <td>${renderRegistryLink(row.groupLink, "Открыть группу")}</td>
-                  <td>${escapeHtml(row.telegram || "—")}</td>
+                  <td>${renderRegistryTelegram(row)}</td>
                   <td class="wide-cell"><b>${escapeHtml(row.mentorReport)}</b><br><span class="meta">${escapeHtml(row.mentorDecision)}</span></td>
-                  <td class="wide-cell">${escapeHtml(row.limits)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -3989,10 +4082,9 @@ ${managerLine}
               </div>
               ${registryTrainingTags(row)}
               <div class="registry-details">
-                <div class="registry-row"><span>Telegram</span><b>${escapeHtml(row.telegram || "—")}</b></div>
+                <div class="registry-row"><span>Telegram</span><b>${renderRegistryTelegram(row)}</b></div>
                 <div class="registry-row"><span>Группа</span><b>${renderRegistryLink(row.groupLink, "Открыть")}</b></div>
                 <div class="registry-row full"><span>Отчет наставника</span><b>${escapeHtml(row.mentorReport)}${row.mentorDecision && row.mentorDecision !== "—" ? ` · ${escapeHtml(row.mentorDecision)}` : ""}</b></div>
-                <div class="registry-row full"><span>Ограничения</span><b>${escapeHtml(row.limits)}</b></div>
               </div>
             </article>
           `).join("")}
@@ -4320,7 +4412,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         const copyTelegram = event.target.closest("[data-copy-telegram]");
         if (copyTelegram) {
           const app = state.applications.find(item => String(item.id) === String(copyTelegram.dataset.copyTelegram));
-          const tag = traineeTelegramTag(app);
+          const tag = copyTelegram.dataset.copyValue || traineeTelegramTag(app);
           if (!tag) return;
           const previousText = copyTelegram.textContent;
           try {
@@ -4475,6 +4567,18 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           shiftId: Number(assign.dataset.shift)
         });
         render();
+        return;
+      }
+      const shiftDetails = event.target.closest("[data-toggle-shift-details]");
+      if (shiftDetails) {
+        const shiftId = String(shiftDetails.dataset.toggleShiftDetails || "");
+        if (!shiftId) return;
+        if (expandedShiftIds.has(shiftId)) {
+          expandedShiftIds.delete(shiftId);
+        } else {
+          expandedShiftIds.add(shiftId);
+        }
+        renderRecruiterDates();
         return;
       }
       const editSeats = event.target.closest("[data-edit-seats]");
