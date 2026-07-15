@@ -1654,6 +1654,56 @@
       border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
       box-shadow: 0 0 0 4px var(--accent-soft);
     }
+    .date-field-shell {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--field);
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    .date-field-shell input[type="date"] {
+      display: block;
+      inline-size: 100%;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      height: 50px;
+      min-height: 50px;
+      margin: 0;
+      padding: 12px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: var(--text);
+      font: inherit;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .date-field-shell input[type="date"]:focus {
+      border: 0;
+      box-shadow: none;
+    }
+    .date-field-shell input[type="date"]::-webkit-date-and-time-value {
+      min-height: 1.35em;
+      text-align: left;
+    }
+    .date-field-shell input[type="date"]::-webkit-calendar-picker-indicator {
+      margin: 0;
+      padding: 0;
+    }
+    .date-field-shell:focus-within {
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    label.invalid .date-field-shell {
+      border-color: color-mix(in srgb, var(--bad) 68%, var(--line));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 13%, transparent);
+    }
     .tab, .subtab, .secondary, .danger, .quiet, .primary, .date-shortcut {
       border-radius: 16px;
       transition:
@@ -2148,7 +2198,9 @@
             </label>
           </div>
           <label class="conditional-field hidden" id="trainingDateField" data-field="traineeTrainingDate">Дата обучения
-            <input id="traineeTrainingDate" type="date" aria-describedby="traineeTrainingDateHelp traineeTrainingDateError">
+            <span class="date-field-shell">
+              <input id="traineeTrainingDate" type="date" aria-describedby="traineeTrainingDateHelp traineeTrainingDateError">
+            </span>
             <span class="field-help" id="traineeTrainingDateHelp">Укажите дату прохождения банкетного обучения.</span>
             <span class="field-error" id="traineeTrainingDateError"></span>
           </label>
@@ -2212,7 +2264,9 @@
             <h2>Добавить дату</h2>
             <div class="grid">
               <label>Дата
-                <input id="newDate" type="date">
+                <span class="date-field-shell">
+                  <input id="newDate" type="date">
+                </span>
                 <div class="quick-dates" id="quickDates"></div>
               </label>
               <label>Количество мест

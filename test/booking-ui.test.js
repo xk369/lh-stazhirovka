@@ -51,7 +51,11 @@ test('trainee booking form requires phone and sends it with applications', async
   assert.match(traineeView, /id="traineePhone"[^>]*type="tel"[^>]*required/);
   assert.match(traineeView, /Номер телефона при регистрации в боте/);
   assert.match(traineeView, /id="trainingDateField"[\s\S]*Дата обучения/);
+  assert.match(traineeView, /class="date-field-shell"[\s\S]*id="traineeTrainingDate"[^>]*type="date"/);
   assert.match(traineeView, /id="traineeTrainingDate"[^>]*type="date"/);
+  assert.match(html, /class="date-field-shell"[\s\S]*id="newDate"[^>]*type="date"/);
+  assert.match(html, /\.date-field-shell \{[\s\S]*overflow: hidden;/);
+  assert.match(html, /\.date-field-shell input\[type="date"\] \{[\s\S]*-webkit-appearance: none;/);
   assert.match(applicationPayload, /phone: app\.phone \|\| ""/);
   assert.match(applicationPayload, /trainingDate: app\.training === "passed" \? app\.trainingDate \|\| "" : ""/);
   assert.match(syncProfile, /phone: fields\.traineePhone\.value\.trim\(\)/);
