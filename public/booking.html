@@ -241,7 +241,12 @@
       color: var(--text);
       outline: none;
     }
-    input[type="date"] { min-width: 0; }
+    input[type="date"] {
+      display: block;
+      inline-size: 100%;
+      min-width: 0;
+      max-width: 100%;
+    }
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -256,6 +261,7 @@
       background-repeat: no-repeat;
     }
     .choice-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .grid, .form, .panel { min-width: 0; }
     .grid > *, .choice-grid > *, .quick-dates > * { min-width: 0; }
     textarea { min-height: 92px; resize: vertical; line-height: 1.42; }
     input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(22,119,128,.14); }
@@ -1430,10 +1436,11 @@
     }
     .quick-dates {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 92px), 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 6px;
       width: 100%;
       max-width: 100%;
+      overflow: hidden;
       margin-top: 0;
     }
     .date-shortcut {
@@ -1444,6 +1451,7 @@
       color: var(--text);
       padding: 5px 6px;
       min-width: 0;
+      width: 100%;
       max-width: 100%;
       overflow: hidden;
       display: grid;
@@ -2006,6 +2014,7 @@
       .choice-grid { grid-template-columns: 1fr; gap: 10px; }
       .choice-grid select { padding-left: 10px; padding-right: 34px; }
       .choice-grid label { font-size: 12px; }
+      .quick-dates { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .recruiter-nav {
         grid-template-columns: 1fr 1fr;
       }
@@ -2075,9 +2084,7 @@
     @media (max-width: 390px) {
       .app { padding-left: 10px; padding-right: 10px; }
       .panel { padding: 15px; }
-      .quick-dates {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .quick-dates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .quick-dates .date-shortcut:last-child:nth-child(odd) {
         grid-column: 1 / -1;
       }
@@ -2140,6 +2147,11 @@
               <span class="field-error" id="traineeAttemptError"></span>
             </label>
           </div>
+          <label class="conditional-field hidden" id="trainingDateField" data-field="traineeTrainingDate">Дата обучения
+            <input id="traineeTrainingDate" type="date" aria-describedby="traineeTrainingDateHelp traineeTrainingDateError">
+            <span class="field-help" id="traineeTrainingDateHelp">Укажите дату прохождения банкетного обучения.</span>
+            <span class="field-error" id="traineeTrainingDateError"></span>
+          </label>
           <label>Когда удобно выйти / ограничения
             <textarea id="traineeLimits" placeholder="Например: могу после 17:00"></textarea>
             <span class="field-help">Если ограничений нет, можно оставить поле пустым.</span>
@@ -2449,6 +2461,8 @@
       traineeFormStatus: document.getElementById("traineeFormStatus"),
       traineeTraining: document.getElementById("traineeTraining"),
       traineeTrainingError: document.getElementById("traineeTrainingError"),
+      traineeTrainingDate: document.getElementById("traineeTrainingDate"),
+      traineeTrainingDateError: document.getElementById("traineeTrainingDateError"),
       traineeAttempt: document.getElementById("traineeAttempt"),
       traineeAttemptError: document.getElementById("traineeAttemptError"),
       traineeLimits: document.getElementById("traineeLimits"),
@@ -2551,6 +2565,7 @@
         status: normalizeStatus(app.status),
         comment: app.comment ?? app.recruiterComment ?? "",
         phone: app.phone || "",
+        trainingDate: app.trainingDate || "",
         limits: app.limits || "",
         inviteGroupId: app.inviteGroupId ?? null,
         venueId: app.venueId ?? null,
@@ -2569,7 +2584,7 @@
     }
 
     function defaultProfile() {
-      return { name: "", phone: "", training: "", attempt: "", limits: "", telegramCode: "", activeAppId: null };
+      return { name: "", phone: "", training: "", trainingDate: "", attempt: "", limits: "", telegramCode: "", activeAppId: null };
     }
 
     function getTelegramCode() {
@@ -2772,8 +2787,10 @@
       fields.traineeName.value = state.profile.name || "";
       fields.traineePhone.value = state.profile.phone || "";
       fields.traineeTraining.value = state.profile.training || "";
+      fields.traineeTrainingDate.value = state.profile.trainingDate || "";
       fields.traineeAttempt.value = state.profile.attempt || "";
       fields.traineeLimits.value = state.profile.limits || "";
+      updateTrainingDateVisibility();
     }
 
     function applicationCommandPayload(app) {
@@ -2783,6 +2800,7 @@
         name: app.name,
         phone: app.phone || "",
         training: app.training,
+        trainingDate: app.training === "passed" ? app.trainingDate || "" : "",
         attempt: app.attempt,
         limits: app.limits || "",
         telegramCode: app.telegramCode || state.profile.telegramCode || "",
@@ -2810,10 +2828,16 @@
 
     function syncProfile(options = {}) {
       const activeId = state.profile.activeAppId || null;
+      const training = fields.traineeTraining.value;
+      const trainingDate = training === "passed" ? fields.traineeTrainingDate.value : "";
+      if (training !== "passed" && fields.traineeTrainingDate.value) {
+        fields.traineeTrainingDate.value = "";
+      }
       state.profile = {
         name: fields.traineeName.value.trim(),
         phone: fields.traineePhone.value.trim(),
-        training: fields.traineeTraining.value,
+        training,
+        trainingDate,
         attempt: fields.traineeAttempt.value,
         limits: fields.traineeLimits.value.trim(),
         telegramCode: state.profile.telegramCode || "",
@@ -2824,11 +2848,13 @@
         app.name = state.profile.name;
         app.phone = state.profile.phone;
         app.training = state.profile.training;
+        app.trainingDate = state.profile.trainingDate;
         app.attempt = state.profile.attempt;
         app.limits = state.profile.limits;
         app.telegramCode = state.profile.telegramCode || app.telegramCode || "";
       }
       saveLocalSnapshot();
+      updateTrainingDateVisibility();
       if (options.persist !== false) scheduleTraineeApplicationPersist();
     }
 
@@ -2947,6 +2973,7 @@
         [fields.traineeName, fields.traineeNameError],
         [fields.traineePhone, fields.traineePhoneError],
         [fields.traineeTraining, fields.traineeTrainingError],
+        [fields.traineeTrainingDate, fields.traineeTrainingDateError],
         [fields.traineeAttempt, fields.traineeAttemptError]
       ].forEach(([field, error]) => {
         field?.closest("label")?.classList.remove("invalid");
@@ -2956,9 +2983,24 @@
       setTraineeFormStatus("");
     }
 
+    function updateTrainingDateVisibility() {
+      const field = document.getElementById("trainingDateField");
+      const visible = fields.traineeTraining?.value === "passed";
+      field?.classList.toggle("hidden", !visible);
+      fields.traineeTrainingDate?.toggleAttribute("required", visible);
+      if (!visible) {
+        fields.traineeTrainingDate?.removeAttribute("aria-invalid");
+        if (fields.traineeTrainingDateError) fields.traineeTrainingDateError.textContent = "";
+      }
+    }
+
     function isValidPhone(value) {
       const digits = String(value || "").replace(/\D/g, "");
       return digits.length >= 7 && digits.length <= 20;
+    }
+
+    function isValidDateValue(value) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
     }
 
     function validateTraineeProfile() {
@@ -2974,6 +3016,13 @@
       }
       if (!state.profile.training) {
         invalidFields.push([fields.traineeTraining, fields.traineeTrainingError, "Выберите, проходили ли вы обучение по банкетному обслуживанию."]);
+      }
+      if (state.profile.training === "passed") {
+        if (!state.profile.trainingDate) {
+          invalidFields.push([fields.traineeTrainingDate, fields.traineeTrainingDateError, "Укажите дату прохождения обучения."]);
+        } else if (!isValidDateValue(state.profile.trainingDate)) {
+          invalidFields.push([fields.traineeTrainingDate, fields.traineeTrainingDateError, "Проверьте дату обучения."]);
+        }
       }
       if (!state.profile.attempt) {
         invalidFields.push([fields.traineeAttempt, fields.traineeAttemptError, "Выберите, первая это стажировка или повторная."]);
@@ -3430,6 +3479,7 @@
         app.telegramUserId,
         app.telegramChatId,
         app.phone,
+        app.trainingDate,
         trainingNames[app.training],
         attemptNames[app.attempt],
         app.limits
@@ -3486,6 +3536,7 @@
             ${renderQueueTelegram(app)}
           </div>
           ${app.phone ? `<p class="queue-candidate-limits">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
+          ${app.training === "passed" && app.trainingDate ? `<p class="queue-candidate-limits">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
           <div class="queue-candidate-tags">
             ${badge(app.training === "passed", trainingNames[app.training])}
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
@@ -3629,6 +3680,7 @@
             <div>
               <div class="name">${escapeHtml(app.name)}</div>
               ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
+              ${app.training === "passed" && app.trainingDate ? `<p class="meta">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
               <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
             </div>
             <span class="pill new">Новая</span>
@@ -3657,6 +3709,7 @@
             <div>
               <div class="name">${escapeHtml(app.name)}</div>
               ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
+              ${app.training === "passed" && app.trainingDate ? `<p class="meta">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
               <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
             </div>
             <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
@@ -3925,6 +3978,7 @@ ${managerLine}
             <div class="candidate-info-grid">
               <div class="candidate-info-item"><span>Дата</span><b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b></div>
               <div class="candidate-info-item"><span>Телефон</span><b>${escapeHtml(app.phone || "Не указан")}</b></div>
+              ${app.training === "passed" && app.trainingDate ? `<div class="candidate-info-item"><span>Дата обучения</span><b>${escapeHtml(formatDate(app.trainingDate))}</b></div>` : ""}
               <div class="candidate-info-item"><span>Ограничения</span><b>${escapeHtml(app.limits || "Нет")}</b></div>
               <div class="candidate-info-item"><span>Обслуживание</span><b class="${app.training === "passed" ? "good" : "attention"}">${trainingLabel}</b></div>
               <div class="candidate-info-item"><span>Стажировка</span><b>${attemptLabel}</b></div>
@@ -3979,6 +4033,7 @@ ${managerLine}
             date: shift?.date || "",
             dateText: shift ? formatDate(shift.date) : "Предварительная запись",
             training: trainingNames[app.training] || "Не указано",
+            trainingDate: app.training === "passed" && app.trainingDate ? formatDate(app.trainingDate) : "",
             attempt: attemptNames[app.attempt] || "Не указано",
             limits: app.limits || "Нет ограничений",
             venue: venue?.name || app.venueId || group?.venueId || "Не назначена",
@@ -4014,6 +4069,7 @@ ${managerLine}
           row.statusLabel,
           row.dateText,
           row.training,
+          row.trainingDate,
           row.attempt,
           row.venue,
           row.telegram,
@@ -4062,6 +4118,7 @@ ${managerLine}
       return `
         <div class="registry-tags">
           <span class="registry-tag ${row.training === "Банкетное обслуживание пройдено" ? "ok" : ""}">${escapeHtml(row.training)}</span>
+          ${row.trainingDate ? `<span class="registry-tag ok">Дата обучения: ${escapeHtml(row.trainingDate)}</span>` : ""}
           <span class="registry-tag">${escapeHtml(row.attempt)}</span>
           ${row.experience ? `<span class="registry-tag ok">${escapeHtml(row.experience)}</span>` : ""}
           <span class="registry-tag ${row.mentorReport === "Получен" ? "ok" : ""}">Отчет: ${escapeHtml(row.mentorReport.toLowerCase())}</span>
@@ -4159,6 +4216,7 @@ ${managerLine}
         name: state.profile.name,
         phone: state.profile.phone,
         training: state.profile.training,
+        trainingDate: state.profile.trainingDate,
         attempt: state.profile.attempt,
         limits: state.profile.limits,
         telegramCode: getTelegramCode(),
@@ -4777,11 +4835,12 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     });
 
     document.addEventListener("input", event => {
-      if ([fields.traineeName, fields.traineePhone, fields.traineeTraining, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
+      if ([fields.traineeName, fields.traineePhone, fields.traineeTraining, fields.traineeTrainingDate, fields.traineeAttempt, fields.traineeLimits].includes(event.target)) {
         syncProfile();
         if (event.target === fields.traineeName) clearFieldValidation(fields.traineeName, fields.traineeNameError);
         if (event.target === fields.traineePhone) clearFieldValidation(fields.traineePhone, fields.traineePhoneError);
         if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
+        if (event.target === fields.traineeTrainingDate) clearFieldValidation(fields.traineeTrainingDate, fields.traineeTrainingDateError);
         if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();
         return;
@@ -4832,9 +4891,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     });
 
     document.addEventListener("change", event => {
-      if ([fields.traineeTraining, fields.traineeAttempt].includes(event.target)) {
+      if ([fields.traineeTraining, fields.traineeTrainingDate, fields.traineeAttempt].includes(event.target)) {
         syncProfile();
         if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);
+        if (event.target === fields.traineeTrainingDate) clearFieldValidation(fields.traineeTrainingDate, fields.traineeTrainingDateError);
         if (event.target === fields.traineeAttempt) clearFieldValidation(fields.traineeAttempt, fields.traineeAttemptError);
         renderTrainee();
       }

@@ -237,6 +237,7 @@ function seedBookingState() {
         name: 'Петрова Алина',
         phone: '+7 999 111-22-33',
         training: 'passed',
+        trainingDate: nextDate(-8),
         attempt: 'first',
         experience: 'yes',
         limits: 'Могу после 14:00, центр подходит.',
@@ -267,6 +268,7 @@ function seedBookingState() {
         name: 'Козлова Мария',
         phone: '+7 999 333-44-55',
         training: 'passed',
+        trainingDate: nextDate(-7),
         attempt: 'first',
         experience: 'no',
         limits: 'Ограничений нет, готова на ближайшую дату.',
@@ -381,6 +383,16 @@ function normalizeDateValue(value, field) {
   return text;
 }
 
+function normalizeTrainingDate(value, training, role) {
+  const text = normalizeOptionalText(value, 'application.trainingDate', 10);
+  if (training !== 'passed') return '';
+  if (!text) {
+    if (role === 'trainee') throw new BookingValidationError('Укажите дату прохождения обучения.');
+    return '';
+  }
+  return normalizeDateValue(text, 'application.trainingDate');
+}
+
 function urlValidationMessage(field) {
   if (field === 'inviteGroup.link' || field === 'application.groupLink') {
     return 'Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...';
@@ -451,6 +463,7 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
     name: normalizeRequiredText(app?.name, 'application.name', 120),
     phone: normalizePhone(app?.phone, 'application.phone', { required: role === 'trainee' }),
     training,
+    trainingDate: normalizeTrainingDate(app?.trainingDate, training, role),
     attempt,
     limits: normalizeOptionalText(app?.limits, 'application.limits', 600),
     status,
@@ -682,6 +695,7 @@ function traineeTableRowsFromState(state) {
         shiftId: application.shiftId || '',
         training: application.training,
         trainingLabel: TRAINING_LABELS[application.training] || application.training || '',
+        trainingDate: application.trainingDate || '',
         attempt: application.attempt,
         attemptLabel: ATTEMPT_LABELS[application.attempt] || application.attempt || '',
         limits: application.limits || '',
@@ -717,6 +731,7 @@ function traineesCsvFromState(state) {
     'Статус',
     'Дата стажировки',
     'Банкетное обслуживание',
+    'Дата обучения',
     'Стажировка',
     'Ограничения',
     'Площадка',
@@ -739,6 +754,7 @@ function traineesCsvFromState(state) {
     row.statusLabel,
     row.date,
     row.trainingLabel,
+    row.trainingDate,
     row.attemptLabel,
     row.limits,
     row.venue,

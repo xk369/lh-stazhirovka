@@ -50,10 +50,19 @@ test('trainee booking form requires phone and sends it with applications', async
 
   assert.match(traineeView, /id="traineePhone"[^>]*type="tel"[^>]*required/);
   assert.match(traineeView, /Номер телефона при регистрации в боте/);
+  assert.match(traineeView, /id="trainingDateField"[\s\S]*Дата обучения/);
+  assert.match(traineeView, /id="traineeTrainingDate"[^>]*type="date"/);
   assert.match(applicationPayload, /phone: app\.phone \|\| ""/);
+  assert.match(applicationPayload, /trainingDate: app\.training === "passed" \? app\.trainingDate \|\| "" : ""/);
   assert.match(syncProfile, /phone: fields\.traineePhone\.value\.trim\(\)/);
+  assert.match(syncProfile, /trainingDate = training === "passed" \? fields\.traineeTrainingDate\.value : ""/);
   assert.match(validation, /isValidPhone\(state\.profile\.phone\)/);
+  assert.match(validation, /state\.profile\.training === "passed"/);
+  assert.match(validation, /Укажите дату прохождения обучения/);
   assert.match(workgroupLine, /тел\. \$\{phone\}/);
+  assert.match(html, /Дата обучения: \$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}/);
+  assert.match(html, /<span>Дата обучения<\/span><b>\$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}<\/b>/);
+  assert.match(html, /Дата обучения: \$\{escapeHtml\(row\.trainingDate\)\}/);
 });
 
 test('candidate cards are numbered, comment-free and use one step-back action', async () => {
