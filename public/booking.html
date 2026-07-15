@@ -545,6 +545,10 @@
       display: grid;
       gap: 8px;
     }
+    .queue-pool-panel {
+      display: grid;
+      gap: 10px;
+    }
     .queue-notice-head {
       display: flex;
       align-items: center;
@@ -671,6 +675,31 @@
       width: 100%;
       min-height: 38px;
       border-radius: 999px;
+    }
+    .queue-assign-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
+      gap: 8px;
+      align-items: center;
+    }
+    .queue-date-select {
+      min-height: 40px;
+      border-radius: 999px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .queue-no-seat {
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      background: var(--surface-2);
+      color: var(--muted);
+      padding: 9px 10px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.3;
     }
     .date-title, .name { font-weight: 950; line-height: 1.25; }
     .date-title { font-size: 19px; }
@@ -1887,6 +1916,7 @@
       .queue-candidate-list { grid-template-columns: 1fr; }
       .queue-priority-group { padding: 9px; }
       .queue-priority-head { gap: 8px; }
+      .queue-assign-row { grid-template-columns: 1fr; }
       .candidate-actions { grid-template-columns: 1fr; }
       .candidate-card { gap: 12px; padding: 14px; }
       .candidate-card .name { font-size: 19px; }
@@ -2100,8 +2130,9 @@
             <label>Поиск в предварительной записи
               <input id="queueSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО или Telegram">
             </label>
-            <p class="meta">Очередь внутри каждой даты сгруппирована по приоритету: обучение, первая/повторная стажировка.</p>
+            <p class="meta">Очередь ниже сгруппирована по приоритету: обучение, первая/повторная стажировка.</p>
           </section>
+          <div id="queuePool"></div>
           <div class="date-list" id="recruiterDates"></div>
         </section>
 
@@ -3281,6 +3312,7 @@
       document.getElementById("statConfirmed").textContent = state.applications.filter(app => ["confirmed", "invited"].includes(app.status)).length;
       document.getElementById("statFeedback").textContent = state.applications.filter(app => app.status === "feedback").length;
       document.getElementById("statQueue").textContent = state.applications.filter(app => app.status === "queue").length;
+      renderQueuePool();
       renderRecruiterDates();
       renderCandidates();
       renderInviteGroups();
@@ -3334,7 +3366,20 @@
       return `<button class="queue-telegram" data-copy-telegram="${app.id}" type="button" title="Скопировать Telegram">${escapeHtml(tag)}</button>`;
     }
 
-    function renderQueueCandidate(app, shift) {
+    function assignableQueueShifts() {
+      return state.shifts
+        .filter(shift => shift.open && freeSeats(shift) > 0)
+        .sort((left, right) => String(left.date || "").localeCompare(String(right.date || "")));
+    }
+
+    function renderQueueShiftOptions(shifts) {
+      return shifts.map(shift => `
+        <option value="${shift.id}">${escapeHtml(formatDate(shift.date))} · ${freeSeats(shift)} свободно</option>
+      `).join("");
+    }
+
+    function renderQueueCandidate(app, shifts) {
+      const shiftOptions = renderQueueShiftOptions(shifts);
       return `
         <article class="queue-candidate-card">
           <div class="queue-candidate-main">
@@ -3346,44 +3391,71 @@
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
           </div>
           ${app.limits ? `<p class="queue-candidate-limits">Ограничения: ${escapeHtml(app.limits)}</p>` : ""}
-          <button class="quiet queue-assign-button" data-assign="${app.id}" data-shift="${shift.id}" type="button">Записать на эту дату</button>
+          ${shifts.length ? `
+            <div class="queue-assign-row">
+              <select class="queue-date-select" data-queue-shift="${app.id}" aria-label="Дата для ${escapeHtml(app.name)}">
+                ${shiftOptions}
+              </select>
+              <button class="quiet queue-assign-button" data-assign-selected="${app.id}" type="button">Записать</button>
+            </div>
+          ` : `<div class="queue-no-seat">Нет открытых дат со свободными местами.</div>`}
         </article>
       `;
     }
 
-    function renderQueueForShift(queue, shift) {
+    function renderQueuePool() {
+      const target = document.getElementById("queuePool");
+      if (!target) return;
+      const queueSearchInput = document.getElementById("queueSearch");
+      if (queueSearchInput && queueSearchInput.value !== queueSearch) queueSearchInput.value = queueSearch;
+      const queue = state.applications.filter(app => app.status === "queue");
       const groups = groupedQueueApplications(queue);
-      if (!groups.length) {
-        return `
-          <div class="queue-priority-list empty-queue">
-            ${queueSearch.trim() ? "По этому поиску в предварительной записи никого нет." : "Предварительная запись пока пустая."}
-          </div>
-        `;
+      if (!queue.length && !queueSearch.trim()) {
+        target.innerHTML = "";
+        return;
       }
-      return `
-        <div class="queue-priority-list">
-          ${groups.map(group => `
-            <section class="queue-priority-group">
-              <div class="queue-priority-head">
-                <div>
-                  <b>${escapeHtml(group.title)}</b>
-                  <span>${escapeHtml(group.hint)}</span>
+      const shifts = assignableQueueShifts();
+      if (!groups.length) {
+        target.innerHTML = `
+          <section class="panel queue-pool-panel">
+            <div class="queue-notice-head">
+              <b>Предварительная запись</b>
+              <span>${queueSearch.trim() ? "с учетом поиска" : "по приоритету"}</span>
+            </div>
+            <div class="queue-priority-list empty-queue">
+              ${queueSearch.trim() ? "По этому поиску в предварительной записи никого нет." : "Предварительная запись пока пустая."}
+            </div>
+          </section>
+        `;
+        return;
+      }
+      target.innerHTML = `
+        <section class="panel queue-pool-panel">
+          <div class="queue-notice-head">
+            <b>Предварительная запись</b>
+            <span>${queueSearch.trim() ? "с учетом поиска" : `${queue.length} в очереди`}</span>
+          </div>
+          <div class="queue-priority-list">
+            ${groups.map(group => `
+              <section class="queue-priority-group">
+                <div class="queue-priority-head">
+                  <div>
+                    <b>${escapeHtml(group.title)}</b>
+                    <span>${escapeHtml(group.hint)}</span>
+                  </div>
+                  <span class="count">${group.items.length}</span>
                 </div>
-                <span class="count">${group.items.length}</span>
-              </div>
-              <div class="queue-candidate-list">
-                ${group.items.map(app => renderQueueCandidate(app, shift)).join("")}
-              </div>
-            </section>
-          `).join("")}
-        </div>
+                <div class="queue-candidate-list">
+                  ${group.items.map(app => renderQueueCandidate(app, shifts)).join("")}
+                </div>
+              </section>
+            `).join("")}
+          </div>
+        </section>
       `;
     }
 
     function renderRecruiterDates() {
-      const queueSearchInput = document.getElementById("queueSearch");
-      if (queueSearchInput && queueSearchInput.value !== queueSearch) queueSearchInput.value = queueSearch;
-      const queue = state.applications.filter(app => app.status === "queue");
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
         const booked = state.applications.filter(app => app.shiftId === shift.id && ["confirmed", "invited", "feedback", "passed", "failed", "noshow"].includes(app.status));
@@ -3411,15 +3483,6 @@
               <div class="list">
                 ${booked.length ? booked.map(renderBookedCandidate).join("") : `<div class="empty tight">Подтвержденных кандидатов пока нет.</div>`}
               </div>
-              ${queue.length && shift.open ? `
-                <div class="notice">
-                  <div class="queue-notice-head">
-                    <b>Предварительная запись</b>
-                    <span>${queueSearch.trim() ? "с учетом поиска" : "по приоритету"}</span>
-                  </div>
-                  ${renderQueueForShift(queue, shift)}
-                </div>
-              ` : ""}
               <div class="shift-admin-actions">
                 <button class="quiet" data-toggle-shift="${shift.id}" type="button">${shift.canceled ? "Восстановить дату" : shift.open ? "Закрыть дату" : "Открыть дату"}</button>
                 ${shift.canceled ? "" : `<button class="quiet" data-edit-seats="${shift.id}" type="button">Изменить количество мест</button>`}
@@ -4392,6 +4455,19 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         render();
         return;
       }
+      const assignSelected = event.target.closest("[data-assign-selected]");
+      if (assignSelected) {
+        const applicationId = Number(assignSelected.dataset.assignSelected);
+        const select = document.querySelector(`[data-queue-shift="${CSS.escape(String(applicationId))}"]`);
+        const shiftId = Number(select?.value || 0);
+        if (!shiftId) {
+          alert("Выберите дату со свободными местами.");
+          return;
+        }
+        await queueBookingCommand("assign_shift", { applicationId, shiftId });
+        render();
+        return;
+      }
       const assign = event.target.closest("[data-assign]");
       if (assign) {
         await queueBookingCommand("assign_shift", {
@@ -4613,7 +4689,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       }
       if (event.target.id === "queueSearch") {
         queueSearch = event.target.value;
-        renderRecruiterDates();
+        renderQueuePool();
       }
     });
 
