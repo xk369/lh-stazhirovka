@@ -1111,6 +1111,56 @@
     .sent-venue-group {
       display: grid;
       gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--surface) 82%, var(--field));
+      overflow: hidden;
+    }
+    .sent-venue-group summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 58px;
+      padding: 12px;
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sent-venue-group summary::-webkit-details-marker { display: none; }
+    .sent-venue-group summary::after {
+      content: "⌄";
+      color: var(--accent);
+      font-size: 20px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+    .sent-venue-group[open] summary::after { transform: rotate(180deg); }
+    .sent-venue-group .count {
+      min-height: 28px;
+      padding: 0 10px;
+    }
+    .sent-venue-title {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+    .sent-venue-title b {
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 950;
+      line-height: 1.15;
+    }
+    .sent-venue-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.25;
+    }
+    .sent-venue-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 10px 10px;
     }
     .workgroup-template {
       white-space: pre-wrap;
@@ -2457,6 +2507,23 @@
     const shiftActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
+    const workgroupManagerNames = [
+      "Белянченко Екатерина",
+      "Подлиняева Диана",
+      "Сямуллин Ринат",
+      "Фарафонов Степан",
+      "Дворецкая Елизавета",
+      "Харзиани Лана",
+      "Какоткин Артем",
+      "Балабин Константин",
+      "Гарифуллин Никита",
+      "Акинин Антон",
+      "Рахматуллин Дмитрий",
+      "Войтенко Валерия",
+      "Эльмурзаев Иман",
+      "Егиазаров Александр",
+      "Портнова Анастасия"
+    ];
     const queuePriorityGroups = [
       {
         key: "trained-first",
@@ -3150,10 +3217,14 @@
 
     function renderTrainee() {
       const current = currentApplication();
-      const dates = openShifts();
+      const currentCanChangeDate = current && ["pending", "queue"].includes(current.status);
+      const dates = openShifts().filter(shift => {
+        if (!current || currentCanChangeDate) return true;
+        return String(shift.id) !== String(current.shiftId);
+      });
       const openCount = dates.length;
       const currentShift = current?.shiftId ? state.shifts.find(shift => shift.id === current.shiftId) : null;
-      if (currentShift && !dates.some(shift => shift.id === currentShift.id)) dates.unshift(currentShift);
+      if (currentCanChangeDate && currentShift && !dates.some(shift => shift.id === currentShift.id)) dates.unshift(currentShift);
       document.getElementById("openDatesCount").textContent = `${openCount} открыто`;
       document.getElementById("publicDates").innerHTML = dates.length ? dates.map(shift => {
         const isCurrentShift = current && current.shiftId === shift.id;
@@ -3324,10 +3395,34 @@
           ${["pending", "queue"].includes(app.status) ? `<div class="meta">Данные заявки можно изменить выше в блоке “Мои данные”. Изменения сохраняются автоматически до решения рекрута.</div>` : ""}
           ${renderStageTrack(app)}
           ${app.status === "invited" ? renderTraineeInvite(app) : ""}
+          ${renderTraineeHistory(app)}
           ${renderMentorReportNotice(app)}
           ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
           ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись заново</button>` : ""}
         </article>
+      `;
+    }
+
+    function traineeApplicationHistory(activeApp) {
+      const profileName = String(state.profile.name || activeApp?.name || "").trim().toLowerCase();
+      if (!profileName) return [];
+      return state.applications
+        .filter(app => String(app.name || "").trim().toLowerCase() === profileName)
+        .sort((left, right) => Number(right.id || 0) - Number(left.id || 0));
+    }
+
+    function renderTraineeHistory(activeApp) {
+      const history = traineeApplicationHistory(activeApp).filter(app => String(app.id) !== String(activeApp?.id));
+      if (!history.length) return "";
+      return `
+        <div class="notice">
+          <b>История стажировок</b>
+          ${history.slice(0, 3).map(app => {
+            const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+            const date = shift ? formatDate(shift.date) : "Предварительная запись";
+            return `<div class="meta">${escapeHtml(date)} · ${escapeHtml(statusNames[app.status] || "Статус обновлен")}</div>`;
+          }).join("")}
+        </div>
       `;
     }
 
@@ -3828,6 +3923,16 @@
       return String(workgroupManagers()[group?.key] || "").trim();
     }
 
+    function workgroupManagerOptions(selected) {
+      const current = String(selected || "").trim();
+      const known = workgroupManagerNames.some(name => name === current);
+      return [
+        `<option value="">Выберите менеджера...</option>`,
+        ...workgroupManagerNames.map(name => `<option value="${escapeHtml(name)}" ${name === current ? "selected" : ""}>${escapeHtml(name)}</option>`),
+        current && !known ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : ""
+      ].join("");
+    }
+
     function composeWorkgroupTemplate(group) {
       const members = Array.isArray(group?.members) ? group.members : applicationsForInviteGroup(group);
       const intro = members.length > 1
@@ -3902,9 +4007,34 @@ ${managerLine}
         });
     }
 
+    function todayValue() {
+      return toDateInputValue(new Date());
+    }
+
+    function latestWorkgroupDate(group) {
+      return group.shifts
+        .map(shift => String(shift.date || ""))
+        .filter(Boolean)
+        .sort()
+        .at(-1) || "";
+    }
+
+    function isWorkgroupTemplateVisible(group) {
+      const latestDate = latestWorkgroupDate(group);
+      return !latestDate || latestDate >= todayValue();
+    }
+
+    function visibleWorkgroupTemplateGroups() {
+      return workgroupTemplateGroups().filter(isWorkgroupTemplateVisible);
+    }
+
     function renderSentGroupTemplates() {
-      const templateGroups = workgroupTemplateGroups();
-      if (!templateGroups.length) return `<div class="empty">Пока нет отправленных групп.</div>`;
+      const allGroups = workgroupTemplateGroups();
+      const templateGroups = allGroups.filter(isWorkgroupTemplateVisible);
+      if (!templateGroups.length) {
+        const archivedCount = allGroups.length - templateGroups.length;
+        return `<div class="empty">${archivedCount ? "Актуальных шаблонов нет. Прошедшие скрываются на следующий день после даты стажировки." : "Пока нет отправленных групп."}</div>`;
+      }
       const groupsByVenue = new Map();
       templateGroups.forEach((group, index) => {
           group.templateIndex = index;
@@ -3913,14 +4043,25 @@ ${managerLine}
           groupsByVenue.get(key).push(group);
       });
 
-      return [...groupsByVenue.entries()].map(([venueId, groups]) => {
+      return [...groupsByVenue.entries()].map(([venueId, groups], venueIndex) => {
         const venue = venueById(venueId);
+        const groupDates = groups
+          .flatMap(group => group.shifts.map(shift => shift.date).filter(Boolean))
+          .sort();
+        const dateRange = groupDates.length
+          ? `${formatDate(groupDates[0])}${groupDates.at(-1) !== groupDates[0] ? ` - ${formatDate(groupDates.at(-1))}` : ""}`
+          : "без даты";
+        const traineesCount = groups.reduce((sum, group) => sum + group.members.length, 0);
         return `
-          <section class="sent-venue-group">
-            <div class="section-title">
-              <span>${escapeHtml(venue?.name || "Площадка не указана")}</span>
+          <details class="sent-venue-group" ${venueIndex === 0 ? "open" : ""}>
+            <summary>
+              <span class="sent-venue-title">
+                <b>${escapeHtml(venue?.name || "Площадка не указана")}</b>
+                <span>${escapeHtml(dateRange)} · ${traineesCount} стаж.</span>
+              </span>
               <b class="count">${groups.length}</b>
-            </div>
+            </summary>
+            <div class="sent-venue-body">
             ${groups.map(group => {
               const groupVenue = venueById(group.venueId);
               const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
@@ -3937,7 +4078,9 @@ ${managerLine}
                     <span class="pill ok">${group.members.length} чел.</span>
                   </div>
                   <label class="workgroup-manager-field">Менеджер для этой группы
-                    <input data-workgroup-manager="${group.templateIndex}" value="${escapeHtml(manager)}" placeholder="Например: Анастасия @username">
+                    <select data-workgroup-manager="${group.templateIndex}">
+                      ${workgroupManagerOptions(manager)}
+                    </select>
                     <span class="field-help">У каждой рабочей группы может быть свой менеджер. Если оставить пустым, в тексте останется место для ручного заполнения.</span>
                   </label>
                   <div class="workgroup-template" data-workgroup-template="${group.templateIndex}">${escapeHtml(template)}</div>
@@ -3948,9 +4091,19 @@ ${managerLine}
                 </article>
               `;
             }).join("")}
-          </section>
+            </div>
+          </details>
         `;
       }).join("");
+    }
+
+    function updateWorkgroupManagerControl(control) {
+      const group = visibleWorkgroupTemplateGroups()[Number(control.dataset.workgroupManager)];
+      if (!group) return;
+      workgroupManagers()[group.key] = control.value.trim();
+      saveLocalSnapshot();
+      const template = document.querySelector(`[data-workgroup-template="${CSS.escape(control.dataset.workgroupManager)}"]`);
+      if (template) template.textContent = composeWorkgroupTemplate(group);
     }
 
     function syncInviteDraftWithEligibleCandidates(draft) {
@@ -4578,7 +4731,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         }
         const copyWorkgroup = event.target.closest("[data-copy-workgroup]");
         if (copyWorkgroup) {
-          const group = workgroupTemplateGroups()[Number(copyWorkgroup.dataset.copyWorkgroup)];
+          const group = visibleWorkgroupTemplateGroups()[Number(copyWorkgroup.dataset.copyWorkgroup)];
           if (!group) return;
           const previousText = copyWorkgroup.textContent;
           try {
@@ -4901,12 +5054,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       }
       const workgroupManagerInput = event.target.closest("[data-workgroup-manager]");
       if (workgroupManagerInput) {
-        const group = workgroupTemplateGroups()[Number(workgroupManagerInput.dataset.workgroupManager)];
-        if (!group) return;
-        workgroupManagers()[group.key] = workgroupManagerInput.value.trim();
-        saveLocalSnapshot();
-        const template = document.querySelector(`[data-workgroup-template="${CSS.escape(workgroupManagerInput.dataset.workgroupManager)}"]`);
-        if (template) template.textContent = composeWorkgroupTemplate(group);
+        updateWorkgroupManagerControl(workgroupManagerInput);
         return;
       }
       if ([fields.groupShift, fields.groupVenue, fields.groupLink].includes(event.target)) {
@@ -4945,6 +5093,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     });
 
     document.addEventListener("change", event => {
+      const workgroupManagerInput = event.target.closest("[data-workgroup-manager]");
+      if (workgroupManagerInput) {
+        updateWorkgroupManagerControl(workgroupManagerInput);
+        return;
+      }
       if ([fields.traineeTraining, fields.traineeTrainingDate, fields.traineeAttempt].includes(event.target)) {
         syncProfile();
         if (event.target === fields.traineeTraining) clearFieldValidation(fields.traineeTraining, fields.traineeTrainingError);

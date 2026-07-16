@@ -193,13 +193,43 @@ test('workgroup templates keep a separate manager per sent group', async () => {
   const html = await readPublicFile('booking.html');
   const templatesSection = html.match(/<section class="panel">\s*<h2>Шаблоны для рабочих групп<\/h2>[\s\S]*?<div class="list" id="sentGroups"><\/div>/)?.[0] || '';
   const inputHandler = html.match(/const workgroupManagerInput = event\.target\.closest\("\[data-workgroup-manager\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
+  const changeHandler = html.match(/document\.addEventListener\("change", event => \{[\s\S]*?if \(\[fields\.traineeTraining/)?.[0] || '';
+  const copyHandler = html.match(/const copyWorkgroup = event\.target\.closest\("\[data-copy-workgroup\]"\);[\s\S]*?return;\n        \}/)?.[0] || '';
 
   assert.doesNotMatch(templatesSection, /id="workgroupManager"/);
   assert.match(html, /workgroupManagers: \{\}/);
   assert.match(html, /data-workgroup-manager="\$\{group\.templateIndex\}"/);
   assert.match(html, /data-workgroup-template="\$\{group\.templateIndex\}"/);
-  assert.match(inputHandler, /workgroupManagers\(\)\[group\.key\]/);
+  assert.match(html, /<select data-workgroup-manager="\$\{group\.templateIndex\}">/);
+  assert.match(html, /Белянченко Екатерина/);
+  assert.match(html, /Портнова Анастасия/);
+  assert.match(inputHandler, /updateWorkgroupManagerControl\(workgroupManagerInput\)/);
+  assert.match(changeHandler, /updateWorkgroupManagerControl\(workgroupManagerInput\)/);
+  assert.match(copyHandler, /visibleWorkgroupTemplateGroups\(\)\[Number\(copyWorkgroup\.dataset\.copyWorkgroup\)\]/);
   assert.doesNotMatch(inputHandler, /renderSentGroupTemplates\(\)/);
+});
+
+test('workgroup templates are grouped by venue and hide expired internship dates', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderSentGroups = html.match(/function renderSentGroupTemplates\(\) \{[\s\S]*?\n    \}\n\n    function updateWorkgroupManagerControl/)?.[0] || '';
+
+  assert.match(html, /function visibleWorkgroupTemplateGroups\(\) \{/);
+  assert.match(html, /function isWorkgroupTemplateVisible\(group\) \{/);
+  assert.match(html, /latestDate >= todayValue\(\)/);
+  assert.match(renderSentGroups, /<details class="sent-venue-group"/);
+  assert.match(renderSentGroups, /<summary>/);
+  assert.match(renderSentGroups, /sent-venue-body/);
+  assert.match(renderSentGroups, /Прошедшие скрываются на следующий день после даты стажировки/);
+});
+
+test('trainee available dates stay clean after an active application is locked', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
+
+  assert.match(renderTrainee, /currentCanChangeDate = current && \["pending", "queue"\]\.includes\(current\.status\)/);
+  assert.match(renderTrainee, /openShifts\(\)\.filter/);
+  assert.match(renderTrainee, /String\(shift\.id\) !== String\(current\.shiftId\)/);
+  assert.match(renderTrainee, /if \(currentCanChangeDate && currentShift/);
 });
 
 test('workgroup links use Telegram link handling and reject non-Telegram URLs in the UI', async () => {
