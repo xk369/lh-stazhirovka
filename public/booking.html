@@ -2811,6 +2811,7 @@
       state.profile = { ...profile, activeAppId: profile.activeAppId || state.profile.activeAppId || null };
       state.inviteDraft = inviteDraft || state.inviteDraft;
       serverRole = payload.role || "trainee";
+      hydrateTraineeProfileFromServerState();
       fillProfile();
       render();
       return payload;
@@ -3194,9 +3195,40 @@
       renderRecruiter();
     }
 
+    function personalApplicationCandidate() {
+      if (serverRole !== "trainee" || !state.applications.length) return null;
+      const active = state.applications.find(app => String(app.id) === String(state.profile.activeAppId));
+      if (active) return active;
+      const editable = [...state.applications].reverse().find(app => ["pending", "queue"].includes(app.status));
+      if (editable) return editable;
+      const inProgress = [...state.applications].reverse().find(app => ["confirmed", "invited", "feedback"].includes(app.status));
+      if (inProgress) return inProgress;
+      return [...state.applications].sort((left, right) => Number(right.id || 0) - Number(left.id || 0))[0] || null;
+    }
+
+    function hydrateTraineeProfileFromServerState() {
+      const app = personalApplicationCandidate();
+      if (!app) return;
+      state.profile.activeAppId = app.id;
+      if (!state.profile.name) state.profile.name = app.name || "";
+      if (!state.profile.phone) state.profile.phone = app.phone || "";
+      if (!state.profile.training) state.profile.training = app.training || "";
+      if (!state.profile.trainingDate) state.profile.trainingDate = app.trainingDate || "";
+      if (!state.profile.attempt) state.profile.attempt = app.attempt || "";
+      if (!state.profile.limits) state.profile.limits = app.limits || "";
+      if (!state.profile.telegramCode) state.profile.telegramCode = app.telegramCode || "";
+      saveLocalSnapshot();
+    }
+
     function currentApplication() {
       const active = state.applications.find(app => String(app.id) === String(state.profile.activeAppId));
       if (active) return active;
+      const personal = personalApplicationCandidate();
+      if (personal) {
+        state.profile.activeAppId = personal.id;
+        save();
+        return personal;
+      }
       if (!state.profile.name) return null;
       const editable = [...state.applications].reverse().find(app => {
         return app.name.toLowerCase() === state.profile.name.toLowerCase() && ["pending", "queue"].includes(app.status);

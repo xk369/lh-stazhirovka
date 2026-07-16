@@ -237,6 +237,22 @@ test('trainee available dates stay clean after an active application is locked',
   assert.match(renderTrainee, /if \(currentCanChangeDate && currentShift/);
 });
 
+test('trainee status hydrates from server-owned applications without a local profile name', async () => {
+  const html = await readPublicFile('booking.html');
+  const applyServerStatePayload = html.match(/function applyServerStatePayload\(payload\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const personalApplicationCandidate = html.match(/function personalApplicationCandidate\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const hydrateProfile = html.match(/function hydrateTraineeProfileFromServerState\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const currentApplication = html.match(/function currentApplication\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(applyServerStatePayload, /hydrateTraineeProfileFromServerState\(\)/);
+  assert.match(personalApplicationCandidate, /serverRole !== "trainee"/);
+  assert.match(personalApplicationCandidate, /\["confirmed", "invited", "feedback"\]/);
+  assert.match(hydrateProfile, /state\.profile\.activeAppId = app\.id/);
+  assert.match(hydrateProfile, /if \(!state\.profile\.name\) state\.profile\.name = app\.name/);
+  assert.match(currentApplication, /const personal = personalApplicationCandidate\(\)/);
+  assert.ok(currentApplication.indexOf('const personal = personalApplicationCandidate()') < currentApplication.indexOf('if (!state.profile.name) return null'));
+});
+
 test('workgroup links use Telegram link handling and reject non-Telegram URLs in the UI', async () => {
   const html = await readPublicFile('booking.html');
   const openExternalLink = html.match(/function openExternalLink\(url, event\) \{[\s\S]*?\n    \}/)?.[0] || '';
