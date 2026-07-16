@@ -1176,6 +1176,9 @@
     .workgroup-manager-field {
       margin-top: 2px;
     }
+    .workgroup-manager-manual {
+      margin-top: 8px;
+    }
     .workgroup-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2507,6 +2510,7 @@
     const shiftActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
+    const WORKGROUP_CUSTOM_MANAGER_VALUE = "__custom_manager__";
     const workgroupManagerNames = [
       "Белянченко Екатерина",
       "Подлиняева Диана",
@@ -2522,6 +2526,8 @@
       "Войтенко Валерия",
       "Эльмурзаев Иман",
       "Егиазаров Александр",
+      "Клековкина Валерия",
+      "Хотемлянский Александр",
       "Портнова Анастасия"
     ];
     const queuePriorityGroups = [
@@ -3919,17 +3925,37 @@
       return draft.workgroupManagers;
     }
 
-    function workgroupManagerForGroup(group) {
+    function isKnownWorkgroupManager(value) {
+      const current = String(value || "").trim();
+      return workgroupManagerNames.some(name => name === current);
+    }
+
+    function rawWorkgroupManagerForGroup(group) {
       return String(workgroupManagers()[group?.key] || "").trim();
     }
 
-    function workgroupManagerOptions(selected) {
-      const current = String(selected || "").trim();
-      const known = workgroupManagerNames.some(name => name === current);
+    function workgroupManagerForGroup(group) {
+      const current = rawWorkgroupManagerForGroup(group);
+      return current === WORKGROUP_CUSTOM_MANAGER_VALUE ? "" : current;
+    }
+
+    function workgroupManagerUsesCustom(group) {
+      const current = rawWorkgroupManagerForGroup(group);
+      return current === WORKGROUP_CUSTOM_MANAGER_VALUE || Boolean(current && !isKnownWorkgroupManager(current));
+    }
+
+    function workgroupManagerCustomValue(group) {
+      const current = rawWorkgroupManagerForGroup(group);
+      return current && current !== WORKGROUP_CUSTOM_MANAGER_VALUE && !isKnownWorkgroupManager(current) ? current : "";
+    }
+
+    function workgroupManagerOptions(group) {
+      const current = rawWorkgroupManagerForGroup(group);
+      const customSelected = workgroupManagerUsesCustom(group);
       return [
         `<option value="">Выберите менеджера...</option>`,
         ...workgroupManagerNames.map(name => `<option value="${escapeHtml(name)}" ${name === current ? "selected" : ""}>${escapeHtml(name)}</option>`),
-        current && !known ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)}</option>` : ""
+        `<option value="${WORKGROUP_CUSTOM_MANAGER_VALUE}" ${customSelected ? "selected" : ""}>Нет подходящего менеджера</option>`
       ].join("");
     }
 
@@ -4067,7 +4093,8 @@ ${managerLine}
               const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
               const names = group.members.map(app => app.name).filter(Boolean).join(", ");
               const template = composeWorkgroupTemplate(group);
-              const manager = workgroupManagerForGroup(group);
+              const customManager = workgroupManagerCustomValue(group);
+              const customManagerVisible = workgroupManagerUsesCustom(group);
               return `
                 <article class="sent-group">
                   <div class="head">
@@ -4079,8 +4106,9 @@ ${managerLine}
                   </div>
                   <label class="workgroup-manager-field">Менеджер для этой группы
                     <select data-workgroup-manager="${group.templateIndex}">
-                      ${workgroupManagerOptions(manager)}
+                      ${workgroupManagerOptions(group)}
                     </select>
+                    <input class="workgroup-manager-manual ${customManagerVisible ? "" : "hidden"}" data-workgroup-manager-custom="${group.templateIndex}" value="${escapeHtml(customManager)}" placeholder="Введите имя менеджера">
                     <span class="field-help">У каждой рабочей группы может быть свой менеджер. Если оставить пустым, в тексте останется место для ручного заполнения.</span>
                   </label>
                   <div class="workgroup-template" data-workgroup-template="${group.templateIndex}">${escapeHtml(template)}</div>
@@ -4098,11 +4126,30 @@ ${managerLine}
     }
 
     function updateWorkgroupManagerControl(control) {
-      const group = visibleWorkgroupTemplateGroups()[Number(control.dataset.workgroupManager)];
+      const templateIndex = control.dataset.workgroupManager ?? control.dataset.workgroupManagerCustom;
+      const group = visibleWorkgroupTemplateGroups()[Number(templateIndex)];
       if (!group) return;
-      workgroupManagers()[group.key] = control.value.trim();
+      const manualInput = document.querySelector(`[data-workgroup-manager-custom="${CSS.escape(String(templateIndex))}"]`);
+      const select = document.querySelector(`[data-workgroup-manager="${CSS.escape(String(templateIndex))}"]`);
+      if (control.matches("[data-workgroup-manager]")) {
+        if (control.value === WORKGROUP_CUSTOM_MANAGER_VALUE) {
+          const customValue = manualInput?.value.trim() || "";
+          workgroupManagers()[group.key] = customValue || WORKGROUP_CUSTOM_MANAGER_VALUE;
+          manualInput?.classList.remove("hidden");
+          manualInput?.focus();
+        } else {
+          workgroupManagers()[group.key] = control.value.trim();
+          if (manualInput) {
+            manualInput.value = "";
+            manualInput.classList.add("hidden");
+          }
+        }
+      } else {
+        workgroupManagers()[group.key] = control.value.trim() || WORKGROUP_CUSTOM_MANAGER_VALUE;
+        if (select) select.value = WORKGROUP_CUSTOM_MANAGER_VALUE;
+      }
       saveLocalSnapshot();
-      const template = document.querySelector(`[data-workgroup-template="${CSS.escape(control.dataset.workgroupManager)}"]`);
+      const template = document.querySelector(`[data-workgroup-template="${CSS.escape(String(templateIndex))}"]`);
       if (template) template.textContent = composeWorkgroupTemplate(group);
     }
 
@@ -5052,7 +5099,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         renderTrainee();
         return;
       }
-      const workgroupManagerInput = event.target.closest("[data-workgroup-manager]");
+      const workgroupManagerInput = event.target.closest("[data-workgroup-manager], [data-workgroup-manager-custom]");
       if (workgroupManagerInput) {
         updateWorkgroupManagerControl(workgroupManagerInput);
         return;
@@ -5093,7 +5140,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     });
 
     document.addEventListener("change", event => {
-      const workgroupManagerInput = event.target.closest("[data-workgroup-manager]");
+      const workgroupManagerInput = event.target.closest("[data-workgroup-manager], [data-workgroup-manager-custom]");
       if (workgroupManagerInput) {
         updateWorkgroupManagerControl(workgroupManagerInput);
         return;

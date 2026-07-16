@@ -192,7 +192,7 @@ test('passed candidates can be marked as experienced without changing their base
 test('workgroup templates keep a separate manager per sent group', async () => {
   const html = await readPublicFile('booking.html');
   const templatesSection = html.match(/<section class="panel">\s*<h2>Шаблоны для рабочих групп<\/h2>[\s\S]*?<div class="list" id="sentGroups"><\/div>/)?.[0] || '';
-  const inputHandler = html.match(/const workgroupManagerInput = event\.target\.closest\("\[data-workgroup-manager\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
+  const inputHandler = html.match(/const workgroupManagerInput = event\.target\.closest\("\[data-workgroup-manager\], \[data-workgroup-manager-custom\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
   const changeHandler = html.match(/document\.addEventListener\("change", event => \{[\s\S]*?if \(\[fields\.traineeTraining/)?.[0] || '';
   const copyHandler = html.match(/const copyWorkgroup = event\.target\.closest\("\[data-copy-workgroup\]"\);[\s\S]*?return;\n        \}/)?.[0] || '';
 
@@ -201,8 +201,13 @@ test('workgroup templates keep a separate manager per sent group', async () => {
   assert.match(html, /data-workgroup-manager="\$\{group\.templateIndex\}"/);
   assert.match(html, /data-workgroup-template="\$\{group\.templateIndex\}"/);
   assert.match(html, /<select data-workgroup-manager="\$\{group\.templateIndex\}">/);
+  assert.match(html, /data-workgroup-manager-custom="\$\{group\.templateIndex\}"/);
   assert.match(html, /Белянченко Екатерина/);
+  assert.match(html, /Клековкина Валерия/);
+  assert.match(html, /Хотемлянский Александр/);
   assert.match(html, /Портнова Анастасия/);
+  assert.match(html, /Нет подходящего менеджера/);
+  assert.match(html, /WORKGROUP_CUSTOM_MANAGER_VALUE/);
   assert.match(inputHandler, /updateWorkgroupManagerControl\(workgroupManagerInput\)/);
   assert.match(changeHandler, /updateWorkgroupManagerControl\(workgroupManagerInput\)/);
   assert.match(copyHandler, /visibleWorkgroupTemplateGroups\(\)\[Number\(copyWorkgroup\.dataset\.copyWorkgroup\)\]/);
