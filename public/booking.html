@@ -2578,6 +2578,7 @@
     let registryStatusFilter = "all";
     let queueSearch = "";
     let registryRenderFrame = 0;
+    let lastStateRefreshAt = 0;
     const expandedShiftIds = new Set();
 
     const fields = {
@@ -2615,7 +2616,7 @@
 
     fillProfile();
     render();
-    refreshBookingStateFromServer().catch(error => console.error("Не удалось обновить состояние записи", error));
+    refreshBookingStateOnResume();
 
     function seed() {
       return {
@@ -2882,6 +2883,14 @@
       const payload = await fetchBookingState();
       applyServerStatePayload(payload);
       return payload;
+    }
+
+    function refreshBookingStateOnResume() {
+      if (!SERVER_STATE_AVAILABLE || !telegramInitData()) return;
+      const now = Date.now();
+      if (now - lastStateRefreshAt < 3500) return;
+      lastStateRefreshAt = now;
+      refreshBookingStateFromServer().catch(error => console.error("Не удалось обновить состояние записи", error));
     }
 
     async function unlockRecruiter() {
@@ -5099,6 +5108,12 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         console.error("Ошибка действия записи на стажировку", error);
       }
     });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshBookingStateOnResume();
+    });
+
+    window.addEventListener("focus", refreshBookingStateOnResume);
 
     document.addEventListener("pointerover", event => {
       if (!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;

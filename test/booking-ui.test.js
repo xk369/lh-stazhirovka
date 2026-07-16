@@ -240,11 +240,17 @@ test('trainee available dates stay clean after an active application is locked',
 test('trainee status hydrates from server-owned applications without a local profile name', async () => {
   const html = await readPublicFile('booking.html');
   const applyServerStatePayload = html.match(/function applyServerStatePayload\(payload\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const resumeRefresh = html.match(/function refreshBookingStateOnResume\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
   const personalApplicationCandidate = html.match(/function personalApplicationCandidate\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
   const hydrateProfile = html.match(/function hydrateTraineeProfileFromServerState\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
   const currentApplication = html.match(/function currentApplication\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
 
   assert.match(applyServerStatePayload, /hydrateTraineeProfileFromServerState\(\)/);
+  assert.match(html, /let lastStateRefreshAt = 0/);
+  assert.match(html, /refreshBookingStateOnResume\(\);/);
+  assert.match(resumeRefresh, /now - lastStateRefreshAt < 3500/);
+  assert.match(html, /document\.addEventListener\("visibilitychange"/);
+  assert.match(html, /window\.addEventListener\("focus", refreshBookingStateOnResume\)/);
   assert.match(personalApplicationCandidate, /serverRole !== "trainee"/);
   assert.match(personalApplicationCandidate, /\["confirmed", "invited", "feedback"\]/);
   assert.match(hydrateProfile, /state\.profile\.activeAppId = app\.id/);
