@@ -84,6 +84,10 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.match(renderCandidates, /renderCandidateReportStatus/);
   assert.match(html, /trainee-card-name/);
   assert.match(html, /white-space: nowrap;/);
+  assert.match(html, /trainee-card-phone/);
+  assert.match(html, /Телефон: <b>\$\{escapeHtml\(app\.phone \|\| "Не указан"\)\}<\/b>/);
+  assert.match(html, /trainee-status-row/);
+  assert.match(html, /\$\{statusHtml \? `<div class="trainee-status-row">\$\{statusHtml\}<\/div>` : ""\}/);
   assert.match(renderCandidates, /data-step-back/);
   assert.match(renderCandidates, /step-back-main/);
   assert.match(renderCandidates, /step-back-target/);

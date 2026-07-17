@@ -408,18 +408,18 @@
     }
     .trainee-card-head {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(126px, auto);
-      gap: 12px;
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
       min-width: 0;
     }
     .trainee-card-head.numbered {
-      grid-template-columns: 32px minmax(0, 1fr) minmax(126px, auto);
+      grid-template-columns: 32px minmax(0, 1fr);
       align-items: center;
     }
     .trainee-card-person {
       display: grid;
-      gap: 5px;
+      gap: 6px;
       min-width: 0;
     }
     .trainee-card-name {
@@ -431,10 +431,29 @@
       text-overflow: ellipsis;
       overflow-wrap: normal;
     }
+    .trainee-card .trainee-card-name {
+      font-size: 20px;
+      line-height: 1.12;
+    }
     .trainee-card-limit {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .trainee-card-phone {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .trainee-card-phone b {
+      color: var(--text);
+      font-weight: 900;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .candidate-card-head {
       display: grid;
@@ -488,6 +507,22 @@
       font-size: 12px;
       justify-self: end;
       align-self: start;
+    }
+    .trainee-status-row {
+      display: grid;
+      min-width: 0;
+    }
+    .trainee-card .trainee-status-row .pill {
+      width: 100%;
+      max-width: none;
+      min-width: 0;
+      min-height: 36px;
+      justify-self: stretch;
+      align-self: stretch;
+      border-radius: 15px;
+      padding: 8px 12px;
+      font-size: 13px;
+      line-height: 1.18;
     }
     .trainee-card-facts {
       display: grid;
@@ -2314,13 +2349,13 @@
       .candidate-actions { grid-template-columns: 1fr; }
       .candidate-card { gap: 12px; padding: 14px; }
       .trainee-card { gap: 12px; padding: 14px; }
-      .trainee-card-head { grid-template-columns: minmax(0, 1fr) minmax(112px, auto); gap: 9px; }
-      .trainee-card-head.numbered { grid-template-columns: 32px minmax(0, 1fr) minmax(112px, auto); }
-      .trainee-card .candidate-status.pill { min-width: 112px; max-width: 136px; font-size: 11px; padding-inline: 9px; }
+      .trainee-card-head { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+      .trainee-card-head.numbered { grid-template-columns: 32px minmax(0, 1fr); }
+      .trainee-card .trainee-status-row .pill { font-size: 12px; padding-inline: 10px; }
       .trainee-card-facts { grid-template-columns: 1fr; padding: 10px; gap: 8px; }
       .trainee-tag-row { grid-template-columns: 1fr; }
       .candidate-card .name { font-size: 19px; }
-      .trainee-card-name { font-size: 19px; }
+      .trainee-card .trainee-card-name { font-size: 18px; }
       .candidate-info-grid { gap: 11px 12px; padding: 11px; }
       .shift-admin-actions { grid-template-columns: 1fr; }
       .status-hero-title { grid-template-columns: 1fr; }
@@ -3624,10 +3659,11 @@
           ${number}
           <div class="trainee-card-person">
             <div class="name trainee-card-name" title="${escapeHtml(app.name)}">${escapeHtml(app.name)}</div>
+            <p class="meta trainee-card-phone">Телефон: <b>${escapeHtml(app.phone || "Не указан")}</b></p>
             ${app.limits ? `<p class="meta trainee-card-limit" title="${escapeHtml(app.limits)}">Ограничения: ${escapeHtml(app.limits)}</p>` : `<p class="meta trainee-card-limit">Ограничения: нет</p>`}
           </div>
-          ${statusHtml}
         </div>
+        ${statusHtml ? `<div class="trainee-status-row">${statusHtml}</div>` : ""}
       `;
     }
 
@@ -4170,9 +4206,6 @@
       return `
         <article class="card trainee-card">
           ${renderTraineeCardHeader(app, `<span class="pill new">Новая</span>`)}
-          ${renderTraineeFacts([
-            { label: "Телефон", value: app.phone || "Не указан" }
-          ])}
           ${renderTraineeProfileTags(app)}
           ${renderCandidateStage(app, "recruiter-pending")}
           <div class="candidate-actions">
@@ -4192,7 +4225,6 @@
         <article class="card trainee-card">
           ${renderTraineeCardHeader(app, `<span class="pill candidate-status ${statusPill[app.status]}">${statusNames[app.status]}</span>`)}
           ${renderTraineeFacts([
-            { label: "Телефон", value: app.phone || "Не указан" },
             { label: "Площадка", value: venue ? `${venue.name}, ${venue.address}` : "", wide: true }
           ])}
           ${renderTraineeProfileTags(app)}
@@ -4556,7 +4588,6 @@ ${managerLine}
             ${renderTraineeCardHeader(app, `<span class="pill candidate-status ${experience ? "ok" : statusPill[app.status]}">${escapeHtml(experience || statusNames[app.status])}</span>`, { number: index + 1 })}
             ${renderTraineeFacts([
               { label: "Дата", value: shift ? formatDate(shift.date) : "Предварительная запись" },
-              { label: "Телефон", value: app.phone || "Не указан" },
               { label: "Площадка", value: venue ? `${venue.name}, ${venue.address}` : "", wide: true }
             ])}
             ${renderTraineeProfileTags(app)}
