@@ -65,7 +65,9 @@ test('trainee booking form requires phone and sends it with applications', async
   assert.match(validation, /Укажите дату прохождения обучения/);
   assert.match(workgroupLine, /тел\. \$\{phone\}/);
   assert.match(html, /Дата обучения: \$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}/);
-  assert.match(html, /<span>Дата обучения<\/span><b>\$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}<\/b>/);
+  assert.match(html, /function renderTraineeProfileTags\(app\)/);
+  assert.match(html, /<span>Обучение<\/span>/);
+  assert.match(html, /<small>\$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}<\/small>/);
   assert.match(html, /Дата обучения: \$\{escapeHtml\(row\.trainingDate\)\}/);
 });
 
@@ -73,10 +75,15 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   const html = await readPublicFile('booking.html');
   const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
 
-  assert.match(renderCandidates, /<span class="candidate-number">\$\{index \+ 1\}<\/span>/);
+  assert.match(html, /<span class="candidate-number">\$\{options\.number\}<\/span>/);
   assert.doesNotMatch(renderCandidates, /№/);
   assert.match(renderCandidates, /candidate-status/);
-  assert.match(renderCandidates, /candidate-info-grid/);
+  assert.match(renderCandidates, /renderTraineeCardHeader/);
+  assert.match(renderCandidates, /renderTraineeFacts/);
+  assert.match(renderCandidates, /renderTraineeProfileTags/);
+  assert.match(renderCandidates, /renderCandidateReportStatus/);
+  assert.match(html, /trainee-card-name/);
+  assert.match(html, /white-space: nowrap;/);
   assert.match(renderCandidates, /data-step-back/);
   assert.match(renderCandidates, /step-back-main/);
   assert.match(renderCandidates, /step-back-target/);
@@ -144,9 +151,11 @@ test('recruiter date cards expose attendance actions and mentor-report status', 
   const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
 
   assert.match(renderBookedCandidate, />Вышел<|>Не вышел</);
-  assert.match(renderBookedCandidate, /renderMentorReportBadges\(app\)/);
-  assert.match(html, /Ждём отчёт наставника/);
-  assert.match(html, /Отчёт наставника получен/);
+  assert.match(renderBookedCandidate, /renderCandidateReportStatus\(app\)/);
+  assert.match(html, /function renderCandidateReportStatus\(app\)/);
+  assert.match(html, /Ждём отчёт/);
+  assert.match(html, /<b>Получен<\/b>/);
+  assert.doesNotMatch(html, /Комментарий стаж[её]ру отправлен/);
   assert.match(renderCandidates, />Вышел<|>Не вышел</);
 });
 

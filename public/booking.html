@@ -401,6 +401,41 @@
       gap: 14px;
       padding: 16px;
     }
+    .trainee-card {
+      display: grid;
+      gap: 13px;
+      padding: 16px;
+    }
+    .trainee-card-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(126px, auto);
+      gap: 12px;
+      align-items: start;
+      min-width: 0;
+    }
+    .trainee-card-head.numbered {
+      grid-template-columns: 32px minmax(0, 1fr) minmax(126px, auto);
+      align-items: center;
+    }
+    .trainee-card-person {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+    .trainee-card-name {
+      display: block;
+      min-width: 0;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      overflow-wrap: normal;
+    }
+    .trainee-card-limit {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .candidate-card-head {
       display: grid;
       gap: 11px;
@@ -443,6 +478,146 @@
       white-space: normal;
       text-align: center;
     }
+    .trainee-card .candidate-status.pill {
+      width: auto;
+      max-width: 176px;
+      min-width: 126px;
+      min-height: 34px;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      justify-self: end;
+      align-self: start;
+    }
+    .trainee-card-facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px 12px;
+      border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--surface-2) 68%, transparent);
+      padding: 11px 12px;
+    }
+    .trainee-card-fact {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .trainee-card-fact.wide { grid-column: 1 / -1; }
+    .trainee-card-fact span,
+    .trainee-card-section-title {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .trainee-card-fact b {
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.28;
+      overflow-wrap: anywhere;
+    }
+    .trainee-card-section {
+      display: grid;
+      gap: 7px;
+    }
+    .trainee-tag-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .trainee-tag {
+      min-width: 0;
+      min-height: 46px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface-2);
+      padding: 8px 10px;
+    }
+    .trainee-tag span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1.15;
+      text-transform: uppercase;
+    }
+    .trainee-tag b {
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 950;
+      line-height: 1.12;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .trainee-tag small {
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+    .trainee-tag.good {
+      color: var(--ok);
+      background: color-mix(in srgb, var(--ok) 7%, var(--surface));
+      border-color: color-mix(in srgb, var(--ok) 24%, var(--line));
+    }
+    .trainee-tag.good b { color: var(--ok); }
+    .trainee-tag.warn {
+      color: var(--warn);
+      background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+      border-color: color-mix(in srgb, var(--warn) 24%, var(--line));
+    }
+    .trainee-tag.warn b { color: var(--warn); }
+    .trainee-tag.accent {
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+    }
+    .trainee-tag.accent b { color: var(--accent); }
+    .trainee-report-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+      border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+      padding: 10px 12px;
+    }
+    .trainee-report-row span {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .trainee-report-row b {
+      flex: 0 1 auto;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 950;
+      line-height: 1.18;
+      text-align: right;
+    }
+    .trainee-report-row.good {
+      border-color: color-mix(in srgb, var(--ok) 24%, var(--line));
+      background: color-mix(in srgb, var(--ok) 7%, var(--surface));
+    }
+    .trainee-report-row.good b { color: var(--ok); }
+    .trainee-report-row.wait {
+      border-color: color-mix(in srgb, var(--warn) 24%, var(--line));
+      background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+    }
+    .trainee-report-row.wait b { color: var(--warn); }
     .candidate-info-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -475,6 +650,11 @@
     .candidate-card .candidate-stage,
     .candidate-card-actions {
       border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .trainee-card > .candidate-stage,
+    .trainee-card > .candidate-actions {
+      border-top: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
       padding-top: 12px;
     }
     .candidate-card-actions {
@@ -2133,7 +2313,14 @@
       .queue-assign-row { grid-template-columns: 1fr; }
       .candidate-actions { grid-template-columns: 1fr; }
       .candidate-card { gap: 12px; padding: 14px; }
+      .trainee-card { gap: 12px; padding: 14px; }
+      .trainee-card-head { grid-template-columns: minmax(0, 1fr) minmax(112px, auto); gap: 9px; }
+      .trainee-card-head.numbered { grid-template-columns: 32px minmax(0, 1fr) minmax(112px, auto); }
+      .trainee-card .candidate-status.pill { min-width: 112px; max-width: 136px; font-size: 11px; padding-inline: 9px; }
+      .trainee-card-facts { grid-template-columns: 1fr; padding: 10px; gap: 8px; }
+      .trainee-tag-row { grid-template-columns: 1fr; }
       .candidate-card .name { font-size: 19px; }
+      .trainee-card-name { font-size: 19px; }
       .candidate-info-grid { gap: 11px 12px; padding: 11px; }
       .shift-admin-actions { grid-template-columns: 1fr; }
       .status-hero-title { grid-template-columns: 1fr; }
@@ -3430,29 +3617,74 @@
       return map[error] || "Сервер не смог привязать Telegram. Попробуйте еще раз.";
     }
 
-    function mentorCommentDeliveryText(app) {
-      if (app.mentorCommentDeliveryStatus === "sent") return "Комментарий стажеру отправлен";
-      if (app.mentorCommentDeliveryStatus === "skipped") return "Комментарий стажеру не отправлен";
-      if (app.mentorCommentDeliveryStatus === "failed") return "Комментарий стажеру не доставлен";
-      return "";
+    function renderTraineeCardHeader(app, statusHtml = "", options = {}) {
+      const number = options.number ? `<span class="candidate-number">${options.number}</span>` : "";
+      return `
+        <div class="candidate-head trainee-card-head ${options.number ? "numbered" : ""}">
+          ${number}
+          <div class="trainee-card-person">
+            <div class="name trainee-card-name" title="${escapeHtml(app.name)}">${escapeHtml(app.name)}</div>
+            ${app.limits ? `<p class="meta trainee-card-limit" title="${escapeHtml(app.limits)}">Ограничения: ${escapeHtml(app.limits)}</p>` : `<p class="meta trainee-card-limit">Ограничения: нет</p>`}
+          </div>
+          ${statusHtml}
+        </div>
+      `;
     }
 
-    function renderMentorReportBadges(app) {
-      const items = [];
+    function renderTraineeFacts(items) {
+      const facts = items.filter(item => item?.value);
+      if (!facts.length) return "";
+      return `
+        <div class="trainee-card-facts">
+          ${facts.map(item => `
+            <div class="trainee-card-fact ${item.wide ? "wide" : ""}">
+              <span>${escapeHtml(item.label)}</span>
+              <b>${escapeHtml(item.value)}</b>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderTraineeProfileTags(app) {
+      const trainingPassed = app.training === "passed";
+      const trainingValue = trainingPassed ? "Пройдено" : "Не пройдено";
+      const attemptValue = app.attempt === "first" ? "Первая" : "Повторная";
+      return `
+        <div class="trainee-card-section trainee-profile-tags">
+          <div class="trainee-tag-row">
+            <span class="trainee-tag ${trainingPassed ? "good" : "warn"}">
+              <span>Обучение</span>
+              <b>${trainingValue}</b>
+              ${trainingPassed && app.trainingDate ? `<small>${escapeHtml(formatDate(app.trainingDate))}</small>` : ""}
+            </span>
+            <span class="trainee-tag ${app.attempt === "first" ? "accent" : ""}">
+              <span>Стажировка</span>
+              <b>${attemptValue}</b>
+            </span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCandidateReportStatus(app) {
       if (app.status === "feedback" && !app.mentorReport) {
-        items.push(`<span class="badge">Ждём отчёт наставника</span>`);
+        return `
+          <div class="trainee-card-section">
+            <div class="trainee-card-section-title">Отчёт наставника</div>
+            <div class="trainee-report-row wait"><span>Статус</span><b>Ждём отчёт</b></div>
+          </div>
+        `;
       }
       if (app.mentorReport) {
-        items.push(`<span class="badge good">Отчёт наставника получен</span>`);
+        return `
+          <div class="trainee-card-section">
+            <div class="trainee-card-section-title">Отчёт наставника</div>
+            <div class="trainee-report-row good"><span>Статус</span><b>Получен</b></div>
+          </div>
+        `;
       }
-      const delivery = mentorCommentDeliveryText(app);
-      if (delivery) {
-        items.push(`<span class="badge ${app.mentorCommentDeliveryStatus === "sent" ? "good" : ""}">${escapeHtml(delivery)}</span>`);
-      }
-      if (app.mentorDecision) {
-        items.push(`<span class="badge ${app.status === "passed" ? "good" : ""}">${escapeHtml(app.mentorDecision)}</span>`);
-      }
-      return items.join("");
+      return "";
     }
 
     function experienceLabel(app) {
@@ -3936,21 +4168,12 @@
 
     function renderPendingCandidate(app) {
       return `
-        <article class="card">
-          <div class="candidate-head">
-            <div>
-              <div class="name">${escapeHtml(app.name)}</div>
-              ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
-              ${app.training === "passed" && app.trainingDate ? `<p class="meta">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
-              <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
-            </div>
-            <span class="pill new">Новая</span>
-          </div>
-          <div class="badges">
-            ${badge(app.training === "passed", trainingNames[app.training])}
-            ${badge(app.attempt === "first", attemptNames[app.attempt])}
-            ${renderMentorReportBadges(app)}
-          </div>
+        <article class="card trainee-card">
+          ${renderTraineeCardHeader(app, `<span class="pill new">Новая</span>`)}
+          ${renderTraineeFacts([
+            { label: "Телефон", value: app.phone || "Не указан" }
+          ])}
+          ${renderTraineeProfileTags(app)}
           ${renderCandidateStage(app, "recruiter-pending")}
           <div class="candidate-actions">
             <button class="primary" data-status="confirmed" data-id="${app.id}" type="button">Подтвердить стажировку</button>
@@ -3966,22 +4189,14 @@
       const canManageBookedCandidate = canCancelInternship || app.status === "feedback";
       const showAttendanceActions = app.status === "invited";
       return `
-        <article class="card">
-          <div class="candidate-head">
-            <div>
-              <div class="name">${escapeHtml(app.name)}</div>
-              ${app.phone ? `<p class="meta">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
-              ${app.training === "passed" && app.trainingDate ? `<p class="meta">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
-              <p class="meta">Ограничения: ${escapeHtml(app.limits || "нет")}</p>
-            </div>
-            <span class="pill ${statusPill[app.status]}">${statusNames[app.status]}</span>
-          </div>
-          ${venue ? `<p class="meta">Площадка: <b>${escapeHtml(venue.name)}</b>, ${escapeHtml(venue.address)}</p>` : ""}
-          <div class="badges">
-            ${badge(app.training === "passed", trainingNames[app.training])}
-            ${badge(app.attempt === "first", attemptNames[app.attempt])}
-            ${renderMentorReportBadges(app)}
-          </div>
+        <article class="card trainee-card">
+          ${renderTraineeCardHeader(app, `<span class="pill candidate-status ${statusPill[app.status]}">${statusNames[app.status]}</span>`)}
+          ${renderTraineeFacts([
+            { label: "Телефон", value: app.phone || "Не указан" },
+            { label: "Площадка", value: venue ? `${venue.name}, ${venue.address}` : "", wide: true }
+          ])}
+          ${renderTraineeProfileTags(app)}
+          ${renderCandidateReportStatus(app)}
           ${renderCandidateStage(app, "recruiter-booked")}
           ${showAttendanceActions ? `
             <div class="candidate-actions">
@@ -4331,30 +4546,21 @@ ${managerLine}
         .sort((a, b) => b.id - a.id);
       document.getElementById("candidateList").innerHTML = apps.length ? apps.map((app, index) => {
         const shift = state.shifts.find(item => item.id === app.shiftId);
+        const venue = venueById(app.venueId);
         const showAttendanceActions = app.status === "invited";
         const previousStatus = stepBackStatus[app.status] || "";
         const actionMessage = candidateActionMessages.get(String(app.id)) || "";
-        const trainingLabel = app.training === "passed" ? "Пройдено" : "Не пройдено";
-        const attemptLabel = app.attempt === "first" ? "Первая" : "Повторная";
         const experience = experienceLabel(app);
         return `
-          <article class="card candidate-card">
-            <div class="candidate-card-head">
-              <div class="candidate-title-line">
-                <span class="candidate-number">${index + 1}</span>
-                <div class="name">${escapeHtml(app.name)}</div>
-              </div>
-              <span class="pill candidate-status ${experience ? "ok" : statusPill[app.status]}">${escapeHtml(experience || statusNames[app.status])}</span>
-            </div>
-            <div class="candidate-info-grid">
-              <div class="candidate-info-item"><span>Дата</span><b>${shift ? formatDate(shift.date) : "Предварительная запись"}</b></div>
-              <div class="candidate-info-item"><span>Телефон</span><b>${escapeHtml(app.phone || "Не указан")}</b></div>
-              ${app.training === "passed" && app.trainingDate ? `<div class="candidate-info-item"><span>Дата обучения</span><b>${escapeHtml(formatDate(app.trainingDate))}</b></div>` : ""}
-              <div class="candidate-info-item"><span>Ограничения</span><b>${escapeHtml(app.limits || "Нет")}</b></div>
-              <div class="candidate-info-item"><span>Обслуживание</span><b class="${app.training === "passed" ? "good" : "attention"}">${trainingLabel}</b></div>
-              <div class="candidate-info-item"><span>Стажировка</span><b>${attemptLabel}</b></div>
-              ${experience ? `<div class="candidate-info-item"><span>Опыт</span><b class="good">${escapeHtml(experience)}</b></div>` : ""}
-            </div>
+          <article class="card candidate-card trainee-card">
+            ${renderTraineeCardHeader(app, `<span class="pill candidate-status ${experience ? "ok" : statusPill[app.status]}">${escapeHtml(experience || statusNames[app.status])}</span>`, { number: index + 1 })}
+            ${renderTraineeFacts([
+              { label: "Дата", value: shift ? formatDate(shift.date) : "Предварительная запись" },
+              { label: "Телефон", value: app.phone || "Не указан" },
+              { label: "Площадка", value: venue ? `${venue.name}, ${venue.address}` : "", wide: true }
+            ])}
+            ${renderTraineeProfileTags(app)}
+            ${renderCandidateReportStatus(app)}
             ${renderCandidateStage(app, "recruiter-list")}
             ${showAttendanceActions ? `
               <div class="candidate-card-actions">
