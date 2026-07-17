@@ -78,6 +78,8 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.match(renderCandidates, /candidate-status/);
   assert.match(renderCandidates, /candidate-info-grid/);
   assert.match(renderCandidates, /data-step-back/);
+  assert.match(renderCandidates, /step-back-main/);
+  assert.match(renderCandidates, /step-back-target/);
   assert.doesNotMatch(renderCandidates, /class="badges"/);
   assert.doesNotMatch(renderCandidates, /data-comment|<textarea/);
   assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
@@ -113,8 +115,11 @@ test('date creation gives recruiter feedback and blocks duplicate dates in the U
 
   assert.match(html, /id="createDateStatus"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(html, /function setCreateDateStatus/);
+  assert.match(html, /fields\.newDate\.min = todayValue\(\)/);
   assert.match(createDateBlock, /state\.shifts\.find\(shift => shift\.date === dateValue\)/);
   assert.match(createDateBlock, /Такая дата уже есть/);
+  assert.match(createDateBlock, /dateValue < todayValue\(\)/);
+  assert.match(createDateBlock, /Нельзя создать дату в прошлом/);
   assert.match(createDateBlock, /Дата \$\{formatDate\(dateValue\)\} создана/);
 });
 
@@ -285,4 +290,20 @@ test('report submission success does not auto-close the mini app', async () => {
 
   assert.match(sendSuccessBlock, /Отчёт отправлен/);
   assert.doesNotMatch(sendSuccessBlock, /tg\?\.close|disableClosingConfirmation|closeMiniApp/);
+});
+
+test('trainee report date is loaded from the trainee booking state', async () => {
+  const html = await readPublicFile('index.html');
+  const loadBookingProfile = html.match(/async function loadTraineeBookingProfile\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const renderProfileFields = html.match(/function renderProfileFields\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+
+  assert.match(html, /traineeBookingDateLocked/);
+  assert.match(html, /if \(role === 'trainee'\) loadTraineeBookingProfile\(\)/);
+  assert.match(loadBookingProfile, /fetch\('\/api\/state'/);
+  assert.match(loadBookingProfile, /'x-telegram-init-data': initData/);
+  assert.match(loadBookingProfile, /payload\.role !== 'trainee'/);
+  assert.match(loadBookingProfile, /state\.profile\.date = shift\.date/);
+  assert.match(loadBookingProfile, /state\.traineeBookingDateLocked = true/);
+  assert.match(renderProfileFields, /readonly aria-readonly="true"/);
+  assert.match(renderProfileFields, /Дата автоматически подтянулась из вашей записи/);
 });

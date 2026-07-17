@@ -499,14 +499,31 @@
     }
     .candidate-step-back {
       grid-column: 1 / -1;
-      display: grid;
-      gap: 2px;
-      justify-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-height: 60px;
+      padding: 10px 14px;
+      line-height: 1.1;
+      text-align: center;
     }
-    .candidate-step-back small {
+    .candidate-step-back .step-back-main {
+      display: block;
+      width: 100%;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 950;
+    }
+    .candidate-step-back .step-back-target {
+      display: block;
+      width: 100%;
       color: var(--muted);
-      font-size: 10px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
     }
     .candidate-experience-button {
       grid-column: 1 / -1;
@@ -4299,8 +4316,8 @@ ${managerLine}
               <div class="candidate-card-actions">
                 <span class="candidate-action-label">Корректировка этапа</span>
                 <button class="quiet candidate-step-back" data-step-back="${app.id}" type="button" aria-label="Вернуть ${escapeHtml(app.name)} на этап ${escapeHtml(statusNames[previousStatus])}">
-                  <span>На этап назад</span>
-                  <small>${escapeHtml(statusNames[previousStatus])}</small>
+                  <span class="step-back-main">На этап назад</span>
+                  <small class="step-back-target">до: ${escapeHtml(statusNames[previousStatus])}</small>
                 </button>
               </div>
             ` : ""}
@@ -4744,6 +4761,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     function renderQuickDates() {
       const target = document.getElementById("quickDates");
       if (!target) return;
+      if (fields.newDate) fields.newDate.min = todayValue();
       const labels = ["завтра", "послезавтра", "через 3 дня"];
       const today = new Date();
       const dates = labels.map((label, index) => {
@@ -4995,6 +5013,13 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           fields.newDate.closest("label")?.classList.add("invalid");
           fields.newDate.setAttribute("aria-invalid", "true");
           setCreateDateStatus("Выберите дату стажировки.", "warn");
+          fields.newDate.focus();
+          return;
+        }
+        if (dateValue < todayValue()) {
+          fields.newDate.closest("label")?.classList.add("invalid");
+          fields.newDate.setAttribute("aria-invalid", "true");
+          setCreateDateStatus("Нельзя создать дату в прошлом. Выберите сегодняшнюю или будущую дату.", "warn");
           fields.newDate.focus();
           return;
         }

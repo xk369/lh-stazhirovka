@@ -383,6 +383,17 @@ function normalizeDateValue(value, field) {
   return text;
 }
 
+function todayDateValue(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+  const value = type => parts.find(part => part.type === type)?.value || '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
 function normalizeTrainingDate(value, training, role) {
   const text = normalizeOptionalText(value, 'application.trainingDate', 10);
   if (training !== 'passed') return '';
@@ -1387,7 +1398,7 @@ function applyToggleShift(state, command, actor) {
   return next;
 }
 
-function applyCreateShift(state, command, actor) {
+function applyCreateShift(state, command, actor, now = new Date()) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
   const shift = normalizeShiftForWrite({
@@ -1398,6 +1409,9 @@ function applyCreateShift(state, command, actor) {
   });
   if (next.shifts.some(item => item.date === shift.date)) {
     throw new BookingValidationError('Такая дата стажировки уже создана.');
+  }
+  if (shift.date < todayDateValue(now)) {
+    throw new BookingValidationError('Нельзя создать дату стажировки в прошлом.');
   }
   next.shifts.push(shift);
   return next;
@@ -1546,7 +1560,7 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       nextState = applyToggleShift(state, command, actor);
       break;
     case 'create_shift':
-      nextState = applyCreateShift(state, command, actor);
+      nextState = applyCreateShift(state, command, actor, now);
       break;
     case 'update_shift_capacity':
       nextState = applyUpdateShiftCapacity(state, command, actor);

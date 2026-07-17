@@ -1980,7 +1980,8 @@
       const state = {
         screen: 'home', role: null, items: [], profileFields: [], summaryFields: [], profile: { date: '' }, answers: {},
         summary: {}, openedSections: new Set(), isSubmitting: false, hallPickerLoft: HALL_GROUPS[0].loft,
-        launchProfile: {}, mentorTrainees: [], mentorTraineesStatus: 'idle', mentorTraineesError: ''
+        launchProfile: {}, mentorTrainees: [], mentorTraineesStatus: 'idle', mentorTraineesError: '',
+        traineeBookingStatus: 'idle', traineeBookingError: '', traineeBookingDateLocked: false
       };
       const $ = s => document.querySelector(s);
       const $$ = s => [...document.querySelectorAll(s)];
@@ -2263,6 +2264,68 @@
         if (state.role !== 'mentor') return;
         fillProfile();
       }
+      function traineeBookingStatusPriority(status) {
+        const priority = { feedback: 1, invited: 2, confirmed: 3, pending: 4, passed: 5, failed: 6, noshow: 7, queue: 8 };
+        return priority[status] || 99;
+      }
+      function selectedTraineeBookingApplication(applications) {
+        return [...(applications || [])]
+          .filter(app => app && app.shiftId)
+          .sort((left, right) => {
+            const statusDiff = traineeBookingStatusPriority(left.status) - traineeBookingStatusPriority(right.status);
+            if (statusDiff) return statusDiff;
+            return Number(right.id || 0) - Number(left.id || 0);
+          })[0] || null;
+      }
+      async function loadTraineeBookingProfile() {
+        if (state.role !== 'trainee') return;
+        state.traineeBookingDateLocked = false;
+        state.traineeBookingError = '';
+        const initData = tg?.initData || '';
+        if (!initData) {
+          state.traineeBookingStatus = 'idle';
+          fillProfile();
+          return;
+        }
+        state.traineeBookingStatus = 'loading';
+        fillProfile();
+        try {
+          const response = await fetch('/api/state', {
+            headers: { 'x-telegram-init-data': initData }
+          });
+          let payload = {};
+          try { payload = await response.json(); } catch (_) { }
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload?.error || 'Не удалось загрузить дату записи.');
+          }
+          if (state.role !== 'trainee') return;
+          if (payload.role !== 'trainee') {
+            state.traineeBookingStatus = 'idle';
+            fillProfile();
+            return;
+          }
+          const bookingState = payload.state || {};
+          const app = selectedTraineeBookingApplication(bookingState.applications || []);
+          const shift = app ? (bookingState.shifts || []).find(item => String(item.id) === String(app.shiftId)) : null;
+          if (shift?.date) {
+            state.profile.date = shift.date;
+            state.profile.bookingStatus = app.status || '';
+            state.profile.bookingStatusLabel = app.statusLabel || '';
+            state.traineeBookingDateLocked = true;
+            state.traineeBookingStatus = 'ready';
+            saveDraft();
+          } else {
+            state.traineeBookingStatus = 'empty';
+          }
+        } catch (error) {
+          if (state.role !== 'trainee') return;
+          console.error(error);
+          state.traineeBookingStatus = 'error';
+          state.traineeBookingError = error?.message || 'Не удалось загрузить дату записи.';
+        }
+        if (state.role !== 'trainee') return;
+        fillProfile();
+      }
       function migrateLegacyProfile(profile) {
         const next = { ...(profile || {}) };
         if ((!next.firstName || !next.lastName) && next.fio) {
@@ -2299,6 +2362,7 @@
         fillProfile();
         setScreen('profile');
         if (role === 'mentor') loadMentorTrainees();
+        if (role === 'trainee') loadTraineeBookingProfile();
         haptic();
       }
       function setRoleLabels() { $('#profileRole').textContent = roleLabels[state.role]; $('#checklistRole').textContent = roleLabels[state.role]; $('#reviewRole').textContent = roleLabels[state.role] }
@@ -2372,6 +2436,19 @@
           const value = state.profile[field.field_key] ?? (field.field_key === 'date' ? today() : '');
           if (field.field_key === 'traineeApplicationId') return renderMentorTraineeField(field, id, value);
           if (field.field_key === 'hall') return renderHallField(field, id, value);
+          if (state.role === 'trainee' && field.field_key === 'date') {
+            const dateValue = state.profile[field.field_key] || '';
+            const loading = state.traineeBookingStatus === 'loading';
+            const locked = state.traineeBookingDateLocked && Boolean(dateValue);
+            const helper = loading
+              ? '<span class="field-help">Подтягиваем дату из вашей записи на стажировку…</span>'
+              : locked
+                ? '<span class="field-help">Дата автоматически подтянулась из вашей записи на стажировку.</span>'
+                : state.traineeBookingError
+                  ? `<span class="field-help">${escapeHtml(state.traineeBookingError)} Если дата не подтянулась, укажите её вручную.</span>`
+                  : '<span class="field-help">Дата подтянется из вашей записи на стажировку при запуске из Telegram.</span>';
+            return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><input class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" type="date" value="${escapeHtml(dateValue)}" ${locked ? 'readonly aria-readonly="true"' : ''}>${helper}<span class="error">Заполните поле</span></label>`;
+          }
           const autocomplete = /firstName$/i.test(field.field_key) ? 'given-name' : /lastName$/i.test(field.field_key) ? 'family-name' : 'off';
           const isTelegram = /telegram/i.test(field.field_key);
           const helper = isTelegram

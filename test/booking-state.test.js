@@ -71,6 +71,18 @@ test('rejects duplicate internship dates', () => {
   );
 });
 
+test('rejects creating internship dates in the past', () => {
+  assert.throws(
+    () => applyBookingCommand(
+      bookingState(),
+      { action: 'create_shift', baseVersion: 2, date: '2026-07-02', seats: 2 },
+      recruiterActor,
+      new Date('2026-07-03T09:00:00+03:00')
+    ),
+    /Нельзя создать дату стажировки в прошлом/
+  );
+});
+
 test('public booking state exposes server-side seat availability without leaking other applications', () => {
   const result = bookingStateForActor(
     {
@@ -501,7 +513,8 @@ test('legacy yes/no experience values do not block booking writes', () => {
   const next = applyBookingCommand(
     source,
     { action: 'create_shift', baseVersion: 2, date: '2026-07-11', seats: 2 },
-    recruiterActor
+    recruiterActor,
+    new Date('2026-07-03T09:00:00+03:00')
   );
 
   assert.equal(next.applications[0].experience, undefined);
