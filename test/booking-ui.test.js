@@ -85,6 +85,21 @@ test('candidate cards are numbered, comment-free and use one step-back action', 
   assert.doesNotMatch(renderCandidates, /Откатить к отчету|Откатить к приглашению/);
 });
 
+test('candidate list has a working search field', async () => {
+  const html = await readPublicFile('booking.html');
+  const candidatesSection = html.match(/<section id="candidatesSection"[\s\S]*?<section id="registrySection"/)?.[0] || '';
+  const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
+  const inputHandler = html.match(/if \(event\.target\.id === "candidateSearch"\) \{[\s\S]*?\n      \}/)?.[0] || '';
+
+  assert.match(candidatesSection, /id="candidateSearch"[^>]*type="search"/);
+  assert.match(html, /let candidateSearch = ""/);
+  assert.match(html, /function candidateSearchHaystack\(app\)/);
+  assert.match(renderCandidates, /candidateSearch\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(renderCandidates, /candidateSearchHaystack\(app\)\.includes\(query\)/);
+  assert.match(inputHandler, /candidateSearch = event\.target\.value/);
+  assert.match(inputHandler, /renderCandidates\(\)/);
+});
+
 test('recruiter date cards attach internship cancellation to trainee cards', async () => {
   const html = await readPublicFile('booking.html');
   const renderPendingCandidate = html.match(/function renderPendingCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function renderBookedCandidate/)?.[0] || '';
@@ -123,12 +138,15 @@ test('date creation gives recruiter feedback and blocks duplicate dates in the U
   assert.match(createDateBlock, /Дата \$\{formatDate\(dateValue\)\} создана/);
 });
 
-test('recruiter date cards do not manage attendance directly', async () => {
+test('recruiter date cards expose attendance actions and mentor-report status', async () => {
   const html = await readPublicFile('booking.html');
   const renderBookedCandidate = html.match(/function renderBookedCandidate\(app\) \{[\s\S]*?\n    \}\n\n    function eligibleInviteCandidates/)?.[0] || '';
   const renderCandidates = html.match(/function renderCandidates\(\) \{[\s\S]*?\n    \}\n\n    function registryRows/)?.[0] || '';
 
-  assert.doesNotMatch(renderBookedCandidate, />Вышел<|>Не вышел</);
+  assert.match(renderBookedCandidate, />Вышел<|>Не вышел</);
+  assert.match(renderBookedCandidate, /renderMentorReportBadges\(app\)/);
+  assert.match(html, /Ждём отчёт наставника/);
+  assert.match(html, /Отчёт наставника получен/);
   assert.match(renderCandidates, />Вышел<|>Не вышел</);
 });
 

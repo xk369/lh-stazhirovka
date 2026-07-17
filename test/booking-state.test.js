@@ -4,6 +4,7 @@ import {
   BookingConflictError,
   BookingValidationError,
   applyBookingCommand,
+  applyMentorReportResultToBookingState,
   bookingStateForActor,
   composeBookingStageChangedMessage,
   composeShiftCancellationMessage,
@@ -361,6 +362,81 @@ test('allows attendance status after group invite is sent', () => {
   );
 
   assert.equal(next.applications[0].status, 'feedback');
+});
+
+test('mentor report closes shift when every assigned trainee has a final result', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Report Ready',
+    training: 'passed',
+    attempt: 'first',
+    status: 'feedback',
+    inviteGroupId: 20,
+    venueId: 'loft1',
+    groupLink: 'https://t.me/+group'
+  }];
+
+  const next = applyMentorReportResultToBookingState(
+    source,
+    {
+      applicationId: 10,
+      reporterTelegramUserId: 777,
+      mentorDecision: 'Стажировка пройдена',
+      mentorCommentForTrainee: '',
+      traineeMessage: { status: 'sent', sentAt: '2026-07-10T18:10:00.000Z' }
+    },
+    new Date('2026-07-10T18:15:00.000Z')
+  );
+
+  assert.equal(next.applications[0].status, 'passed');
+  assert.equal(next.applications[0].mentorReport, true);
+  assert.equal(next.shifts[0].open, false);
+});
+
+test('mentor report keeps shift open while another trainee still waits for report', () => {
+  const source = bookingState();
+  source.applications = [
+    {
+      id: 10,
+      shiftId: 1,
+      name: 'First Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'feedback',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group'
+    },
+    {
+      id: 11,
+      shiftId: 1,
+      name: 'Second Trainee',
+      training: 'passed',
+      attempt: 'first',
+      status: 'feedback',
+      inviteGroupId: 20,
+      venueId: 'loft1',
+      groupLink: 'https://t.me/+group'
+    }
+  ];
+
+  const next = applyMentorReportResultToBookingState(
+    source,
+    {
+      applicationId: 10,
+      reporterTelegramUserId: 777,
+      mentorDecision: 'Стажировка пройдена',
+      mentorCommentForTrainee: '',
+      traineeMessage: { status: 'sent', sentAt: '2026-07-10T18:10:00.000Z' }
+    },
+    new Date('2026-07-10T18:15:00.000Z')
+  );
+
+  assert.equal(next.applications.find(application => application.id === 10).status, 'passed');
+  assert.equal(next.applications.find(application => application.id === 11).status, 'feedback');
+  assert.equal(next.shifts[0].open, true);
 });
 
 test('steps a completed candidate back to feedback and clears the previous mentor result', () => {

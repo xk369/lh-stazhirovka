@@ -1114,6 +1114,7 @@ function applyMentorReportResultToBookingState(state, reportResult, now = new Da
     mentorCommentSentAt: delivery.sentAt || '',
     mentorCommentDeliveryError: delivery.error || delivery.skipped || ''
   };
+  autoCloseResolvedShift(next, application.shiftId);
 
   return validateBookingStateForWrite(touchBookingState(next, now));
 }
@@ -1241,7 +1242,29 @@ function applySetApplicationStatus(state, command, actor) {
     status,
     experience: status === 'passed' ? application.experience || '' : ''
   };
+  autoCloseResolvedShift(next, application.shiftId);
   return next;
+}
+
+function applicationCompletesShift(application) {
+  const status = normalizeLegacyStatus(application?.status);
+  if (status === 'noshow') return true;
+  if (['passed', 'failed'].includes(status)) return Boolean(application?.mentorReport);
+  return false;
+}
+
+function shouldAutoCloseShift(state, shiftId) {
+  if (shiftId === null || shiftId === undefined) return false;
+  const applications = state.applications.filter(application => String(application.shiftId) === String(shiftId));
+  return applications.length > 0 && applications.every(applicationCompletesShift);
+}
+
+function autoCloseResolvedShift(state, shiftId) {
+  if (!shouldAutoCloseShift(state, shiftId)) return state;
+  const index = state.shifts.findIndex(shift => String(shift.id) === String(shiftId));
+  if (index < 0 || state.shifts[index].canceled || !state.shifts[index].open) return state;
+  state.shifts[index] = { ...state.shifts[index], open: false };
+  return state;
 }
 
 function resetMentorReport(application) {

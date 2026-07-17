@@ -625,6 +625,12 @@
       display: grid;
       gap: 8px;
     }
+    .candidate-filter-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(210px, .85fr);
+      gap: 12px;
+      align-items: end;
+    }
     .queue-pool-panel {
       display: grid;
       gap: 10px;
@@ -2120,6 +2126,7 @@
       .metric { min-height: 46px; padding: 6px 4px; }
       .metric b { font-size: 17px; }
       .metric span { font-size: 10px; }
+      .candidate-filter-panel { grid-template-columns: 1fr; }
       .queue-candidate-list { grid-template-columns: 1fr; }
       .queue-priority-group { padding: 9px; }
       .queue-priority-head { gap: 8px; }
@@ -2356,7 +2363,10 @@
         </section>
 
         <section id="candidatesSection" class="hidden">
-          <section class="panel">
+          <section class="panel candidate-filter-panel">
+            <label>Поиск кандидата
+              <input id="candidateSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО, Telegram, дата">
+            </label>
             <label>Этап
               <select id="candidateFilter">
                 <option value="active">На стажировке и после</option>
@@ -2594,6 +2604,7 @@
     let registrySearch = "";
     let registryStatusFilter = "all";
     let queueSearch = "";
+    let candidateSearch = "";
     let registryRenderFrame = 0;
     let lastStateRefreshAt = 0;
     const expandedShiftIds = new Set();
@@ -2612,6 +2623,7 @@
       traineeAttemptError: document.getElementById("traineeAttemptError"),
       traineeLimits: document.getElementById("traineeLimits"),
       recruiterGateStatus: document.getElementById("recruiterGateStatus"),
+      candidateSearch: document.getElementById("candidateSearch"),
       candidateFilter: document.getElementById("candidateFilter"),
       newDate: document.getElementById("newDate"),
       newSeats: document.getElementById("newSeats"),
@@ -3426,7 +3438,21 @@
     }
 
     function renderMentorReportBadges(app) {
-      return "";
+      const items = [];
+      if (app.status === "feedback" && !app.mentorReport) {
+        items.push(`<span class="badge">Ждём отчёт наставника</span>`);
+      }
+      if (app.mentorReport) {
+        items.push(`<span class="badge good">Отчёт наставника получен</span>`);
+      }
+      const delivery = mentorCommentDeliveryText(app);
+      if (delivery) {
+        items.push(`<span class="badge ${app.mentorCommentDeliveryStatus === "sent" ? "good" : ""}">${escapeHtml(delivery)}</span>`);
+      }
+      if (app.mentorDecision) {
+        items.push(`<span class="badge ${app.status === "passed" ? "good" : ""}">${escapeHtml(app.mentorDecision)}</span>`);
+      }
+      return items.join("");
     }
 
     function experienceLabel(app) {
@@ -3699,6 +3725,28 @@
       ].filter(Boolean).join(" ").toLowerCase();
     }
 
+    function candidateSearchHaystack(app) {
+      const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+      const venue = venueById(app.venueId);
+      return [
+        app.name,
+        traineeTelegramTag(app),
+        app.telegramUserId,
+        app.telegramChatId,
+        app.phone,
+        shift?.date,
+        shift ? formatDate(shift.date) : "Предварительная запись",
+        venue?.name,
+        venue?.address,
+        statusNames[app.status],
+        trainingNames[app.training],
+        app.trainingDate,
+        attemptNames[app.attempt],
+        app.mentorDecision,
+        experienceLabel(app)
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
     function filteredQueueApplications(queue) {
       const query = queueSearch.trim().toLowerCase();
       const items = query
@@ -3916,6 +3964,7 @@
       const venue = venueById(app.venueId);
       const canCancelInternship = ["confirmed", "invited"].includes(app.status);
       const canManageBookedCandidate = canCancelInternship || app.status === "feedback";
+      const showAttendanceActions = app.status === "invited";
       return `
         <article class="card">
           <div class="candidate-head">
@@ -3934,6 +3983,12 @@
             ${renderMentorReportBadges(app)}
           </div>
           ${renderCandidateStage(app, "recruiter-booked")}
+          ${showAttendanceActions ? `
+            <div class="candidate-actions">
+              <button class="secondary" data-status="feedback" data-id="${app.id}" type="button">Вышел</button>
+              <button class="danger" data-status="noshow" data-id="${app.id}" type="button">Не вышел</button>
+            </div>
+          ` : ""}
           ${canManageBookedCandidate ? `
             <div class="candidate-actions">
               ${canCancelInternship ? `<button class="danger" data-cancel-internship="${app.id}" type="button">Отменить стажировку</button>` : ""}
@@ -4263,12 +4318,16 @@ ${managerLine}
     }
 
     function renderCandidates() {
+      const searchInput = document.getElementById("candidateSearch");
+      if (searchInput && searchInput.value !== candidateSearch) searchInput.value = candidateSearch;
       const filter = fields.candidateFilter.value;
+      const query = candidateSearch.trim().toLowerCase();
       const active = ["confirmed", "invited", "feedback", "passed", "failed", "noshow"];
       const apps = state.applications
         .filter(app => filter === "all"
           || (filter === "active" ? active.includes(app.status) : app.status === filter)
           || (filter === "experienced" && app.experience === "experienced"))
+        .filter(app => !query || candidateSearchHaystack(app).includes(query))
         .sort((a, b) => b.id - a.id);
       document.getElementById("candidateList").innerHTML = apps.length ? apps.map((app, index) => {
         const shift = state.shifts.find(item => item.id === app.shiftId);
@@ -4324,7 +4383,7 @@ ${managerLine}
             ${actionMessage ? `<div class="candidate-action-status" role="status">${escapeHtml(actionMessage)}</div>` : ""}
           </article>
         `;
-      }).join("") : `<div class="panel empty">Кандидатов на этом этапе нет.</div>`;
+      }).join("") : `<div class="panel empty">${query ? "Кандидатов по этому поиску нет." : "Кандидатов на этом этапе нет."}</div>`;
     }
 
     function registryRows() {
@@ -5208,6 +5267,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target.id === "queueSearch") {
         queueSearch = event.target.value;
         renderQueuePool();
+      }
+      if (event.target.id === "candidateSearch") {
+        candidateSearch = event.target.value;
+        renderCandidates();
       }
     });
 
