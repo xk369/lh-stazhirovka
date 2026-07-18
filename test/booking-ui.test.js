@@ -191,12 +191,16 @@ test('recruiter date cards are collapsible and sorted from earlier dates first',
   const clickHandler = html.match(/const shiftDetails = event\.target\.closest\("\[data-toggle-shift-details\]"\);[\s\S]*?return;\n      \}/)?.[0] || '';
 
   assert.match(html, /const expandedShiftIds = new Set\(\)/);
+  assert.match(html, /let closedDatesExpanded = false/);
   assert.match(html, /function sortedShiftsByDate\(shifts\)/);
   assert.match(renderRecruiterDates, /data-toggle-shift-details="\$\{shiftId\}"/);
   assert.match(renderRecruiterDates, /shift-body-shell/);
+  assert.match(renderRecruiterDates, /<details class="closed-dates" \$\{closedDatesExpanded \? "open" : ""\}>/);
   assert.match(renderRecruiterDates, /sortedShiftsByDate\(state\.shifts\.filter\(shift => shift\.open\)\)/);
   assert.match(renderRecruiterDates, /sortedShiftsByDate\(state\.shifts\.filter\(shift => !shift\.open\)\)/);
   assert.match(clickHandler, /expandedShiftIds\.has\(shiftId\)/);
+  assert.match(clickHandler, /parentClosedDates\.open/);
+  assert.match(html, /closedDatesSummary/);
   assert.match(html, /\.shift-card\.expanded \.shift-body-shell \{[\s\S]*?grid-template-rows: 1fr;/);
 });
 

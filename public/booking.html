@@ -2830,6 +2830,7 @@
     let registryRenderFrame = 0;
     let lastStateRefreshAt = 0;
     const expandedShiftIds = new Set();
+    let closedDatesExpanded = false;
 
     const fields = {
       traineeName: document.getElementById("traineeName"),
@@ -4192,7 +4193,7 @@
       document.getElementById("recruiterDates").innerHTML = `
         ${openShiftsList.length ? openShiftsList.map(renderShift).join("") : `<div class="panel empty">Открытых дат пока нет.</div>`}
         ${closedShiftsList.length ? `
-          <details class="closed-dates">
+          <details class="closed-dates" ${closedDatesExpanded ? "open" : ""}>
             <summary>Закрытые даты <span class="count">${closedShiftsList.length}</span></summary>
             <div class="closed-dates-body">
               ${closedShiftsList.map(renderShift).join("")}
@@ -5273,12 +5274,21 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (shiftDetails) {
         const shiftId = String(shiftDetails.dataset.toggleShiftDetails || "");
         if (!shiftId) return;
+        const parentClosedDates = shiftDetails.closest(".closed-dates");
+        if (parentClosedDates) closedDatesExpanded = parentClosedDates.open;
         if (expandedShiftIds.has(shiftId)) {
           expandedShiftIds.delete(shiftId);
         } else {
           expandedShiftIds.add(shiftId);
         }
         renderRecruiterDates();
+        return;
+      }
+      const closedDatesSummary = event.target.closest(".closed-dates > summary");
+      if (closedDatesSummary) {
+        requestAnimationFrame(() => {
+          closedDatesExpanded = Boolean(closedDatesSummary.closest(".closed-dates")?.open);
+        });
         return;
       }
       const editSeats = event.target.closest("[data-edit-seats]");
