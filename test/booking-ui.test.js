@@ -261,6 +261,8 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(html, /function visibleWorkgroupTemplateGroups\(\) \{/);
   assert.match(html, /function archivedWorkgroupTemplateGroups\(\) \{/);
   assert.match(html, /function renderSentGroupArchive\(\) \{/);
+  assert.match(html, /function workgroupArchiveResultMeta\(app\) \{/);
+  assert.match(html, /function renderArchiveTraineeRows\(group\) \{/);
   assert.match(html, /function isWorkgroupTemplateVisible\(group\) \{/);
   assert.match(html, /latestDate >= todayValue\(\)/);
   assert.match(html, /const key = `\$\{venueKey\}::\$\{dateKey\}::\$\{linkKey\}`/);
@@ -270,6 +272,11 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(renderSentGroups, /sent-venue-body/);
   assert.match(renderSentGroups, /Прошедшие даты лежат в архиве ниже/);
   assert.match(html, /Архив отправленных групп/);
+  assert.match(html, /archive-trainee-row/);
+  assert.match(html, /archive-link/);
+  assert.match(html, /Прошел/);
+  assert.match(html, /Не прошел/);
+  assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 
 test('trainee available dates stay clean after an active application is locked', async () => {
