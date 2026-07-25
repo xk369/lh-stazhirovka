@@ -14,6 +14,16 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - To check the currently deployed commit: `cd /opt/loft-hall-internship-unified && git rev-parse --short HEAD`
 - Last verified deployed commit before this handoff was added: `2e07a4d`
 
+## Staging / Manual Copy
+
+Use the server copy for non-urgent product changes before touching production.
+
+- Staging URL: `https://stazhirovka-manual.151.244.243.164.sslip.io`
+- Server path: `/opt/loft-hall-internship-unified-manual`
+- Docker container: `loft-internship-unified-manual`
+- Host port: `127.0.0.1:3501 -> 3000`
+- Preferred flow: create a feature branch locally, push it to GitHub, switch the staging copy to that branch, rebuild staging, test there, then merge/deploy production only after user approval.
+
 ## Report Routing
 
 Report routing is server-side only. Do not hardcode chat ids in HTML.
@@ -33,6 +43,7 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - Keep this file current. Update it in the same commit as any change to production state, deploy procedure, server path, report chat routing, or important UI/business decisions.
 - Keep `docs/INTERNSHIP_WORKFLOW.md` current when the actual role flow, statuses, Telegram messages, report side effects, or recruiter/mentor/trainee actions change.
 - Before each production deploy:
+  - if the change is not an urgent hotfix, test it on the staging/manual copy first;
   - run `npm test`;
   - run `git diff --check`;
   - commit and push to `origin/main`;
@@ -77,4 +88,15 @@ git fetch origin
 git merge --ff-only origin/main
 docker compose up -d --build
 curl -fsS http://127.0.0.1:3500/api/health
+```
+
+Staging deploy shape:
+
+```bash
+cd /opt/loft-hall-internship-unified-manual
+git fetch origin
+git switch <feature-branch>
+git merge --ff-only origin/<feature-branch>
+docker compose up -d --build
+curl -fsS http://127.0.0.1:3501/api/health
 ```
