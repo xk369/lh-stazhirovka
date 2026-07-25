@@ -2415,6 +2415,13 @@
           }))
         };
       }
+      function mentorTraineeLookupPayload() {
+        return {
+          traineeFio: state.profile.traineeFio || '',
+          traineeTelegram: state.profile.traineeTelegram || '',
+          date: state.profile.date || ''
+        };
+      }
       function parseHallValue(value) {
         const text = String(value || '').trim();
         for (const group of HALL_GROUPS) {
@@ -2759,7 +2766,8 @@
               applicationId: state.role === 'mentor' && selectedMentorTrainee() ? state.profile.traineeApplicationId : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
-              mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined
+              mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined,
+              mentorTraineeLookup: state.role === 'mentor' ? mentorTraineeLookupPayload() : undefined
             }),
             signal: controller.signal
           });

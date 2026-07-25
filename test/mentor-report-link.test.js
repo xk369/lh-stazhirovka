@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyMentorReportResultToBookingState,
   composeMentorTraineeResultMessage,
+  findMentorReportApplicationForLookup,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -195,6 +196,41 @@ test('mentor report result marks application as failed when repeat internship is
   const application = next.applications.find(item => item.id === 1);
   assert.equal(application.status, 'failed');
   assert.equal(application.mentorReport, true);
+});
+
+test('manual mentor report lookup links the matching booking application by trainee data', () => {
+  const application = findMentorReportApplicationForLookup(
+    stateWithApplications(),
+    {
+      traineeFio: 'Иванов Иван',
+      traineeTelegram: '@ivanov',
+      date: '2026-07-10'
+    }
+  );
+
+  assert.equal(application?.id, 1);
+});
+
+test('manual mentor report lookup does not guess when trainee data is ambiguous', () => {
+  const state = stateWithApplications();
+  state.applications.push({
+    ...state.applications[0],
+    id: 7,
+    name: 'Иванов Иван',
+    telegramUsername: '',
+    telegramChatId: '100007',
+    telegramUserId: '100007'
+  });
+
+  const application = findMentorReportApplicationForLookup(
+    state,
+    {
+      traineeFio: 'Иванов Иван',
+      date: '2026-07-10'
+    }
+  );
+
+  assert.equal(application, null);
 });
 
 test('mentor trainee result message hides mentor free-text comments', () => {

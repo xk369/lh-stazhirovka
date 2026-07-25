@@ -393,6 +393,8 @@ test('mentor manual trainee fields appear only after selecting the fallback opti
   assert.match(validateReport, /mentorManualTraineeMode\(\)/);
   assert.match(validateReport, /Укажите ФИО стажёра для ручного отчёта/);
   assert.match(postReport, /selectedMentorTrainee\(\) \? state\.profile\.traineeApplicationId : undefined/);
-  assert.match(server, /hasLinkedMentorApplication/);
-  assert.match(server, /if \(hasLinkedMentorApplication\)/);
+  assert.match(html, /function mentorTraineeLookupPayload\(\) \{/);
+  assert.match(postReport, /mentorTraineeLookup: state\.role === 'mentor' \? mentorTraineeLookupPayload\(\) : undefined/);
+  assert.match(server, /function findMentorReportApplicationForLookup\(state, lookup\) \{/);
+  assert.match(server, /applicationLinkMode/);
 });

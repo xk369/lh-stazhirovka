@@ -852,6 +852,107 @@ function mentorTraineesFromState(state) {
     });
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}_@]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeSearchTokens(value) {
+  return normalizeSearchText(value)
+    .split(' ')
+    .map(token => token.trim())
+    .filter(token => token.length > 1);
+}
+
+function normalizeLookupUsername(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function normalizeLookupDate(value) {
+  const text = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : '';
+}
+
+function reportTextDate(reportText) {
+  const match = String(reportText || '').match(/Дата стажировки:\s*(\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2})/i);
+  return normalizeLookupDate(match?.[1]);
+}
+
+function reportTextTraineeLookup(reportText) {
+  const text = String(reportText || '');
+  const block = text.match(/Стаж[её]р:\s*([\s\S]*?)(?:\nВыполнено:|\n━|$)/i)?.[1] || '';
+  const firstName = block.match(/Имя:\s*([^\n]+)/i)?.[1] || '';
+  const lastName = block.match(/Фамилия:\s*([^\n]+)/i)?.[1] || '';
+  const usernameMatch = block.match(/\(@?([A-Za-z0-9_]{3,32})\)/);
+  const username = usernameMatch && !/не\s*указан/i.test(usernameMatch[1]) ? usernameMatch[1] : '';
+  return {
+    traineeFio: [lastName, firstName].map(part => part.trim()).filter(Boolean).join(' '),
+    traineeTelegram: username,
+    date: reportTextDate(reportText)
+  };
+}
+
+function mentorReportLookupFromRequest(body, reportText) {
+  const source = body?.mentorTraineeLookup && typeof body.mentorTraineeLookup === 'object'
+    ? body.mentorTraineeLookup
+    : {};
+  const fallback = reportTextTraineeLookup(reportText);
+  const traineeFio = String(source.traineeFio || source.name || fallback.traineeFio || '').trim();
+  return {
+    traineeFio: traineeFio.slice(0, 160),
+    traineeTelegram: normalizeLookupUsername(
+      source.traineeTelegram || source.telegramUsername || fallback.traineeTelegram || ''
+    ),
+    date: normalizeLookupDate(source.date || fallback.date || '')
+  };
+}
+
+function findMentorReportApplicationForLookup(state, lookup) {
+  const cleanState = normalizeBookingState(state);
+  const cleanLookup = {
+    traineeFio: normalizeSearchText(lookup?.traineeFio),
+    traineeTelegram: normalizeLookupUsername(lookup?.traineeTelegram),
+    date: normalizeLookupDate(lookup?.date)
+  };
+  const lookupTokens = normalizeSearchTokens(cleanLookup.traineeFio);
+  if (!cleanLookup.traineeTelegram && lookupTokens.length < 2) return null;
+
+  const scored = cleanState.applications
+    .filter(applicationCanReceiveMentorReport)
+    .map(application => {
+      const shift = cleanState.shifts.find(item => String(item.id) === String(application.shiftId));
+      const dateMatches = cleanLookup.date ? shift?.date === cleanLookup.date : true;
+      if (!dateMatches) return null;
+
+      const appUsername = normalizeLookupUsername(application.telegramUsername);
+      const appName = normalizeSearchText(application.name);
+      const appTokens = normalizeSearchTokens(application.name);
+      const telegramMatches = Boolean(cleanLookup.traineeTelegram && appUsername === cleanLookup.traineeTelegram);
+      const exactNameMatches = Boolean(cleanLookup.traineeFio && appName === cleanLookup.traineeFio);
+      const tokenMatches = lookupTokens.length >= 2 && lookupTokens.every(token => appTokens.includes(token));
+
+      let score = 0;
+      if (telegramMatches) score += 100;
+      if (exactNameMatches) score += 80;
+      else if (tokenMatches) score += 55;
+      if (cleanLookup.date) score += 20;
+
+      return score >= 75 ? { application, score } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+
+  if (!scored.length) return null;
+  if (scored.length > 1 && scored[0].score === scored[1].score) return null;
+  return scored[0].application;
+}
+
 function requireMentorReportApplication(state, applicationId) {
   const cleanState = normalizeBookingState(state);
   const { application } = requireApplication(cleanState, applicationId);
@@ -2127,7 +2228,7 @@ app.post('/api/report', async (request, response) => {
     const role = normalizeRole(request.body?.role);
     const reportText = normalizeReportText(request.body?.reportText);
     const chatId = resolveChatId(role, config);
-    const applicationId = request.body?.applicationId;
+    let applicationId = request.body?.applicationId;
     const mentorDecision = normalizeOptionalText(request.body?.mentorDecision, 'mentorDecision', 120);
     const mentorCommentForTrainee = normalizeOptionalText(
       request.body?.mentorCommentForTrainee,
@@ -2139,11 +2240,21 @@ app.post('/api/report', async (request, response) => {
       ? normalizeMentorTraineeResult(rawMentorTraineeResult)
       : null;
     let mentorApplication = null;
-    const hasLinkedMentorApplication = role === 'mentor' && String(applicationId || '').trim();
+    let mentorApplicationLinkMode = '';
 
-    if (hasLinkedMentorApplication) {
+    if (role === 'mentor') {
       const state = await readBookingState();
-      mentorApplication = requireMentorReportApplication(state, applicationId);
+      if (String(applicationId || '').trim()) {
+        mentorApplication = requireMentorReportApplication(state, applicationId);
+        mentorApplicationLinkMode = 'selected';
+      } else {
+        const lookup = mentorReportLookupFromRequest(request.body, reportText);
+        mentorApplication = findMentorReportApplicationForLookup(state, lookup);
+        if (mentorApplication) {
+          applicationId = mentorApplication.id;
+          mentorApplicationLinkMode = 'matched';
+        }
+      }
     }
 
     const message = await sendTelegramMessage({
@@ -2184,6 +2295,7 @@ app.post('/api/report', async (request, response) => {
         telegramUserId: telegram.user.id,
         role,
         applicationId: role === 'mentor' ? applicationId : undefined,
+        applicationLinkMode: role === 'mentor' ? mentorApplicationLinkMode || 'manual_unlinked' : undefined,
         chatTarget: role === 'mentor' ? 'MENTOR_CHAT_ID' : 'TRAINEE_CHAT_ID',
         telegramMessageId: message.message_id,
         traineeMessageStatus: traineeMessage?.status,
@@ -2279,6 +2391,7 @@ export {
   composeMentorTraineeResultMessage,
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
+  findMentorReportApplicationForLookup,
   mentorTraineesFromState,
   normalizeBookingState,
   shiftCapacityChangeNotificationPlan,
