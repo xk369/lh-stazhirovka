@@ -132,3 +132,35 @@ test('formats mentor report for the manager group', () => {
     ].join('\n')
   );
 });
+
+test('formats mentor report with manually entered trainee data', () => {
+  const items = [
+    { id: 'mentor-1', item_order: 1, text: 'Пункт наставника 1' },
+    { id: 'mentor-2', item_order: 2, text: 'Пункт наставника 2' }
+  ];
+  const answers = {
+    'mentor-1': { status: 'yes' },
+    'mentor-2': { status: 'no', comment: 'Нужно повторить сервировку' }
+  };
+  const text = formatInternshipReport({
+    role: 'mentor',
+    profile: {
+      date: '2026-07-13',
+      hall: 'LOFT #1 MAIN HALL',
+      firstName: 'Мария',
+      lastName: 'Наставникова',
+      telegram: '@mentor',
+      traineeFio: 'Иванов Иван',
+      traineeTelegram: '@ivanov'
+    },
+    summary: {
+      mentorRecommendations: 'Повторить сервировку.',
+      mentorDecision: 'Требуется повторная стажировка'
+    },
+    items,
+    answers
+  });
+
+  assert.match(text, /Стажёр:\nИмя: Иван\nФамилия: Иванов\n\(@ivanov\)/);
+  assert.match(text, /🔴 Повторная стажировка обязательна\./);
+});
