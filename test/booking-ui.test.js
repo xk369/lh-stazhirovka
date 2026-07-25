@@ -259,12 +259,27 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   const renderSentGroups = html.match(/function renderSentGroupTemplates\(\) \{[\s\S]*?\n    \}\n\n    function updateWorkgroupManagerControl/)?.[0] || '';
 
   assert.match(html, /function visibleWorkgroupTemplateGroups\(\) \{/);
+  assert.match(html, /function archivedWorkgroupTemplateGroups\(\) \{/);
+  assert.match(html, /function renderSentGroupArchive\(\) \{/);
+  assert.match(html, /function workgroupArchiveResultMeta\(app\) \{/);
+  assert.match(html, /function renderArchiveTraineeRows\(group\) \{/);
   assert.match(html, /function isWorkgroupTemplateVisible\(group\) \{/);
   assert.match(html, /latestDate >= todayValue\(\)/);
+  assert.match(html, /const key = `\$\{venueKey\}::\$\{dateKey\}::\$\{linkKey\}`/);
   assert.match(renderSentGroups, /<details class="sent-venue-group"/);
+  assert.match(renderSentGroups, /renderSentGroupArchive\(\)/);
   assert.match(renderSentGroups, /<summary>/);
   assert.match(renderSentGroups, /sent-venue-body/);
-  assert.match(renderSentGroups, /Прошедшие скрываются на следующий день после даты стажировки/);
+  assert.match(renderSentGroups, /Прошедшие даты лежат в архиве ниже/);
+  assert.match(html, /Архив отправленных групп/);
+  assert.match(html, /archive-trainee-row/);
+  assert.match(html, /archive-link/);
+  assert.match(html, /Прошел/);
+  assert.match(html, /Не прошел/);
+  assert.match(html, /Нет итога/);
+  assert.doesNotMatch(html, /Отчет получен/);
+  assert.doesNotMatch(html, /statusNames\[app\?\.status\] \|\| "Без итога"/);
+  assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 
 test('trainee available dates stay clean after an active application is locked', async () => {
@@ -317,6 +332,21 @@ test('invite group date selector keeps the recruiter-selected date even when it 
 
   assert.match(syncInviteDraft, /if \(hasSelectedShift\) return;/);
   assert.doesNotMatch(syncInviteDraft, /selectedHasCandidates/);
+});
+
+test('invite group date selector shows only actual dates in ascending order', async () => {
+  const html = await readPublicFile('booking.html');
+  const groupInviteShifts = html.match(/function groupInviteShifts\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const renderInviteGroups = html.match(/function renderInviteGroups\(\) \{[\s\S]*?\n    \}\n\n    function renderCandidates/)?.[0] || '';
+  const ensureInviteDraft = html.match(/function ensureInviteDraft\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(groupInviteShifts, /sortedShiftsByDate\(state\.shifts\.filter/);
+  assert.match(groupInviteShifts, /date >= today/);
+  assert.match(groupInviteShifts, /!shift\.canceled/);
+  assert.match(renderInviteGroups, /const inviteShifts = groupInviteShifts\(\)/);
+  assert.match(renderInviteGroups, /inviteShifts\.map/);
+  assert.match(ensureInviteDraft, /const inviteShifts = groupInviteShifts\(\)/);
+  assert.doesNotMatch(renderInviteGroups, /state\.shifts\.map\(shift => `<option value="\$\{shift\.id\}"/);
 });
 
 test('report submission success does not auto-close the mini app', async () => {

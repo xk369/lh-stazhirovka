@@ -1356,7 +1356,7 @@
     }
     .sent-venue-group summary {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) minmax(34px, auto) 20px;
       gap: 10px;
       align-items: center;
       min-height: 58px;
@@ -1400,6 +1400,135 @@
       gap: 10px;
       padding: 0 10px 10px;
     }
+    .sent-archive {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--field) 76%, transparent);
+      overflow: hidden;
+    }
+    .sent-archive,
+    .sent-archive *,
+    .sent-archive .sent-venue-group,
+    .sent-archive .sent-group {
+      box-sizing: border-box;
+      max-width: 100%;
+    }
+    .sent-archive > summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(34px, auto) 20px;
+      gap: 10px;
+      align-items: center;
+      min-height: 58px;
+      padding: 12px;
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sent-archive > summary::-webkit-details-marker { display: none; }
+    .sent-archive > summary::after {
+      content: "⌄";
+      color: var(--accent);
+      font-size: 20px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+    .sent-archive[open] > summary::after { transform: rotate(180deg); }
+    .sent-archive-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 10px 10px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .sent-group.archive {
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 72%, var(--field));
+    }
+    .sent-group-compact {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .archive-card-head {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .archive-date-line {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+    }
+    .archive-date-line b {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .archive-date-line .pill {
+      justify-self: end;
+      max-width: 100%;
+    }
+    .archive-link {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 780;
+      line-height: 1.28;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .archive-trainee-list {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .archive-trainee-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(88px, auto);
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--field);
+    }
+    .archive-trainee-name {
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .archive-trainee-row .pill {
+      justify-self: end;
+      max-width: 132px;
+      min-width: 0;
+      white-space: normal;
+      text-align: center;
+      font-size: 10.5px;
+      padding-inline: 8px;
+    }
+    @media (max-width: 430px) {
+      .sent-archive-body,
+      .sent-venue-body {
+        padding-inline: 8px;
+      }
+      .archive-trainee-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+      .archive-trainee-row .pill {
+        justify-self: start;
+        max-width: 100%;
+      }
+    }
     .workgroup-template {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -1421,6 +1550,9 @@
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
+    }
+    .sent-group.archive .workgroup-actions {
+      grid-template-columns: 1fr;
     }
     .workgroup-actions .secondary,
     .workgroup-actions .quiet {
@@ -4144,6 +4276,14 @@
       });
     }
 
+    function groupInviteShifts() {
+      const today = todayValue();
+      return sortedShiftsByDate(state.shifts.filter(shift => {
+        const date = String(shift.date || "");
+        return date >= today && !shift.canceled;
+      }));
+    }
+
     function renderRecruiterDates() {
       const renderShift = shift => {
         const apps = state.applications.filter(app => app.shiftId === shift.id && app.status === "pending");
@@ -4354,9 +4494,11 @@ ${managerLine}
     function workgroupTemplateGroups() {
       const map = new Map();
       state.inviteGroups.forEach(group => {
+        const shift = state.shifts.find(item => String(item.id) === String(group.shiftId));
+        const dateKey = String(shift?.date || group.date || "without-date");
         const linkKey = normalizeWorkgroupLink(group.link) || `group:${group.id}`;
         const venueKey = group.venueId || "unknown";
-        const key = `${venueKey}::${linkKey}`;
+        const key = `${venueKey}::${dateKey}::${linkKey}`;
         if (!map.has(key)) {
           map.set(key, {
             key,
@@ -4370,7 +4512,6 @@ ${managerLine}
         const workgroup = map.get(key);
         workgroup.groups.push(group);
         if (group.link && !workgroup.link) workgroup.link = group.link;
-        const shift = state.shifts.find(item => String(item.id) === String(group.shiftId));
         if (shift) workgroup.shiftsById.set(String(shift.id), shift);
         applicationsForInviteGroup(group).forEach(app => {
           workgroup.membersById.set(String(app.id), app);
@@ -4415,29 +4556,121 @@ ${managerLine}
       return workgroupTemplateGroups().filter(isWorkgroupTemplateVisible);
     }
 
-    function renderSentGroupTemplates() {
-      const allGroups = workgroupTemplateGroups();
-      const templateGroups = allGroups.filter(isWorkgroupTemplateVisible);
-      if (!templateGroups.length) {
-        const archivedCount = allGroups.length - templateGroups.length;
-        return `<div class="empty">${archivedCount ? "Актуальных шаблонов нет. Прошедшие скрываются на следующий день после даты стажировки." : "Пока нет отправленных групп."}</div>`;
-      }
+    function archivedWorkgroupTemplateGroups() {
+      return workgroupTemplateGroups().filter(group => !isWorkgroupTemplateVisible(group));
+    }
+
+    function groupWorkgroupTemplatesByVenue(templateGroups) {
       const groupsByVenue = new Map();
       templateGroups.forEach((group, index) => {
-          group.templateIndex = index;
-          const key = group.venueId || "unknown";
-          if (!groupsByVenue.has(key)) groupsByVenue.set(key, []);
-          groupsByVenue.get(key).push(group);
+        group.templateIndex = index;
+        const key = group.venueId || "unknown";
+        if (!groupsByVenue.has(key)) groupsByVenue.set(key, []);
+        groupsByVenue.get(key).push(group);
       });
+      return groupsByVenue;
+    }
 
-      return [...groupsByVenue.entries()].map(([venueId, groups], venueIndex) => {
+    function workgroupDateRange(groups) {
+      const groupDates = groups
+        .flatMap(group => group.shifts.map(shift => shift.date).filter(Boolean))
+        .sort();
+      if (!groupDates.length) return "без даты";
+      return `${formatDate(groupDates[0])}${groupDates.at(-1) !== groupDates[0] ? ` - ${formatDate(groupDates.at(-1))}` : ""}`;
+    }
+
+    function workgroupArchiveResultMeta(app) {
+      const decision = String(app?.mentorDecision || "").toLowerCase();
+      if (app?.status === "passed" || decision.includes("стажировка пройдена")) return { label: "Прошел", tone: "ok" };
+      if (app?.status === "failed" || decision.includes("повтор")) return { label: "Не прошел", tone: "bad" };
+      if (app?.status === "noshow") return { label: "Не вышел", tone: "bad" };
+      return { label: "Нет итога", tone: "wait" };
+    }
+
+    function renderArchiveTraineeRows(group) {
+      if (!group.members.length) return `<div class="empty tight">Нет кандидатов.</div>`;
+      return group.members.map(app => {
+        const result = workgroupArchiveResultMeta(app);
+        return `
+          <div class="archive-trainee-row">
+            <span class="archive-trainee-name">${escapeHtml(app.name || "Стажёр")}</span>
+            <span class="pill ${escapeHtml(result.tone)}">${escapeHtml(result.label)}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderSentGroupArchive() {
+      const archiveGroups = archivedWorkgroupTemplateGroups();
+      if (!archiveGroups.length) return "";
+      const groupsByVenue = groupWorkgroupTemplatesByVenue(archiveGroups);
+      return `
+        <details class="sent-archive">
+          <summary>
+            <span class="sent-venue-title">
+              <b>Архив отправленных групп</b>
+              <span>Прошедшие даты, скрытые из актуальных шаблонов</span>
+            </span>
+            <b class="count">${archiveGroups.length}</b>
+          </summary>
+          <div class="sent-archive-body">
+            ${[...groupsByVenue.entries()].map(([venueId, groups]) => {
+              const venue = venueById(venueId);
+              const traineesCount = groups.reduce((sum, group) => sum + group.members.length, 0);
+              return `
+                <details class="sent-venue-group">
+                  <summary>
+                    <span class="sent-venue-title">
+                      <b>${escapeHtml(venue?.name || "Площадка не указана")}</b>
+                      <span>${escapeHtml(workgroupDateRange(groups))} · ${traineesCount} стаж.</span>
+                    </span>
+                    <b class="count">${groups.length}</b>
+                  </summary>
+                  <div class="sent-venue-body">
+                    ${groups.map(group => {
+                      const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
+                      return `
+                        <article class="sent-group archive">
+                          <div class="archive-card-head">
+                            <div class="archive-date-line">
+                              <b>${escapeHtml(dates)}</b>
+                              <span class="pill">${group.members.length} чел.</span>
+                            </div>
+                            ${group.link ? `<div class="archive-link">${escapeHtml(group.link)}</div>` : ""}
+                          </div>
+                          <div class="archive-trainee-list">
+                            ${renderArchiveTraineeRows(group)}
+                          </div>
+                          ${group.link ? `
+                            <div class="workgroup-actions">
+                              <a class="quiet" href="${escapeHtml(group.link)}" data-external-link target="_blank" rel="noopener">Открыть группу</a>
+                            </div>
+                          ` : ""}
+                        </article>
+                      `;
+                    }).join("")}
+                  </div>
+                </details>
+              `;
+            }).join("")}
+          </div>
+        </details>
+      `;
+    }
+
+    function renderSentGroupTemplates() {
+      const allGroups = workgroupTemplateGroups();
+      const templateGroups = visibleWorkgroupTemplateGroups();
+      const archiveHtml = renderSentGroupArchive();
+      if (!templateGroups.length) {
+        const archivedCount = allGroups.length - templateGroups.length;
+        return `<div class="empty">${archivedCount ? "Актуальных шаблонов нет. Прошедшие даты лежат в архиве ниже." : "Пока нет отправленных групп."}</div>${archiveHtml}`;
+      }
+      const groupsByVenue = groupWorkgroupTemplatesByVenue(templateGroups);
+
+      const activeHtml = [...groupsByVenue.entries()].map(([venueId, groups], venueIndex) => {
         const venue = venueById(venueId);
-        const groupDates = groups
-          .flatMap(group => group.shifts.map(shift => shift.date).filter(Boolean))
-          .sort();
-        const dateRange = groupDates.length
-          ? `${formatDate(groupDates[0])}${groupDates.at(-1) !== groupDates[0] ? ` - ${formatDate(groupDates.at(-1))}` : ""}`
-          : "без даты";
+        const dateRange = workgroupDateRange(groups);
         const traineesCount = groups.reduce((sum, group) => sum + group.members.length, 0);
         return `
           <details class="sent-venue-group" ${venueIndex === 0 ? "open" : ""}>
@@ -4484,6 +4717,7 @@ ${managerLine}
           </details>
         `;
       }).join("");
+      return `${activeHtml}${archiveHtml}`;
     }
 
     function updateWorkgroupManagerControl(control) {
@@ -4515,10 +4749,11 @@ ${managerLine}
     }
 
     function syncInviteDraftWithEligibleCandidates(draft) {
-      const hasSelectedShift = state.shifts.some(shift => String(shift.id) === String(draft.shiftId));
+      const inviteShifts = groupInviteShifts();
+      const hasSelectedShift = inviteShifts.some(shift => String(shift.id) === String(draft.shiftId));
       if (hasSelectedShift) return;
-      const shiftWithCandidates = state.shifts.find(shift => eligibleInviteCandidates(shift.id).length);
-      const nextShiftId = shiftWithCandidates?.id || state.shifts[0]?.id || null;
+      const shiftWithCandidates = inviteShifts.find(shift => eligibleInviteCandidates(shift.id).length);
+      const nextShiftId = shiftWithCandidates?.id || inviteShifts[0]?.id || null;
       if (String(draft.shiftId || "") !== String(nextShiftId || "")) {
         draft.shiftId = nextShiftId;
         draft.memberIds = [];
@@ -4528,7 +4763,8 @@ ${managerLine}
     function renderInviteGroups() {
       const draft = ensureInviteDraft();
       syncInviteDraftWithEligibleCandidates(draft);
-      const shiftOptions = state.shifts.map(shift => `<option value="${shift.id}" ${String(draft.shiftId) === String(shift.id) ? "selected" : ""}>${formatDate(shift.date)}</option>`).join("");
+      const inviteShifts = groupInviteShifts();
+      const shiftOptions = inviteShifts.map(shift => `<option value="${shift.id}" ${String(draft.shiftId) === String(shift.id) ? "selected" : ""}>${formatDate(shift.date)}</option>`).join("");
       const venueOptions = venues.map(venue => `<option value="${venue.id}" ${draft.venueId === venue.id ? "selected" : ""}>${venue.name}</option>`).join("");
       fields.groupShift.innerHTML = shiftOptions || `<option value="">Нет дат</option>`;
       fields.groupVenue.innerHTML = venueOptions;
@@ -4982,8 +5218,9 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     }
 
     function ensureInviteDraft() {
-      state.inviteDraft = { shiftId: state.shifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [], workgroupManagers: {}, ...(state.inviteDraft || {}) };
-      if (!state.inviteDraft.shiftId && state.shifts.length) state.inviteDraft.shiftId = state.shifts[0].id;
+      const inviteShifts = groupInviteShifts();
+      state.inviteDraft = { shiftId: inviteShifts[0]?.id || null, venueId: venues[0].id, link: "", memberIds: [], workgroupManagers: {}, ...(state.inviteDraft || {}) };
+      if (!state.inviteDraft.shiftId && inviteShifts.length) state.inviteDraft.shiftId = inviteShifts[0].id;
       if (!state.inviteDraft.venueId) state.inviteDraft.venueId = venues[0].id;
       state.inviteDraft.memberIds = state.inviteDraft.memberIds || [];
       if (!state.inviteDraft.workgroupManagers || typeof state.inviteDraft.workgroupManagers !== "object" || Array.isArray(state.inviteDraft.workgroupManagers)) {
