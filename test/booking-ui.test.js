@@ -398,3 +398,18 @@ test('mentor manual trainee fields appear only after selecting the fallback opti
   assert.match(server, /function findMentorReportApplicationForLookup\(state, lookup\) \{/);
   assert.match(server, /applicationLinkMode/);
 });
+
+test('staging can suppress personal trainee Telegram notifications', async () => {
+  const server = await readSourceFile('server.js');
+  const env = await readFile(new URL('../.env.example', import.meta.url), 'utf8');
+
+  assert.match(server, /suppressTraineeNotifications: process\.env\.SUPPRESS_TRAINEE_NOTIFICATIONS === 'yes'/);
+  assert.match(server, /function shouldSuppressTraineeNotifications\(\) \{/);
+  assert.match(server, /trainee_notifications_suppressed/);
+  assert.match(server, /sendBookingStageChangedToTrainee/);
+  assert.match(server, /sendShiftCancellationToTrainees/);
+  assert.match(server, /sendShiftCapacityChangedToTrainees/);
+  assert.match(server, /sendMentorResultToTrainee/);
+  assert.match(server, /app\.post\('\/api\/notify'/);
+  assert.match(env, /SUPPRESS_TRAINEE_NOTIFICATIONS=no/);
+});

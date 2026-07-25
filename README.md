@@ -30,6 +30,7 @@ TELEGRAM_BOT_USERNAME=LOFT_HELPER_V2_BOT
 RECRUITER_TELEGRAM_IDS=1294774551,6774493976,1711587497,5950662713
 DATA_DIR=./data
 TELEGRAM_POLLING=no
+SUPPRESS_TRAINEE_NOTIFICATIONS=no
 INIT_DATA_TTL_SECONDS=86400
 HOST=0.0.0.0
 PORT=3000
@@ -38,6 +39,8 @@ PORT=3000
 `RECRUITER_TELEGRAM_IDS` — Telegram user ID пользователей, которым разрешён полный кабинет рекрута и запись общего state.
 
 `TELEGRAM_POLLING=no` оставляем, если бот подключён к PuzzleBot. Для Web App-привязки Telegram кандидата polling не нужен.
+
+`SUPPRESS_TRAINEE_NOTIFICATIONS=yes` включайте только на staging/manual-копиях с реальными данными. При этом рекрут может проверять статусы, отмены, приглашения и отчёты, но личные Telegram-уведомления стажёрам не отправляются. Отчёты в группы `TRAINEE_CHAT_ID` и `MENTOR_CHAT_ID` этим флагом не отключаются.
 
 ## Локальная проверка
 

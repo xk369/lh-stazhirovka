@@ -26,6 +26,7 @@ const config = {
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
   telegramPollingEnabled: process.env.TELEGRAM_POLLING === 'yes',
+  suppressTraineeNotifications: process.env.SUPPRESS_TRAINEE_NOTIFICATIONS === 'yes',
   recruiterTelegramIds: parseTelegramIdSet(process.env.RECRUITER_TELEGRAM_IDS || '')
 };
 
@@ -1041,9 +1042,20 @@ function composeBookingStageChangedMessage(application, previousStatus) {
   ].join('\n');
 }
 
+function suppressedTraineeNotification(applicationId, reason = 'trainee_notifications_suppressed') {
+  return { ok: false, status: 'skipped', skipped: reason, applicationId };
+}
+
+function shouldSuppressTraineeNotifications() {
+  return config.suppressTraineeNotifications;
+}
+
 async function sendBookingStageChangedToTrainee(application, previousStatus) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
+  }
+  if (shouldSuppressTraineeNotifications()) {
+    return suppressedTraineeNotification(application.id);
   }
   try {
     const message = await sendTelegramMessage({
@@ -1091,6 +1103,9 @@ async function sendShiftCancellationToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
+    if (shouldSuppressTraineeNotifications()) {
+      return { applicationId: application.id, status: 'skipped', skipped: 'trainee_notifications_suppressed' };
+    }
     try {
       await sendTelegramMessage({
         botToken: config.botToken,
@@ -1117,6 +1132,9 @@ async function sendShiftCapacityChangedToTrainees(shift, applications) {
   const deliveries = await Promise.all(applications.map(async application => {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
+    }
+    if (shouldSuppressTraineeNotifications()) {
+      return { applicationId: application.id, status: 'skipped', skipped: 'trainee_notifications_suppressed' };
     }
     try {
       await sendTelegramMessage({
@@ -1146,6 +1164,12 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
   }
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
+  }
+  if (shouldSuppressTraineeNotifications()) {
+    return {
+      ...suppressedTraineeNotification(application.id),
+      sentAt: now.toISOString()
+    };
   }
 
   try {
@@ -2049,6 +2073,10 @@ app.post('/api/notify', async (request, response, next) => {
 
     if (!application?.telegramChatId) {
       response.json({ ok: false, skipped: 'telegram_chat_missing' });
+      return;
+    }
+    if (shouldSuppressTraineeNotifications()) {
+      response.json({ ok: false, skipped: 'trainee_notifications_suppressed' });
       return;
     }
 

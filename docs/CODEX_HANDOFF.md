@@ -24,7 +24,8 @@ Use the server copy for non-urgent product changes before touching production.
 - Host port: `127.0.0.1:3501 -> 3000`
 - Preferred flow: create a feature branch locally, push it to GitHub, switch the staging copy to that branch, rebuild staging, test there, then merge/deploy production only after user approval.
 - Keep staging data close to production for realistic checks: before testing, back up `/opt/loft-hall-internship-unified-manual/data/db.json` and copy `/opt/loft-hall-internship-unified/data/db.json` into the manual copy.
-- Current staging branch should include the mentor fallback experiment: `Нет нужного стажёра в списке` opens manual trainee FIO/Telegram fields and sends the mentor report without binding it to a booking application.
+- Keep `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` in the staging `.env` when using real production trainee data. This allows recruiter/mentor flow testing without sending personal Telegram notifications to trainees.
+- Current staging branch should include the mentor fallback: `Нет нужного стажёра в списке` opens manual trainee FIO/Telegram fields. Backend then tries to safely bind the report to one matching booking application by FIO, Telegram, and date; ambiguous/manual-only reports remain unlinked.
 
 ## Report Routing
 
