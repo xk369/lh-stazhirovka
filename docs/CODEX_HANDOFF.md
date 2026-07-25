@@ -97,6 +97,6 @@ cd /opt/loft-hall-internship-unified-manual
 git fetch origin
 git switch <feature-branch>
 git merge --ff-only origin/<feature-branch>
-docker compose up -d --build
+LOFT_INTERNSHIP_CONTAINER_NAME=loft-internship-unified-manual LOFT_INTERNSHIP_HOST_PORT=127.0.0.1:3501 docker compose up -d --build
 curl -fsS http://127.0.0.1:3501/api/health
 ```
