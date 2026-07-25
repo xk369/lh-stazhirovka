@@ -280,6 +280,9 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(html, /archive-link/);
   assert.match(html, /Прошел/);
   assert.match(html, /Не прошел/);
+  assert.match(html, /Нет итога/);
+  assert.doesNotMatch(html, /Отчет получен/);
+  assert.doesNotMatch(html, /statusNames\[app\?\.status\] \|\| "Без итога"/);
   assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 

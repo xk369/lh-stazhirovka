@@ -4584,8 +4584,7 @@ ${managerLine}
       if (app?.status === "passed" || decision.includes("стажировка пройдена")) return { label: "Прошел", tone: "ok" };
       if (app?.status === "failed" || decision.includes("повтор")) return { label: "Не прошел", tone: "bad" };
       if (app?.status === "noshow") return { label: "Не вышел", tone: "bad" };
-      if (app?.status === "feedback") return { label: app?.mentorReport ? "Отчет получен" : "Ждем отчет", tone: "wait" };
-      return { label: statusNames[app?.status] || "Без итога", tone: statusPill[app?.status] || "wait" };
+      return { label: "Нет итога", tone: "wait" };
     }
 
     function renderArchiveTraineeRows(group) {
