@@ -147,3 +147,42 @@ https://ваш-домен/booking
 - `POST /api/telegram/link` — привязка заявки к Telegram user id.
 - `POST /api/notify` — личное уведомление кандидата.
 - `GET /api/health` и `GET /health` — health check.
+
+## PostgreSQL migration contour
+
+The production runtime still uses `data/db.json`. PostgreSQL support in this
+branch is an isolated migration contour and is not read by `src/server.js`.
+
+Apply the schema to an empty staging database:
+
+```bash
+DATABASE_URL=postgres://... npm run db:migrate
+```
+
+Import a copied JSON state into that empty database:
+
+```bash
+DATABASE_URL=postgres://... npm run db:import-json -- --source /absolute/path/to/db.json
+```
+
+The importer runs in one transaction, refuses a non-empty target, preserves
+legacy IDs, relationships and status distribution, and rolls back if count
+verification fails. It also refuses unknown JSON fields so a future production
+field cannot be silently discarded. See `docs/POSTGRES_MIGRATION_ROADMAP.md`
+before using it.
+
+On a machine with local PostgreSQL binaries, run the real migration/import
+smoke test against a temporary database:
+
+```bash
+npm run test:postgres
+```
+
+Every staging copy with production-like data must set:
+
+```env
+SUPPRESS_TRAINEE_NOTIFICATIONS=yes
+```
+
+This skips personal messages to trainees while keeping staging state changes
+and report delivery to the staging report groups available for testing.

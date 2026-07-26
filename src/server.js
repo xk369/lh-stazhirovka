@@ -11,6 +11,23 @@ import {
   validateTelegramInitData
 } from './telegram.js';
 import { normalizeReportText, normalizeRole, resolveChatId } from './report.js';
+import {
+  suppressedTraineeNotification,
+  traineeNotificationsSuppressed
+} from './notification-policy.js';
+import {
+  BOOKING_STATUSES,
+  BOOKING_STATUS_LABELS,
+  BOOKING_STEP_BACK_STATUSES,
+  FINAL_BOOKING_STATUSES,
+  MENTOR_REPORT_TRAINEE_STATUSES,
+  SEAT_HOLDING_STATUSES,
+  SHIFT_CANCELLATION_APPLICATION_STATUSES,
+  TRAINEE_WRITE_STATUSES,
+  bookingStatusFromMentorDecision,
+  canRecruiterSetApplicationStatus,
+  normalizeBookingStatus
+} from './booking-state-machine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,56 +43,18 @@ const config = {
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
   telegramPollingEnabled: process.env.TELEGRAM_POLLING === 'yes',
+  suppressTraineeNotifications: traineeNotificationsSuppressed(),
   recruiterTelegramIds: parseTelegramIdSet(process.env.RECRUITER_TELEGRAM_IDS || '')
 };
 
 const dbPath = path.join(config.dataDir, 'db.json');
 let telegramOffset = 0;
 
-const BOOKING_STATUSES = new Set([
-  'pending',
-  'queue',
-  'confirmed',
-  'invited',
-  'feedback',
-  'passed',
-  'failed',
-  'noshow'
-]);
-const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
-const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
-const SEAT_HOLDING_STATUSES = new Set([
-  'pending',
-  'confirmed',
-  'invited',
-  'feedback',
-  'passed',
-  'failed',
-  'noshow'
-]);
-const FINAL_BOOKING_STATUSES = new Set(['passed', 'failed', 'noshow']);
-const SHIFT_CANCELLATION_APPLICATION_STATUSES = new Set(['pending', 'confirmed', 'invited']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const EXPERIENCE_VALUES = new Set(['experienced']);
 const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
-const BOOKING_STATUS_LABELS = {
-  pending: 'Заявка отправлена',
-  queue: 'Предварительная запись',
-  confirmed: 'Выход подтвержден',
-  invited: 'Приглашение отправлено',
-  feedback: 'Ждем отчет',
-  passed: 'Стажировка пройдена',
-  failed: 'Нужна повторная запись',
-  noshow: 'Выход не состоялся'
-};
-const BOOKING_STEP_BACK_STATUSES = {
-  feedback: 'invited',
-  passed: 'feedback',
-  failed: 'feedback',
-  noshow: 'invited'
-};
 const TRAINING_LABELS = {
   passed: 'Банкетное обслуживание пройдено',
   not_passed: 'Банкетное обслуживание не пройдено'
@@ -326,12 +305,7 @@ function touchBookingState(state, now = new Date()) {
 }
 
 function normalizeLegacyStatus(status) {
-  const map = {
-    new: 'pending',
-    waiting: 'invited',
-    report: 'feedback'
-  };
-  return map[status] || status || 'pending';
+  return normalizeBookingStatus(status);
 }
 
 function normalizeRequiredText(value, field, maxLength) {
@@ -1000,6 +974,9 @@ async function sendBookingStageChangedToTrainee(application, previousStatus) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
+  if (config.suppressTraineeNotifications) {
+    return suppressedTraineeNotification(application.id);
+  }
   try {
     const message = await sendTelegramMessage({
       botToken: config.botToken,
@@ -1046,6 +1023,9 @@ async function sendShiftCancellationToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
+    if (config.suppressTraineeNotifications) {
+      return suppressedTraineeNotification(application.id);
+    }
     try {
       await sendTelegramMessage({
         botToken: config.botToken,
@@ -1072,6 +1052,9 @@ async function sendShiftCapacityChangedToTrainees(shift, applications) {
   const deliveries = await Promise.all(applications.map(async application => {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
+    }
+    if (config.suppressTraineeNotifications) {
+      return suppressedTraineeNotification(application.id);
     }
     try {
       await sendTelegramMessage({
@@ -1102,6 +1085,12 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
+  if (config.suppressTraineeNotifications) {
+    return {
+      ...suppressedTraineeNotification(application.id),
+      sentAt: now.toISOString()
+    };
+  }
 
   try {
     const message = await sendTelegramMessage({
@@ -1125,13 +1114,6 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
       error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
     };
   }
-}
-
-function bookingStatusFromMentorDecision(decision, fallbackStatus) {
-  const cleanDecision = String(decision || '').trim();
-  if (cleanDecision === 'Стажировка пройдена') return 'passed';
-  if (cleanDecision === 'Требуется повторная стажировка') return 'failed';
-  return fallbackStatus;
 }
 
 function applyMentorReportResultToBookingState(state, reportResult, now = new Date()) {
@@ -1289,6 +1271,13 @@ function applySetApplicationStatus(state, command, actor) {
 
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
+  const currentStatus = normalizeLegacyStatus(application.status);
+  if (!canRecruiterSetApplicationStatus(currentStatus, status)) {
+    throw new BookingValidationError(
+      `Переход заявки из статуса «${BOOKING_STATUS_LABELS[currentStatus] || currentStatus}» `
+      + `в «${BOOKING_STATUS_LABELS[status] || status}» недоступен.`
+    );
+  }
   if (status === 'confirmed' && !application.shiftId) {
     throw new BookingValidationError('confirmed application must have shiftId.');
   }
@@ -2009,6 +1998,10 @@ app.post('/api/notify', async (request, response, next) => {
 
     if (!application?.telegramChatId) {
       response.json({ ok: false, skipped: 'telegram_chat_missing' });
+      return;
+    }
+    if (config.suppressTraineeNotifications) {
+      response.json({ ok: false, skipped: 'trainee_notifications_suppressed' });
       return;
     }
 

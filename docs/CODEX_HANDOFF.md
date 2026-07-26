@@ -12,7 +12,18 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - Docker container: `loft-internship-unified`
 - Host port: `127.0.0.1:3500 -> 3000`
 - To check the currently deployed commit: `cd /opt/loft-hall-internship-unified && git rev-parse --short HEAD`
-- Last verified deployed commit before this handoff was added: `2e07a4d`
+- Last verified deployed commit before Postgres roadmap was added: `9930db8`
+
+## Current Migration Work
+
+- Local worktree: `Helper_bot/loft_hall_internship_unified_hall_sync`
+- Branch: `migration/postgres-foundation`
+- This branch is not deployed to production.
+- Production still reads and writes only `data/db.json`.
+- PostgreSQL schema/import tools are isolated and require an explicit `DATABASE_URL`.
+- Last local verification: `npm test` passed 91 tests; `npm run test:postgres`
+  applied the schema, imported a fixture, verified counts/statuses and rejected
+  a repeated import against a temporary PostgreSQL 14 database.
 
 ## Report Routing
 
@@ -32,6 +43,10 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - Do not edit runtime `data/db.json` unless explicitly requested and backed up.
 - Keep this file current. Update it in the same commit as any change to production state, deploy procedure, server path, report chat routing, or important UI/business decisions.
 - Keep `docs/INTERNSHIP_WORKFLOW.md` current when the actual role flow, statuses, Telegram messages, report side effects, or recruiter/mentor/trainee actions change.
+- Keep `docs/DATA_MODEL.md` current when fields, entities, validation rules, or relationships change.
+- Keep `docs/POSTGRES_MIGRATION_ROADMAP.md` current while planning or implementing the Postgres/event-log migration.
+- Do not start the Postgres migration directly on production. Use a fresh branch from `origin/main`, a staging copy, copied prod data, and `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
+- `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` is enforced by `src/notification-policy.js`; it skips every personal trainee delivery path, including `/api/notify` and mentor results.
 - Before each production deploy:
   - run `npm test`;
   - run `git diff --check`;
@@ -45,12 +60,18 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 
 - `public/booking.html` - main booking/recruiter UI. Large file; keep edits scoped.
 - `src/server.js` - backend API, state commands, Telegram notifications, report side effects.
+- `src/booking-state-machine.js` - единые статусы, подписи и допустимые переходы заявки.
+- `db/migrations/001_initial.sql` - первая целевая PostgreSQL-схема; прод ее пока не использует.
+- `scripts/db-migrate.js` - применяет неизменяемые SQL-миграции к `DATABASE_URL`.
+- `scripts/import-booking-json.js` - импортирует копию JSON в пустую PostgreSQL-БД транзакционно.
 - `src/report.js` - report role validation and chat routing.
 - `src/telegram.js` - Telegram initData validation and Telegram send helpers.
 - `test/booking-state.test.js` - state command and status-flow tests.
 - `test/booking-ui.test.js` - UI structure regression checks.
 - `test/mentor-report-link.test.js` - mentor report, trainee notification, and report-result tests.
 - `docs/INTERNSHIP_WORKFLOW.md` - full business workflow by role.
+- `docs/DATA_MODEL.md` - current JSON-state fields, API payloads, relationships, and future-edit rules.
+- `docs/POSTGRES_MIGRATION_ROADMAP.md` - planned Postgres schema, event log, outbox, staging sequence, and migration order.
 
 ## Recent UI Decisions
 
