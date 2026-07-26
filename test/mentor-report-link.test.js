@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyMentorReportResultToBookingState,
   composeMentorTraineeResultMessage,
+  ensureMentorReportTargetMatches,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -174,6 +175,19 @@ test('mentor report result marks application as passed and stores delivery statu
   assert.equal(application.mentorReportAt, '2026-07-03T03:00:00.000Z');
   assert.equal(application.mentorCommentDeliveryStatus, 'sent');
   assert.equal(application.mentorCommentForTrainee, 'Потренировать сервировку и подачу напитков.');
+});
+
+test('mentor report target check rejects mismatched trainee name and application', () => {
+  assert.doesNotThrow(() =>
+    ensureMentorReportTargetMatches({ name: 'Неудахина Виктория Дмитриевна' }, 'Неудахина Виктория Дмитриевна')
+  );
+  assert.doesNotThrow(() =>
+    ensureMentorReportTargetMatches({ name: 'Семёнова Анна' }, 'Семенова Анна')
+  );
+  assert.throws(
+    () => ensureMentorReportTargetMatches({ name: 'Неудахина Виктория Дмитриевна' }, 'Плешакова Милана Александровна'),
+    /Выбранный стажёр не совпадает с заявкой/
+  );
 });
 
 test('mentor report result marks application as failed when repeat internship is required', () => {
