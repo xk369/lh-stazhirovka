@@ -101,6 +101,16 @@ test('PostgreSQL schema contains every target business table', async () => {
   assert.match(sql, /row_version bigint NOT NULL DEFAULT 1/);
 });
 
+test('Docker image contains PostgreSQL migration runtime files', async () => {
+  const dockerfile = await fs.readFile(
+    new URL('../Dockerfile', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(dockerfile, /^COPY db \.\/db$/m);
+  assert.match(dockerfile, /^COPY scripts \.\/scripts$/m);
+});
+
 test('JSON import plan preserves counts, relationships, statuses and mentor result', () => {
   const plan = buildBookingImportPlan(sourceState(), new Date('2026-07-26T19:00:00.000Z'));
 
