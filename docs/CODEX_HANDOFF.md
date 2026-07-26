@@ -25,9 +25,12 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   applied the schema, imported a fixture, reconstructed booking state from
   PostgreSQL, verified field-level parity and rejected a repeated import
   against a temporary PostgreSQL 14 database.
-- The parity verifier has not yet been run against a fresh copy of the actual
-  production `data/db.json`; that remains mandatory before any staging read
-  switch.
+- On 2026-07-26 the isolated importer/parity verifier passed against a fresh
+  read-only copy of production state version 912: 15 shifts, 79 applications,
+  35 invite groups, 37 memberships and 20 mentor reports. The temporary copy
+  containing PII was deleted after the check.
+- This verification did not connect PostgreSQL to the application runtime and
+  did not write to the production server.
 
 ## Report Routing
 

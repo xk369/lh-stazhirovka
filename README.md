@@ -187,6 +187,12 @@ field-level parity verification:
 npm run test:postgres
 ```
 
+To run the same isolated cycle against a local copy of production state:
+
+```bash
+npm run test:postgres -- /absolute/path/to/copied-db.json
+```
+
 Every staging copy with production-like data must set:
 
 ```env
