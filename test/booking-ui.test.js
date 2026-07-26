@@ -365,10 +365,17 @@ test('mentor report submission locks the selected trainee target', async () => {
 
   assert.match(html, /function reportTargetConfirmationText\(\) \{/);
   assert.match(html, /BOOKING_VENUE_LABELS\[trainee\.venueId\]/);
+  assert.match(html, /const BOOKING_VENUE_HALLS = \{/);
+  assert.match(html, /function bookingVenueHallConfig\(venueId\) \{/);
+  assert.match(html, /Лофт подтянут из записи стажёра/);
   assert.match(validateReport, /applyMentorTraineeProfile\(selected, \{ save: false \}\)/);
   assert.match(postReport, /const mentorTrainee = state\.role === 'mentor' \? selectedMentorTrainee\(\) : null/);
   assert.match(postReport, /applicationId: mentorTrainee \? mentorTrainee\.applicationId : undefined/);
   assert.match(postReport, /mentorTraineeName: mentorTrainee \? mentorTrainee\.name : undefined/);
+  assert.match(postReport, /mentorTraineeResult: state\.role === 'mentor' \? mentorTraineeResultPayload\(\) : undefined/);
+  assert.match(html, /venueId: state\.profile\.bookingVenueId \|\| ''/);
+  assert.match(html, /const selectedHall = selectedMentorReportHall\(\)/);
+  assert.match(html, /hall: selectedHall\.hall/);
   assert.match(sendAndCloseReport, /confirmAction\(reportTargetConfirmationText\(\)\)/);
 });
 

@@ -96,6 +96,18 @@ const VENUE_LABELS = {
   birch: 'THE BIRCH',
   metelitsa: 'МЕТЕЛИЦА'
 };
+const VENUE_HALLS = {
+  loft1: { loft: 'LOFT #1', halls: ['AVANTAGE', 'CHATEAU', 'ROYAL BLANC'] },
+  loft2: { loft: 'LOFT #2', halls: ['ROCKFELLER&ROTHSHILD`S HALL', 'BACKYARD'] },
+  loft3: { loft: 'LOFT #3', halls: ['MONTBLANC', 'GRACE', 'RATUSHA'] },
+  loft4: { loft: 'LOFT #4', halls: ['ANDY&CYNDY', 'MONDRIAN', 'BANKSY', 'LONG&ITTEN'] },
+  loft5_contrabanda: { loft: 'LOFT #5', halls: ['CONTRABANDA'], fixedHall: 'CONTRABANDA' },
+  loft5_small: { loft: 'LOFT #5', halls: ['SMALL'], fixedHall: 'SMALL' },
+  loft8: { loft: 'LOFT #8', halls: ['MAIN HALL', 'WELCOME HALL', 'ROSEWOOD HALL', 'MILINIS HALL'] },
+  loft10: { loft: 'LOFT #10 (TAU)', halls: ['MAIN HALL'], fixedHall: 'MAIN HALL' },
+  birch: { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
+  metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] }
+};
 
 class BookingValidationError extends Error {
   constructor(message) {
@@ -122,6 +134,7 @@ class BookingConflictError extends Error {
 }
 
 let bookingMutationQueue = Promise.resolve();
+const mentorReportSubmissionLocks = new Set();
 
 function parseTelegramIdSet(value) {
   return new Set(
@@ -496,6 +509,10 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
       'application.mentorReporterTelegramUserId'
     ),
     mentorDecision: normalizeOptionalText(app?.mentorDecision, 'application.mentorDecision', 120),
+    mentorReportVenueId: normalizeOptionalText(app?.mentorReportVenueId, 'application.mentorReportVenueId', 80),
+    mentorReportVenue: normalizeOptionalText(app?.mentorReportVenue, 'application.mentorReportVenue', 120),
+    mentorReportLoft: normalizeOptionalText(app?.mentorReportLoft, 'application.mentorReportLoft', 80),
+    mentorReportHall: normalizeOptionalText(app?.mentorReportHall, 'application.mentorReportHall', 80),
     mentorCommentForTrainee: normalizeOptionalText(app?.mentorCommentForTrainee, 'application.mentorCommentForTrainee', 1200),
     mentorCommentSentAt: normalizeOptionalText(app?.mentorCommentSentAt, 'application.mentorCommentSentAt', 40),
     mentorCommentDeliveryStatus: normalizeOptionalText(
@@ -510,11 +527,8 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
     )
   };
 
-  if (
-    clean.mentorCommentDeliveryStatus &&
-    !MENTOR_COMMENT_DELIVERY_STATUSES.has(clean.mentorCommentDeliveryStatus)
-  ) {
-    throw new BookingValidationError('application.mentorCommentDeliveryStatus is invalid.');
+  if (clean.mentorCommentDeliveryStatus && !MENTOR_COMMENT_DELIVERY_STATUSES.has(clean.mentorCommentDeliveryStatus)) {
+    clean.mentorCommentDeliveryStatus = '';
   }
 
   const experience = normalizeOptionalText(app?.experience, 'application.experience', 40);
@@ -894,12 +908,37 @@ function formatRuDate(value) {
   return `${day}.${month}.${year}`;
 }
 
+function normalizeVenueReportHall(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function ensureMentorReportVenueMatches(application, resultPayload) {
+  const result = normalizeMentorTraineeResult(resultPayload);
+  const expectedVenueId = normalizeOptionalText(application?.venueId, 'application.venueId', 80);
+  if (!expectedVenueId || !result.venueId) return;
+  if (expectedVenueId !== result.venueId) {
+    throw new BookingValidationError('Площадка отчёта не совпадает с площадкой заявки стажёра. Обновите список и выберите стажёра заново.');
+  }
+
+  const config = VENUE_HALLS[expectedVenueId];
+  if (!config) return;
+  if (config.halls.length > 1 && !result.hall) {
+    throw new BookingValidationError('Выберите зал стажировки внутри площадки стажёра.');
+  }
+  if (result.hall && config.halls.length && !config.halls.includes(result.hall)) {
+    throw new BookingValidationError('Зал отчёта не относится к площадке заявки стажёра.');
+  }
+}
+
 function normalizeMentorTraineeResult(value) {
   const result = value && typeof value === 'object' ? value : {};
   const topics = Array.isArray(result.topicsToRepeat) ? result.topicsToRepeat : [];
   return {
     date: normalizeOptionalText(result.date, 'mentorTraineeResult.date', 20),
     venue: normalizeOptionalText(result.venue, 'mentorTraineeResult.venue', 120),
+    venueId: normalizeOptionalText(result.venueId, 'mentorTraineeResult.venueId', 80),
+    venueLoft: normalizeOptionalText(result.venueLoft, 'mentorTraineeResult.venueLoft', 80),
+    hall: normalizeOptionalText(normalizeVenueReportHall(result.hall), 'mentorTraineeResult.hall', 80),
     mastered: Math.max(Number.parseInt(result.mastered, 10) || 0, 0),
     total: Math.max(Number.parseInt(result.total, 10) || 0, 0),
     decision: normalizeOptionalText(result.decision, 'mentorTraineeResult.decision', 120),
@@ -1109,6 +1148,7 @@ function applyMentorReportResultToBookingState(state, reportResult, now = new Da
   const status = FINAL_BOOKING_STATUSES.has(currentStatus)
     ? currentStatus
     : bookingStatusFromMentorDecision(reportResult.mentorDecision, 'feedback');
+  const mentorTraineeResult = normalizeMentorTraineeResult(reportResult.mentorTraineeResult);
 
   next.applications[index] = {
     ...application,
@@ -1120,6 +1160,10 @@ function applyMentorReportResultToBookingState(state, reportResult, now = new Da
       'mentorReporterTelegramUserId'
     ),
     mentorDecision: normalizeOptionalText(reportResult.mentorDecision, 'mentorDecision', 120),
+    mentorReportVenueId: mentorTraineeResult.venueId,
+    mentorReportVenue: mentorTraineeResult.venue,
+    mentorReportLoft: mentorTraineeResult.venueLoft,
+    mentorReportHall: mentorTraineeResult.hall,
     mentorCommentForTrainee: normalizeOptionalText(
       reportResult.mentorCommentForTrainee,
       'mentorCommentForTrainee',
@@ -2139,6 +2183,7 @@ app.get('/api/report/trainees', async (request, response) => {
 });
 
 app.post('/api/report', async (request, response) => {
+  let mentorReportLockKey = '';
   try {
     const telegram = validateRequestInitData(request.body?.initData);
     const role = normalizeRole(request.body?.role);
@@ -2162,6 +2207,27 @@ app.post('/api/report', async (request, response) => {
       const state = await readBookingState();
       mentorApplication = requireMentorReportApplication(state, applicationId);
       ensureMentorReportTargetMatches(mentorApplication, mentorTraineeName);
+      ensureMentorReportVenueMatches(mentorApplication, mentorTraineeResult);
+      mentorReportLockKey = String(applicationId);
+      if (mentorReportSubmissionLocks.has(mentorReportLockKey)) {
+        throw new BookingConflictError('Отчёт по этому стажёру уже отправляется. Дождитесь результата.');
+      }
+      mentorReportSubmissionLocks.add(mentorReportLockKey);
+      applyMentorReportResultToBookingState(
+        state,
+        {
+          applicationId,
+          reporterTelegramUserId: telegram.user.id,
+          mentorDecision,
+          mentorCommentForTrainee,
+          mentorTraineeResult,
+          traineeMessage: {
+            status: 'skipped',
+            skipped: 'preflight_validation'
+          }
+        },
+        new Date()
+      );
     }
 
     const message = await sendTelegramMessage({
@@ -2188,6 +2254,7 @@ app.post('/api/report', async (request, response) => {
             reporterTelegramUserId: telegram.user.id,
             mentorDecision,
             mentorCommentForTrainee,
+            mentorTraineeResult,
             traineeMessage
           },
           deliveryTime
@@ -2221,6 +2288,11 @@ app.post('/api/report', async (request, response) => {
       return;
     }
 
+    if (error instanceof BookingConflictError) {
+      response.status(409).json({ ok: false, error: error.message, code: error.code });
+      return;
+    }
+
     const knownClientError = [
       'Неизвестная роль отчёта.',
       'Текст отчёта пуст.',
@@ -2237,6 +2309,8 @@ app.post('/api/report', async (request, response) => {
       ok: false,
       error: 'Не удалось отправить отчёт в Telegram. Повторите попытку.'
     });
+  } finally {
+    if (mentorReportLockKey) mentorReportSubmissionLocks.delete(mentorReportLockKey);
   }
 });
 
@@ -2298,6 +2372,7 @@ export {
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
   ensureMentorReportTargetMatches,
+  ensureMentorReportVenueMatches,
   mentorTraineesFromState,
   normalizeBookingState,
   shiftCapacityChangeNotificationPlan,

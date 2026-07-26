@@ -4,6 +4,7 @@ import {
   applyMentorReportResultToBookingState,
   composeMentorTraineeResultMessage,
   ensureMentorReportTargetMatches,
+  ensureMentorReportVenueMatches,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -160,6 +161,12 @@ test('mentor report result marks application as passed and stores delivery statu
       reporterTelegramUserId: '1294774551',
       mentorDecision: 'Стажировка пройдена',
       mentorCommentForTrainee: 'Потренировать сервировку и подачу напитков.',
+      mentorTraineeResult: {
+        venueId: 'loft1',
+        venue: 'LOFT #1 · AVANTAGE',
+        venueLoft: 'LOFT #1',
+        hall: 'AVANTAGE'
+      },
       traineeMessage: {
         status: 'sent',
         sentAt: '2026-07-03T03:00:00.000Z'
@@ -175,6 +182,10 @@ test('mentor report result marks application as passed and stores delivery statu
   assert.equal(application.mentorReportAt, '2026-07-03T03:00:00.000Z');
   assert.equal(application.mentorCommentDeliveryStatus, 'sent');
   assert.equal(application.mentorCommentForTrainee, 'Потренировать сервировку и подачу напитков.');
+  assert.equal(application.mentorReportVenueId, 'loft1');
+  assert.equal(application.mentorReportLoft, 'LOFT #1');
+  assert.equal(application.mentorReportHall, 'AVANTAGE');
+  assert.equal(application.mentorReportVenue, 'LOFT #1 · AVANTAGE');
 });
 
 test('mentor report target check rejects mismatched trainee name and application', () => {
@@ -187,6 +198,39 @@ test('mentor report target check rejects mismatched trainee name and application
   assert.throws(
     () => ensureMentorReportTargetMatches({ name: 'Неудахина Виктория Дмитриевна' }, 'Плешакова Милана Александровна'),
     /Выбранный стажёр не совпадает с заявкой/
+  );
+});
+
+test('mentor report venue check locks hall to trainee booking venue', () => {
+  const application = stateWithApplications().applications[0];
+
+  assert.doesNotThrow(() =>
+    ensureMentorReportVenueMatches(application, {
+      venueId: 'loft1',
+      venueLoft: 'LOFT #1',
+      hall: 'CHATEAU',
+      venue: 'LOFT #1 · CHATEAU'
+    })
+  );
+
+  assert.throws(
+    () => ensureMentorReportVenueMatches(application, {
+      venueId: 'loft3',
+      venueLoft: 'LOFT #3',
+      hall: 'MONTBLANC',
+      venue: 'LOFT #3 · MONTBLANC'
+    }),
+    /Площадка отчёта не совпадает/
+  );
+
+  assert.throws(
+    () => ensureMentorReportVenueMatches(application, {
+      venueId: 'loft1',
+      venueLoft: 'LOFT #1',
+      hall: 'MONTBLANC',
+      venue: 'LOFT #1 · MONTBLANC'
+    }),
+    /Зал отчёта не относится/
   );
 });
 
