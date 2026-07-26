@@ -27,6 +27,8 @@ cd "${PROJECT_DIR}"
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable npm run db:migrate
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${PROJECT_DIR}/test/fixtures/booking-state-postgres.json"
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  npm run db:verify-parity -- --source "${PROJECT_DIR}/test/fixtures/booking-state-postgres.json"
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable npm run db:migrate
 
 psql "${PG_URL}" -v ON_ERROR_STOP=1 -Atc "

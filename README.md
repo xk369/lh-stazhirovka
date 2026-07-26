@@ -165,14 +165,23 @@ Import a copied JSON state into that empty database:
 DATABASE_URL=postgres://... npm run db:import-json -- --source /absolute/path/to/db.json
 ```
 
+Read the imported state back from PostgreSQL and compare every business field:
+
+```bash
+DATABASE_URL=postgres://... npm run db:verify-parity -- --source /absolute/path/to/db.json
+```
+
 The importer runs in one transaction, refuses a non-empty target, preserves
 legacy IDs, relationships and status distribution, and rolls back if count
 verification fails. It also refuses unknown JSON fields so a future production
-field cannot be silently discarded. See `docs/POSTGRES_MIGRATION_ROADMAP.md`
-before using it.
+field cannot be silently discarded. The parity verifier treats missing and
+empty optional values as equivalent, but strictly checks dates, statuses,
+relationships and non-empty business fields. See
+`docs/POSTGRES_MIGRATION_ROADMAP.md` before using either tool.
 
 On a machine with local PostgreSQL binaries, run the real migration/import
-smoke test against a temporary database:
+smoke test against a temporary database. This includes reverse reading and
+field-level parity verification:
 
 ```bash
 npm run test:postgres

@@ -5,6 +5,10 @@ import {
   auditBookingStateShape,
   buildBookingImportPlan
 } from '../src/postgres/import-booking-state.js';
+import {
+  bookingStateParitySnapshot,
+  verifyBookingStateParity
+} from '../src/postgres/read-booking-state.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -133,5 +137,40 @@ test('JSON import refuses unknown fields instead of silently losing them', () =>
   assert.throws(
     () => auditBookingStateShape(source),
     /applications\[0\]\.futureImportantField/
+  );
+});
+
+test('PostgreSQL parity snapshot ignores storage-only ordering and timestamps', () => {
+  const source = sourceState();
+  const restored = structuredClone(source);
+  restored.applications.reverse();
+  restored.applications.forEach(application => {
+    application.createdAt = '2026-07-26T19:00:00.000Z';
+  });
+  restored.inviteGroups[0].memberIds.reverse();
+
+  assert.deepEqual(
+    bookingStateParitySnapshot(restored),
+    bookingStateParitySnapshot(source)
+  );
+  assert.deepEqual(verifyBookingStateParity(source, restored), {
+    shifts: 1,
+    applications: 2,
+    inviteGroups: 1,
+    statuses: {
+      feedback: 1,
+      passed: 1
+    }
+  });
+});
+
+test('PostgreSQL parity verification rejects a changed business field', () => {
+  const source = sourceState();
+  const restored = structuredClone(source);
+  restored.applications[0].phone = '+7 000 000-00-00';
+
+  assert.throws(
+    () => verifyBookingStateParity(source, restored),
+    /state\.applications\.0\.phone/
   );
 });

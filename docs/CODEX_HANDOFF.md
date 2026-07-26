@@ -21,9 +21,13 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - This branch is not deployed to production.
 - Production still reads and writes only `data/db.json`.
 - PostgreSQL schema/import tools are isolated and require an explicit `DATABASE_URL`.
-- Last local verification: `npm test` passed 91 tests; `npm run test:postgres`
-  applied the schema, imported a fixture, verified counts/statuses and rejected
-  a repeated import against a temporary PostgreSQL 14 database.
+- Last local verification: `npm test` passed 93 tests; `npm run test:postgres`
+  applied the schema, imported a fixture, reconstructed booking state from
+  PostgreSQL, verified field-level parity and rejected a repeated import
+  against a temporary PostgreSQL 14 database.
+- The parity verifier has not yet been run against a fresh copy of the actual
+  production `data/db.json`; that remains mandatory before any staging read
+  switch.
 
 ## Report Routing
 
@@ -64,6 +68,8 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `db/migrations/001_initial.sql` - первая целевая PostgreSQL-схема; прод ее пока не использует.
 - `scripts/db-migrate.js` - применяет неизменяемые SQL-миграции к `DATABASE_URL`.
 - `scripts/import-booking-json.js` - импортирует копию JSON в пустую PostgreSQL-БД транзакционно.
+- `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
+- `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
 - `src/report.js` - report role validation and chat routing.
 - `src/telegram.js` - Telegram initData validation and Telegram send helpers.
 - `test/booking-state.test.js` - state command and status-flow tests.
