@@ -24,24 +24,31 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - `BOOKING_STORAGE_MODE=json` is the production-safe default.
   `postgres_readonly` is allowed only in migration staging and rejects writes
   with `503 BOOKING_STORAGE_READ_ONLY`.
-- Last local verification: `npm test` passed 99 tests; `npm run test:postgres`
+- Last local verification: `npm test` passed 100 tests; `npm run test:postgres`
   applied the schema, imported a fixture, reconstructed booking state from
   PostgreSQL, verified field-level parity, started the real server in
   `postgres_readonly + dry_run`, proved reads and dry-run report paths, rejected
   a write with `503`, and rejected a repeated import against a temporary
   PostgreSQL 14 database.
-- On 2026-07-26 the isolated importer/parity verifier passed against a fresh
-  read-only copy of production state version 912: 15 shifts, 79 applications,
-  35 invite groups, 37 memberships and 20 mentor reports. The temporary copy
-  containing PII was deleted after the check.
-- This verification did not connect PostgreSQL to the application runtime and
-  did not write to the production server.
-- Planned migration staging is isolated on host port `3502`, container names
-  prefixed with `loft-internship-*-migration-staging`, and its own PostgreSQL
-  volume. Deployment instructions are in `deploy/MIGRATION_STAGING.md`.
-- GitHub publication is currently pending because local `gh auth status`
-  reports an expired token for `xk369`. Do not work around this by merging into
-  `main`; re-authenticate and push only `migration/postgres-foundation`.
+- On 2026-07-27 migration staging imported a fresh production snapshot at
+  state version 912: 15 shifts, 79 applications, 35 invite groups,
+  37 memberships and 20 mentor reports. Field-level parity passed before the
+  application was started. The temporary JSON copy containing PII was deleted
+  after the check.
+- Migration staging is deployed at
+  `https://stazhirovka-migration.151.244.243.164.sslip.io` from commit
+  `6c2af21`, server path `/opt/loft-hall-internship-migration-staging`.
+- Its app is bound to `127.0.0.1:3502`; containers are
+  `loft-internship-app-migration-staging` and
+  `loft-internship-postgres-migration-staging`; PostgreSQL uses the dedicated
+  `loft-internship-postgres-migration-staging-data` volume.
+- Server smoke checks proved recruiter reads from PostgreSQL, booking-state
+  writes return `503 BOOKING_STORAGE_READ_ONLY`, report delivery returns
+  `messageId: null`, personal notifications are skipped as
+  `telegram_delivery_dry_run`, and state remains version 912.
+- Branch `migration/postgres-foundation` is published in draft PR #3. Do not
+  merge it into `main` until staging QA and the writable Postgres design are
+  approved.
 
 ## Report Routing
 

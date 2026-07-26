@@ -6,6 +6,12 @@ This contour is separate from:
 - mentor-manual staging: port `3501`;
 - migration staging: port `3502`.
 
+Current deployment:
+
+- URL: `https://stazhirovka-migration.151.244.243.164.sslip.io`;
+- server path: `/opt/loft-hall-internship-migration-staging`;
+- branch: `migration/postgres-foundation`.
+
 Production must not be stopped, rebuilt or connected to this PostgreSQL
 database.
 

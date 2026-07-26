@@ -438,10 +438,14 @@ Event log нужен, чтобы расследовать жалобы без р
 
 - [x] Добавить явный `BOOKING_STORAGE_MODE=postgres_readonly` без изменения
   production default `json`.
-- Переключить отдельный migration staging на чтение из Postgres.
+- [x] Переключить отдельный migration staging на чтение из Postgres:
+  `stazhirovka-migration.151.244.243.164.sslip.io`, commit `6c2af21`,
+  отдельные app/DB containers и volume, host port `3502`.
 - JSON оставить офлайн-бэкапом для управляемого rollback; автоматического
   fallback между источниками истины не делать.
-- Прогнать полный QA.
+- [x] Прогнать server smoke: signed recruiter read, write rejection, dry-run
+  report/notification, state immutability, internal/public health.
+- Прогнать полный UI/role QA до перехода к записи в Postgres.
 
 ### Этап D: запись в Postgres на staging
 
