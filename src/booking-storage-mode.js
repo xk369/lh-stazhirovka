@@ -1,0 +1,23 @@
+export const BOOKING_STORAGE_MODES = Object.freeze({
+  JSON: 'json',
+  POSTGRES_READONLY: 'postgres_readonly'
+});
+
+export function bookingStorageMode(env = process.env) {
+  const mode = String(env.BOOKING_STORAGE_MODE || BOOKING_STORAGE_MODES.JSON)
+    .trim()
+    .toLowerCase();
+  if (!Object.values(BOOKING_STORAGE_MODES).includes(mode)) {
+    throw new Error('BOOKING_STORAGE_MODE must be "json" or "postgres_readonly".');
+  }
+  return mode;
+}
+
+export class BookingStorageReadOnlyError extends Error {
+  constructor() {
+    super('Хранилище staging работает только для чтения.');
+    this.name = 'BookingStorageReadOnlyError';
+    this.status = 503;
+    this.code = 'BOOKING_STORAGE_READ_ONLY';
+  }
+}

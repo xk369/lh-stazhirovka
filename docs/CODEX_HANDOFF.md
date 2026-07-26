@@ -21,16 +21,27 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - This branch is not deployed to production.
 - Production still reads and writes only `data/db.json`.
 - PostgreSQL schema/import tools are isolated and require an explicit `DATABASE_URL`.
-- Last local verification: `npm test` passed 93 tests; `npm run test:postgres`
+- `BOOKING_STORAGE_MODE=json` is the production-safe default.
+  `postgres_readonly` is allowed only in migration staging and rejects writes
+  with `503 BOOKING_STORAGE_READ_ONLY`.
+- Last local verification: `npm test` passed 99 tests; `npm run test:postgres`
   applied the schema, imported a fixture, reconstructed booking state from
-  PostgreSQL, verified field-level parity and rejected a repeated import
-  against a temporary PostgreSQL 14 database.
+  PostgreSQL, verified field-level parity, started the real server in
+  `postgres_readonly + dry_run`, proved reads and dry-run report paths, rejected
+  a write with `503`, and rejected a repeated import against a temporary
+  PostgreSQL 14 database.
 - On 2026-07-26 the isolated importer/parity verifier passed against a fresh
   read-only copy of production state version 912: 15 shifts, 79 applications,
   35 invite groups, 37 memberships and 20 mentor reports. The temporary copy
   containing PII was deleted after the check.
 - This verification did not connect PostgreSQL to the application runtime and
   did not write to the production server.
+- Planned migration staging is isolated on host port `3502`, container names
+  prefixed with `loft-internship-*-migration-staging`, and its own PostgreSQL
+  volume. Deployment instructions are in `deploy/MIGRATION_STAGING.md`.
+- GitHub publication is currently pending because local `gh auth status`
+  reports an expired token for `xk369`. Do not work around this by merging into
+  `main`; re-authenticate and push only `migration/postgres-foundation`.
 
 ## Report Routing
 
@@ -77,6 +88,9 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `scripts/import-booking-json.js` - импортирует копию JSON в пустую PostgreSQL-БД транзакционно.
 - `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
 - `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
+- `src/booking-storage-mode.js` - явный выбор `json`/`postgres_readonly` и стабильная ошибка запрета записи.
+- `deploy/docker-compose.migration-staging.yml` - отдельные app/PostgreSQL-контейнеры для read-only migration staging.
+- `deploy/MIGRATION_STAGING.md` - безопасный порядок импорта, проверки и запуска staging.
 - `src/report.js` - report role validation and chat routing.
 - `src/telegram.js` - Telegram initData validation and Telegram send helpers.
 - `test/booking-state.test.js` - state command and status-flow tests.

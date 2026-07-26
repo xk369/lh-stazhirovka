@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { normalizeBookingState } from '../server.js';
+import { normalizeBookingState } from '../booking-state.js';
 
 function legacyId(value, field) {
   const id = Number(value);

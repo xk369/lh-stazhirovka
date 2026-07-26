@@ -37,6 +37,9 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:verify-parity -- --source "${SOURCE_PATH}"
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable npm run db:migrate
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  PG_READONLY_TEST_PORT="$((PG_TEST_PORT + 1))" \
+  node scripts/postgres-readonly-runtime-smoke.js
 
 if [[ "${SOURCE_PATH}" == "${DEFAULT_SOURCE_PATH}" ]]; then
   psql "${PG_URL}" -v ON_ERROR_STOP=1 -Atc "

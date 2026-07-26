@@ -436,8 +436,11 @@ Event log нужен, чтобы расследовать жалобы без р
 
 ### Этап C: чтение из Postgres на staging
 
-- Переключить staging на чтение из Postgres.
-- JSON оставить как backup/fallback.
+- [x] Добавить явный `BOOKING_STORAGE_MODE=postgres_readonly` без изменения
+  production default `json`.
+- Переключить отдельный migration staging на чтение из Postgres.
+- JSON оставить офлайн-бэкапом для управляемого rollback; автоматического
+  fallback между источниками истины не делать.
 - Прогнать полный QA.
 
 ### Этап D: запись в Postgres на staging

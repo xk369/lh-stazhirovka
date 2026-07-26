@@ -151,7 +151,11 @@ https://ваш-домен/booking
 ## PostgreSQL migration contour
 
 The production runtime still uses `data/db.json`. PostgreSQL support in this
-branch is an isolated migration contour and is not read by `src/server.js`.
+branch is an isolated migration contour. `BOOKING_STORAGE_MODE=json` remains
+the default. Migration staging can explicitly use
+`BOOKING_STORAGE_MODE=postgres_readonly`; this reads the imported PostgreSQL
+state but rejects every booking-state change with
+`503 BOOKING_STORAGE_READ_ONLY`.
 
 Apply the schema to an empty staging database:
 
@@ -205,3 +209,7 @@ TELEGRAM_DELIVERY_MODE=dry_run
 blocks every outbound message and photo, including reports to Telegram groups,
 while preserving validation, formatted-message fingerprints and state changes.
 The active mode is exposed by `/api/health`.
+
+The isolated server layout and first-import sequence are documented in
+`deploy/MIGRATION_STAGING.md`. It uses host port `3502`, a dedicated
+PostgreSQL volume and no host PostgreSQL port.

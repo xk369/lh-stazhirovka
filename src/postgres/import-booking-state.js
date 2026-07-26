@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { normalizeBookingState } from '../server.js';
+import { normalizeBookingState } from '../booking-state.js';
 
 const ROOT_FIELDS = new Set(['version', 'updatedAt', 'shifts', 'applications', 'inviteGroups']);
 const SHIFT_FIELDS = new Set(['id', 'date', 'seats', 'open', 'canceled', 'canceledAt', 'status']);

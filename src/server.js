@@ -31,11 +31,25 @@ import {
   canRecruiterSetApplicationStatus,
   normalizeBookingStatus
 } from './booking-state-machine.js';
+import {
+  normalizeBookingState,
+  normalizeStateVersion,
+  normalizeUpdatedAt,
+  withStateMetadata
+} from './booking-state.js';
+import {
+  BOOKING_STORAGE_MODES,
+  BookingStorageReadOnlyError,
+  bookingStorageMode
+} from './booking-storage-mode.js';
+import { createPostgresPool } from './postgres/connection.js';
+import { readBookingStateFromPostgres } from './postgres/read-booking-state.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '../public');
 const configuredTelegramDeliveryMode = telegramDeliveryMode();
+const configuredBookingStorageMode = bookingStorageMode();
 
 const config = {
   port: Number(process.env.PORT || 3000),
@@ -45,6 +59,7 @@ const config = {
   mentorChatId: String(process.env.MENTOR_CHAT_ID || '').trim(),
   initDataTtlSeconds: Number(process.env.INIT_DATA_TTL_SECONDS || 86_400),
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
+  bookingStorageMode: configuredBookingStorageMode,
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
   telegramDeliveryMode: configuredTelegramDeliveryMode,
   telegramPollingEnabled: (
@@ -57,6 +72,7 @@ const config = {
 const telegramDelivery = createTelegramDelivery({ mode: config.telegramDeliveryMode });
 
 const dbPath = path.join(config.dataDir, 'db.json');
+let postgresBookingPool = null;
 let telegramOffset = 0;
 
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
@@ -150,6 +166,12 @@ function assertConfig() {
   }
   if (!config.host) {
     throw new Error('HOST must not be empty.');
+  }
+  if (
+    config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+    && !String(process.env.DATABASE_URL || '').trim()
+  ) {
+    throw new Error('DATABASE_URL is required for postgres_readonly booking storage.');
   }
 }
 
@@ -291,27 +313,6 @@ function seedBookingState() {
       }
     ],
     inviteGroups: []
-  };
-}
-
-function normalizeStateVersion(value) {
-  const version = Number(value);
-  return Number.isSafeInteger(version) && version > 0 ? version : 1;
-}
-
-function normalizeUpdatedAt(value) {
-  if (typeof value !== 'string' || !value.trim()) return new Date(0).toISOString();
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
-}
-
-function withStateMetadata(state, source = state) {
-  return {
-    version: normalizeStateVersion(source?.version),
-    updatedAt: normalizeUpdatedAt(source?.updatedAt),
-    shifts: Array.isArray(state?.shifts) ? state.shifts : [],
-    applications: Array.isArray(state?.applications) ? state.applications : [],
-    inviteGroups: Array.isArray(state?.inviteGroups) ? state.inviteGroups : []
   };
 }
 
@@ -1692,25 +1693,22 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
   return validateBookingStateForWrite(touchBookingState(nextState, now));
 }
 
-async function ensureDb() {
+function bookingPostgresPool() {
+  if (!postgresBookingPool) postgresBookingPool = createPostgresPool();
+  return postgresBookingPool;
+}
+
+async function ensureJsonDb() {
   await fs.mkdir(config.dataDir, { recursive: true });
   try {
     await fs.access(dbPath);
   } catch {
-    await writeBookingState(seedBookingState());
+    await writeJsonBookingState(seedBookingState());
   }
 }
 
-function normalizeBookingState(state) {
-  return withStateMetadata({
-    shifts: Array.isArray(state?.shifts) ? state.shifts : [],
-    applications: Array.isArray(state?.applications) ? state.applications : [],
-    inviteGroups: Array.isArray(state?.inviteGroups) ? state.inviteGroups : []
-  }, state);
-}
-
-async function readBookingState() {
-  await ensureDb();
+async function readJsonBookingState() {
+  await ensureJsonDb();
   try {
     const raw = await fs.readFile(dbPath, 'utf8');
     return normalizeBookingState(JSON.parse(raw));
@@ -1723,17 +1721,39 @@ async function readBookingState() {
       console.error('Booking state file was corrupted and could not be moved', renameError);
     }
     console.error('Booking state read failed:', error);
-    return writeBookingState(seedBookingState());
+    return writeJsonBookingState(seedBookingState());
   }
 }
 
-async function writeBookingState(state) {
+async function writeJsonBookingState(state) {
   const cleanState = validateBookingStateForWrite(state);
   await fs.mkdir(config.dataDir, { recursive: true });
   const tempPath = `${dbPath}.tmp`;
   await fs.writeFile(tempPath, JSON.stringify(cleanState, null, 2), 'utf8');
   await fs.rename(tempPath, dbPath);
   return cleanState;
+}
+
+async function ensureBookingStorage() {
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON) {
+    await ensureJsonDb();
+    return;
+  }
+  await readBookingStateFromPostgres(bookingPostgresPool());
+}
+
+async function readBookingState() {
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
+    return readBookingStateFromPostgres(bookingPostgresPool());
+  }
+  return readJsonBookingState();
+}
+
+async function writeBookingState(state) {
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
+    throw new BookingStorageReadOnlyError();
+  }
+  return writeJsonBookingState(state);
 }
 
 function injectBookingState(html, state) {
@@ -1853,7 +1873,9 @@ app.get('/api/health', (_request, response) => {
   response.json({
     ok: true,
     service: 'loft-hall-internship-unified',
-    telegramDeliveryMode: config.telegramDeliveryMode
+    telegramDeliveryMode: config.telegramDeliveryMode,
+    bookingStorageMode: config.bookingStorageMode,
+    bookingStorageWritable: config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON
   });
 });
 
@@ -2335,6 +2357,10 @@ app.post('/api/report', async (request, response) => {
       traineeMessage
     });
   } catch (error) {
+    if (error instanceof BookingStorageReadOnlyError) {
+      response.status(error.status).json({ ok: false, error: error.message, code: error.code });
+      return;
+    }
     if (error instanceof TelegramAuthError) {
       response.status(401).json({ ok: false, error: error.message, code: error.code });
       return;
@@ -2406,6 +2432,10 @@ app.get(/.*/, (_request, response) => {
 });
 
 app.use((error, _request, response, _next) => {
+  if (error instanceof BookingStorageReadOnlyError) {
+    response.status(error.status).json({ ok: false, error: error.message, code: error.code });
+    return;
+  }
   if (error instanceof BookingConflictError) {
     response.status(409).json({ ok: false, error: error.message, code: error.code });
     return;
@@ -2441,7 +2471,7 @@ const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __file
 
 if (isMainModule) {
   assertConfig();
-  await ensureDb();
+  await ensureBookingStorage();
 
   const server = app.listen(config.port, config.host, error => {
     if (error) {
