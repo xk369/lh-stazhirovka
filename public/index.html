@@ -2209,6 +2209,8 @@
         const parts = [
           trainee.name,
           trainee.date ? formatDate(trainee.date) : '',
+          BOOKING_VENUE_LABELS[trainee.venueId] || '',
+          trainee.telegramUsername || '',
           trainee.statusLabel || ''
         ].filter(Boolean);
         return parts.join(' · ');
@@ -2685,10 +2687,27 @@
       }
       function validateReport() {
         if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
-        if (state.role === 'mentor' && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка приглашённых.', 'error'); return false }
+        if (state.role === 'mentor') {
+          const selected = selectedMentorTrainee();
+          if (!selected) { showStatus('Выберите стажёра из списка приглашённых.', 'error'); return false }
+          applyMentorTraineeProfile(selected, { save: false });
+        }
         const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
         const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
         return true;
+      }
+      function reportTargetConfirmationText() {
+        if (state.role !== 'mentor') return 'Отправить итоговый отчёт в рабочую группу?';
+        const trainee = selectedMentorTrainee();
+        if (!trainee) return 'Отправить итоговый отчёт в рабочую группу?';
+        return [
+          'Отправить отчёт наставника именно по этому стажёру?',
+          '',
+          trainee.name || 'Стажёр',
+          trainee.date ? `Дата: ${formatDate(trainee.date)}` : '',
+          trainee.telegramUsername ? `Telegram: ${trainee.telegramUsername}` : '',
+          BOOKING_VENUE_LABELS[trainee.venueId] ? `Площадка: ${BOOKING_VENUE_LABELS[trainee.venueId]}` : ''
+        ].filter(line => line !== '').join('\n');
       }
       function showStatus(text, type) { const el = $('#sendStatus'); el.textContent = text; el.className = `send-status show ${type}`; }
       function confirmAction(message) {
@@ -2705,6 +2724,11 @@
       async function postReport() {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
+        const mentorTrainee = state.role === 'mentor' ? selectedMentorTrainee() : null;
+        if (state.role === 'mentor' && !mentorTrainee) {
+          clearTimeout(timeout);
+          throw new Error('Выберите стажёра из списка приглашённых.');
+        }
         try {
           const response = await fetch('/api/report', {
             method: 'POST',
@@ -2713,7 +2737,8 @@
               initData: tg?.initData || '',
               role: state.role,
               reportText: reportText(),
-              applicationId: state.role === 'mentor' ? state.profile.traineeApplicationId : undefined,
+              applicationId: mentorTrainee ? mentorTrainee.applicationId : undefined,
+              mentorTraineeName: mentorTrainee ? mentorTrainee.name : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
               mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined
@@ -2746,7 +2771,7 @@
         btn.disabled = true;
         let sent = false;
         try {
-          const confirmed = await confirmAction('Отправить итоговый отчёт в рабочую группу?');
+          const confirmed = await confirmAction(reportTargetConfirmationText());
           if (!confirmed) return;
 
           btn.classList.add('is-loading');

@@ -794,6 +794,23 @@ function telegramUsernameDisplay(value) {
   return username ? `@${username}` : '';
 }
 
+function comparablePersonName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function ensureMentorReportTargetMatches(application, submittedName) {
+  const expectedName = comparablePersonName(application?.name);
+  const receivedName = comparablePersonName(submittedName);
+  if (expectedName && receivedName && expectedName !== receivedName) {
+    throw new BookingValidationError('Выбранный стажёр не совпадает с заявкой. Обновите список и выберите стажёра заново.');
+  }
+}
+
 function applicationHasInviteGroup(application) {
   return Boolean(application?.inviteGroupId || application?.groupLink);
 }
@@ -2128,6 +2145,7 @@ app.post('/api/report', async (request, response) => {
     const reportText = normalizeReportText(request.body?.reportText);
     const chatId = resolveChatId(role, config);
     const applicationId = request.body?.applicationId;
+    const mentorTraineeName = normalizeOptionalText(request.body?.mentorTraineeName, 'mentorTraineeName', 180);
     const mentorDecision = normalizeOptionalText(request.body?.mentorDecision, 'mentorDecision', 120);
     const mentorCommentForTrainee = normalizeOptionalText(
       request.body?.mentorCommentForTrainee,
@@ -2143,6 +2161,7 @@ app.post('/api/report', async (request, response) => {
     if (role === 'mentor') {
       const state = await readBookingState();
       mentorApplication = requireMentorReportApplication(state, applicationId);
+      ensureMentorReportTargetMatches(mentorApplication, mentorTraineeName);
     }
 
     const message = await sendTelegramMessage({
@@ -2278,6 +2297,7 @@ export {
   composeMentorTraineeResultMessage,
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
+  ensureMentorReportTargetMatches,
   mentorTraineesFromState,
   normalizeBookingState,
   shiftCapacityChangeNotificationPlan,
