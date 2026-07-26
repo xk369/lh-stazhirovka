@@ -197,7 +197,11 @@ Every staging copy with production-like data must set:
 
 ```env
 SUPPRESS_TRAINEE_NOTIFICATIONS=yes
+TELEGRAM_DELIVERY_MODE=dry_run
 ```
 
-This skips personal messages to trainees while keeping staging state changes
-and report delivery to the staging report groups available for testing.
+`SUPPRESS_TRAINEE_NOTIFICATIONS=yes` skips personal messages only.
+`TELEGRAM_DELIVERY_MODE=dry_run` is the stronger migration-staging guard: it
+blocks every outbound message and photo, including reports to Telegram groups,
+while preserving validation, formatted-message fingerprints and state changes.
+The active mode is exposed by `/api/health`.

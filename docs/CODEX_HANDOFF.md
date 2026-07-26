@@ -54,6 +54,10 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - Keep `docs/POSTGRES_MIGRATION_ROADMAP.md` current while planning or implementing the Postgres/event-log migration.
 - Do not start the Postgres migration directly on production. Use a fresh branch from `origin/main`, a staging copy, copied prod data, and `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
 - `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` is enforced by `src/notification-policy.js`; it skips every personal trainee delivery path, including `/api/notify` and mentor results.
+- Migration staging must also set `TELEGRAM_DELIVERY_MODE=dry_run`. This blocks
+  both personal notifications and reports to Telegram groups through the
+  centralized `src/telegram-delivery.js` gateway. Production defaults to
+  `TELEGRAM_DELIVERY_MODE=live`.
 - Before each production deploy:
   - run `npm test`;
   - run `git diff --check`;

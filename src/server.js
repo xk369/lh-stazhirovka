@@ -6,10 +6,13 @@ import express from 'express';
 import helmet from 'helmet';
 import {
   TelegramAuthError,
-  sendTelegramMessage,
-  sendTelegramPhoto,
   validateTelegramInitData
 } from './telegram.js';
+import {
+  TELEGRAM_DELIVERY_MODES,
+  createTelegramDelivery,
+  telegramDeliveryMode
+} from './telegram-delivery.js';
 import { normalizeReportText, normalizeRole, resolveChatId } from './report.js';
 import {
   suppressedTraineeNotification,
@@ -32,6 +35,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '../public');
+const configuredTelegramDeliveryMode = telegramDeliveryMode();
 
 const config = {
   port: Number(process.env.PORT || 3000),
@@ -42,10 +46,15 @@ const config = {
   initDataTtlSeconds: Number(process.env.INIT_DATA_TTL_SECONDS || 86_400),
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
-  telegramPollingEnabled: process.env.TELEGRAM_POLLING === 'yes',
+  telegramDeliveryMode: configuredTelegramDeliveryMode,
+  telegramPollingEnabled: (
+    process.env.TELEGRAM_POLLING === 'yes'
+    && configuredTelegramDeliveryMode === TELEGRAM_DELIVERY_MODES.LIVE
+  ),
   suppressTraineeNotifications: traineeNotificationsSuppressed(),
   recruiterTelegramIds: parseTelegramIdSet(process.env.RECRUITER_TELEGRAM_IDS || '')
 };
+const telegramDelivery = createTelegramDelivery({ mode: config.telegramDeliveryMode });
 
 const dbPath = path.join(config.dataDir, 'db.json');
 let telegramOffset = 0;
@@ -166,6 +175,16 @@ function serializeTelegramUser(user) {
 
 function bookingRoleForTelegramUser(user) {
   return config.recruiterTelegramIds.has(String(user.id)) ? 'recruiter' : 'trainee';
+}
+
+function traineeNotificationSuppressionReason() {
+  if (config.telegramDeliveryMode === TELEGRAM_DELIVERY_MODES.DRY_RUN) {
+    return 'telegram_delivery_dry_run';
+  }
+  if (config.suppressTraineeNotifications) {
+    return 'trainee_notifications_suppressed';
+  }
+  return '';
 }
 
 function initDataFromRequest(request) {
@@ -974,16 +993,20 @@ async function sendBookingStageChangedToTrainee(application, previousStatus) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
-  if (config.suppressTraineeNotifications) {
-    return suppressedTraineeNotification(application.id);
+  const suppressionReason = traineeNotificationSuppressionReason();
+  if (suppressionReason) {
+    return suppressedTraineeNotification(application.id, suppressionReason);
   }
   try {
-    const message = await sendTelegramMessage({
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId: application.telegramChatId,
       text: composeBookingStageChangedMessage(application, previousStatus),
       parseMode: 'HTML',
       disableWebPagePreview: true
+    }, {
+      context: 'booking_stage_changed',
+      chatTarget: 'trainee'
     });
     return { ok: true, status: 'sent', messageId: message.message_id };
   } catch (error) {
@@ -1023,16 +1046,20 @@ async function sendShiftCancellationToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
-    if (config.suppressTraineeNotifications) {
-      return suppressedTraineeNotification(application.id);
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      return suppressedTraineeNotification(application.id, suppressionReason);
     }
     try {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text: composeShiftCancellationMessage(shift),
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'shift_cancellation',
+        chatTarget: 'trainee'
       });
       return { applicationId: application.id, status: 'sent' };
     } catch (error) {
@@ -1053,16 +1080,20 @@ async function sendShiftCapacityChangedToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
-    if (config.suppressTraineeNotifications) {
-      return suppressedTraineeNotification(application.id);
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      return suppressedTraineeNotification(application.id, suppressionReason);
     }
     try {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text: composeShiftCapacityChangedMessage(shift),
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'shift_capacity_changed',
+        chatTarget: 'trainee'
       });
       return { applicationId: application.id, status: 'sent' };
     } catch (error) {
@@ -1085,20 +1116,24 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
-  if (config.suppressTraineeNotifications) {
+  const suppressionReason = traineeNotificationSuppressionReason();
+  if (suppressionReason) {
     return {
-      ...suppressedTraineeNotification(application.id),
+      ...suppressedTraineeNotification(application.id, suppressionReason),
       sentAt: now.toISOString()
     };
   }
 
   try {
-    const message = await sendTelegramMessage({
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId: application.telegramChatId,
       text: composeMentorTraineeResultMessage(application, resultPayload),
       parseMode: 'HTML',
       disableWebPagePreview: true
+    }, {
+      context: 'mentor_result',
+      chatTarget: 'trainee'
     });
     return {
       ok: true,
@@ -1770,12 +1805,15 @@ async function pollTelegram() {
       if (!match || !chatId) continue;
 
       const registered = await registerTelegramChat(match[1], chatId);
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId,
         text: registered
           ? 'Telegram подключен. Теперь сюда будут приходить уведомления по стажировке.'
           : 'Не нашел вашу заявку. Сначала заполните данные и выберите дату в форме записи.'
+      }, {
+        context: 'bot_start_reply',
+        chatTarget: 'trainee'
       });
     }
   } catch (error) {
@@ -1812,7 +1850,11 @@ app.get('/health', (_request, response) => {
 });
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, service: 'loft-hall-internship-unified' });
+  response.json({
+    ok: true,
+    service: 'loft-hall-internship-unified',
+    telegramDeliveryMode: config.telegramDeliveryMode
+  });
 });
 
 app.get('/api/state', async (request, response, next) => {
@@ -2000,28 +2042,40 @@ app.post('/api/notify', async (request, response, next) => {
       response.json({ ok: false, skipped: 'telegram_chat_missing' });
       return;
     }
-    if (config.suppressTraineeNotifications) {
-      response.json({ ok: false, skipped: 'trainee_notifications_suppressed' });
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      response.json({
+        ok: true,
+        status: 'skipped',
+        skipped: suppressionReason,
+        telegramDeliveryMode: config.telegramDeliveryMode
+      });
       return;
     }
 
     const photoUrl = absoluteAssetUrl(request, photo);
     if (photoUrl) {
-      await sendTelegramPhoto({
+      await telegramDelivery.sendPhoto({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         photo: photoUrl,
         caption: photoCaption || '',
         parseMode: 'HTML'
+      }, {
+        context: 'recruiter_notification_photo',
+        chatTarget: 'trainee'
       });
     }
     if (text) {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text,
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'recruiter_notification_text',
+        chatTarget: 'trainee'
       });
     }
 
@@ -2223,10 +2277,14 @@ app.post('/api/report', async (request, response) => {
       );
     }
 
-    const message = await sendTelegramMessage({
+    const reportChatTarget = role === 'mentor' ? 'mentor_report_group' : 'trainee_report_group';
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId,
       text: reportText
+    }, {
+      context: `${role}_report`,
+      chatTarget: reportChatTarget
     });
     let traineeMessage = null;
 
@@ -2264,12 +2322,18 @@ app.post('/api/report', async (request, response) => {
         applicationId: role === 'mentor' ? applicationId : undefined,
         chatTarget: role === 'mentor' ? 'MENTOR_CHAT_ID' : 'TRAINEE_CHAT_ID',
         telegramMessageId: message.message_id,
+        telegramDeliveryMode: config.telegramDeliveryMode,
         traineeMessageStatus: traineeMessage?.status,
         timestamp: new Date().toISOString()
       })
     );
 
-    response.json({ ok: true, messageId: message.message_id, traineeMessage });
+    response.json({
+      ok: true,
+      messageId: message.message_id,
+      telegramDeliveryMode: config.telegramDeliveryMode,
+      traineeMessage
+    });
   } catch (error) {
     if (error instanceof TelegramAuthError) {
       response.status(401).json({ ok: false, error: error.message, code: error.code });
