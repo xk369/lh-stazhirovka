@@ -149,6 +149,19 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `migration/postgres-foundation`, moved seat-holding status usage to the
   shared state-machine source, added real PostgreSQL write smoke for increasing
   seats and rejecting shrink-below-usage, and raised migration progress to 52%.
+- 2026-07-29 (Claude, branch `migration/postgres-write-status-claude`): added
+  a transactional `set_application_status` Postgres write path for Codex
+  review. Recruiter-only, `FOR UPDATE` on `booking_state_meta` and on the
+  target `applications` row, reuses `canRecruiterSetApplicationStatus` from
+  the shared state machine, guards `feedback`/`noshow`/`invited` by
+  `invite_group_id OR group_link`, requires `shift_id` for the `confirmed`
+  target, refuses the `→ pending` back transitions until a dedicated command
+  exists, writes the matching audit event and (if applicable) a
+  `shift_auto_closed` event in the same transaction, updates
+  `applications.status`, `experience`, `row_version` and bumps the meta
+  version. Wired through the Postgres write adapter and covered by a live
+  Postgres write smoke inside `npm run test:postgres`. Still not wired into
+  `src/server.js`, no Telegram/outbox/notifications changes, no deploy.
 
 ## Documentation Audit
 

@@ -57,6 +57,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-create-shift-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-shift-capacity-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-set-application-status-write-smoke.js
 
 if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${SOURCE_PATH}" \

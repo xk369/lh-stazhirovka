@@ -5,6 +5,7 @@ import {
   PostgresCommandConflictError,
   PostgresCommandValidationError,
   createShiftInPostgres,
+  setApplicationStatusInPostgres,
   updateShiftCapacityInPostgres
 } from '../src/postgres/write-booking-command.js';
 
@@ -18,10 +19,18 @@ function fakePool({
   rollbackThrows = false
 } = {}) {
   const calls = [];
-  let existing = existingShifts.map(row => ({ ...row }));
+  const shifts = existingShifts.map(row => ({ ...row }));
   const apps = existingApplications.map(row => ({ ...row }));
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
+
+  function findAppByLegacyId(legacyId) {
+    return apps.find(app => Number(app.legacy_id) === Number(legacyId));
+  }
+  function findShiftByUuid(uuid) {
+    return shifts.find(row => String(row.id) === String(uuid));
+  }
+
   const client = {
     async query(sql, params = []) {
       calls.push({ sql, params });
@@ -35,21 +44,53 @@ function fakePool({
         return { rowCount: 1, rows: [{ version, updated_at: updatedAt }] };
       }
       if (/SELECT 1 FROM shifts WHERE date/.test(sql)) {
-        const hit = existing.find(row => row.date === params[0]);
+        const hit = shifts.find(row => row.date === params[0]);
         return { rowCount: hit ? 1 : 0, rows: hit ? [{ '?column?': 1 }] : [] };
       }
       if (/SELECT COALESCE\(MAX\(legacy_id\), 0\) AS max_legacy_id FROM shifts/.test(sql)) {
-        const max = existing.reduce((acc, row) => Math.max(acc, Number(row.legacy_id) || 0), 0);
+        const max = shifts.reduce((acc, row) => Math.max(acc, Number(row.legacy_id) || 0), 0);
         return { rowCount: 1, rows: [{ max_legacy_id: max }] };
       }
       if (/SELECT id, legacy_id, seats, date::text AS date/i.test(sql)) {
-        const row = existing.find(item => Number(item.legacy_id) === Number(params[0]));
+        const row = shifts.find(item => Number(item.legacy_id) === Number(params[0]));
         return { rowCount: row ? 1 : 0, rows: row ? [{
           id: row.id,
           legacy_id: row.legacy_id,
           seats: row.seats,
           date: row.date
         }] : [] };
+      }
+      if (/SELECT id, legacy_id, open, canceled, date::text AS date/i.test(sql)) {
+        const row = findShiftByUuid(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          open: row.open,
+          canceled: row.canceled,
+          date: row.date
+        }] : [] };
+      }
+      if (/SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience/i.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          status: row.status,
+          shift_id: row.shift_id,
+          invite_group_id: row.invite_group_id,
+          group_link: row.group_link,
+          experience: row.experience
+        }] : [] };
+      }
+      if (/SELECT status, mentor_report_received\s+FROM applications\s+WHERE shift_id/i.test(sql)) {
+        const shiftUuid = String(params[0]);
+        const rows = apps
+          .filter(app => String(app.shift_id) === shiftUuid)
+          .map(app => ({
+            status: app.status,
+            mentor_report_received: Boolean(app.mentor_report_received)
+          }));
+        return { rowCount: rows.length, rows };
       }
       if (/SELECT COUNT\(\*\)::int AS used\s+FROM applications/i.test(sql)) {
         const shiftUuid = String(params[0]);
@@ -60,22 +101,45 @@ function fakePool({
         return { rowCount: 1, rows: [{ used }] };
       }
       if (/INSERT INTO shifts/.test(sql)) {
-        existing.push({
+        shifts.push({
           id: params[0],
           legacy_id: params[1],
           date: params[2],
-          seats: params[3]
+          seats: params[3],
+          open: true,
+          canceled: false
         });
         return { rowCount: 1, rows: [] };
       }
       if (/UPDATE shifts\s+SET seats/i.test(sql)) {
         const seatsValue = Number(params[0]);
-        const updatedAtValue = params[1];
         const shiftUuid = String(params[2]);
-        const target = existing.find(row => String(row.id) === shiftUuid);
+        const target = findShiftByUuid(shiftUuid);
         if (target) {
           target.seats = seatsValue;
-          target.updated_at = updatedAtValue;
+          target.updated_at = params[1];
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE shifts\s+SET open = false/i.test(sql)) {
+        const shiftUuid = String(params[1]);
+        const target = findShiftByUuid(shiftUuid);
+        if (target) {
+          target.open = false;
+          target.updated_at = params[0];
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET status/i.test(sql)) {
+        const nextStatus = params[0];
+        const nextExperience = params[1];
+        const nowIso = params[2];
+        const appUuid = String(params[3]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.status = nextStatus;
+          target.experience = nextExperience;
+          target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
@@ -84,10 +148,16 @@ function fakePool({
         updatedAt = params[1];
         return { rowCount: 1, rows: [] };
       }
-      if (/FROM applications WHERE legacy_id/.test(sql)) return { rowCount: 0, rows: [] };
+      if (/FROM applications WHERE legacy_id = ANY/.test(sql)) {
+        const requested = new Set((params[0] || []).map(String));
+        const rows = apps
+          .filter(app => requested.has(String(app.legacy_id)))
+          .map(app => ({ legacy_id: app.legacy_id, id: app.id }));
+        return { rowCount: rows.length, rows };
+      }
       if (/FROM shifts WHERE legacy_id = ANY/.test(sql)) {
         const requested = new Set((params[0] || []).map(String));
-        const rows = existing
+        const rows = shifts
           .filter(row => requested.has(String(row.legacy_id)))
           .map(row => ({ legacy_id: row.legacy_id, id: row.id }));
         return { rowCount: rows.length, rows };
@@ -103,7 +173,8 @@ function fakePool({
     calls,
     getVersion: () => version,
     getUpdatedAt: () => updatedAt,
-    getShifts: () => existing,
+    getShifts: () => shifts,
+    getApplications: () => apps,
     async connect() {
       calls.push({ sql: 'CONNECT' });
       return client;
@@ -217,9 +288,6 @@ test('createShiftInPostgres rejects past dates before opening a transaction', as
 });
 
 test('createShiftInPostgres treats today by Europe/Moscow, not UTC', async () => {
-  // 2026-07-29T21:30:00.000Z is already 2026-07-30T00:30 in Moscow (UTC+3),
-  // so a shift for 2026-07-29 must be rejected as past even though UTC calendar
-  // still shows 2026-07-29.
   const pool = fakePool({ currentVersion: 10 });
   await assert.rejects(
     () => createShiftInPostgres({
@@ -232,9 +300,6 @@ test('createShiftInPostgres treats today by Europe/Moscow, not UTC', async () =>
   );
   assert.equal(pool.calls.length, 0);
 
-  // Same instant, the Moscow-today date (2026-07-30) is still accepted, so
-  // the check really depends on the Europe/Moscow calendar boundary and not
-  // just on a stricter comparison.
   const acceptingPool = fakePool({ currentVersion: 10 });
   const result = await createShiftInPostgres({
     pool: acceptingPool,
@@ -406,10 +471,10 @@ test('updateShiftCapacityInPostgres rejects seats lower than current usage and r
     currentVersion: 10,
     existingShifts: [{ ...shiftFixture, seats: 5 }],
     existingApplications: [
-      { shift_id: 'shift-uuid-1', status: 'pending' },
-      { shift_id: 'shift-uuid-1', status: 'confirmed' },
-      { shift_id: 'shift-uuid-1', status: 'invited' },
-      { shift_id: 'shift-uuid-1', status: 'queue' } // не занимает место — не должна учитываться
+      { id: 'a-1', legacy_id: 701, shift_id: 'shift-uuid-1', status: 'pending' },
+      { id: 'a-2', legacy_id: 702, shift_id: 'shift-uuid-1', status: 'confirmed' },
+      { id: 'a-3', legacy_id: 703, shift_id: 'shift-uuid-1', status: 'invited' },
+      { id: 'a-4', legacy_id: 704, shift_id: 'shift-uuid-1', status: 'queue' }
     ]
   });
   await assert.rejects(
@@ -435,9 +500,9 @@ test('updateShiftCapacityInPostgres accepts seats equal to current usage', async
     currentVersion: 10,
     existingShifts: [{ ...shiftFixture, seats: 5 }],
     existingApplications: [
-      { shift_id: 'shift-uuid-1', status: 'pending' },
-      { shift_id: 'shift-uuid-1', status: 'confirmed' },
-      { shift_id: 'shift-uuid-1', status: 'invited' }
+      { id: 'a-1', legacy_id: 701, shift_id: 'shift-uuid-1', status: 'pending' },
+      { id: 'a-2', legacy_id: 702, shift_id: 'shift-uuid-1', status: 'confirmed' },
+      { id: 'a-3', legacy_id: 703, shift_id: 'shift-uuid-1', status: 'invited' }
     ]
   });
   const result = await updateShiftCapacityInPostgres({
@@ -542,6 +607,336 @@ test('updateShiftCapacityInPostgres rejects non-recruiter actors before opening 
     }),
     err => err instanceof PostgresCommandAuthorizationError
       && err.code === 'POSTGRES_COMMAND_FORBIDDEN'
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// set_application_status
+// -----------------------------------------------------------------------------
+
+const openShift = {
+  id: 'shift-uuid-99',
+  legacy_id: 999,
+  date: '2026-08-05',
+  seats: 4,
+  open: true,
+  canceled: false
+};
+
+const pendingApp = {
+  id: 'app-uuid-1',
+  legacy_id: 1001,
+  shift_id: 'shift-uuid-99',
+  status: 'pending',
+  invite_group_id: null,
+  group_link: '',
+  experience: null,
+  mentor_report_received: false
+};
+
+const invitedApp = {
+  id: 'app-uuid-2',
+  legacy_id: 1002,
+  shift_id: 'shift-uuid-99',
+  status: 'invited',
+  invite_group_id: 'group-uuid-1',
+  group_link: 'https://t.me/+xyz',
+  experience: null,
+  mentor_report_received: false
+};
+
+test('setApplicationStatusInPostgres pending → confirmed emits recruiter_confirmed and bumps version', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...pendingApp }]
+  });
+  const now = new Date('2026-07-29T13:00:00.000Z');
+  const result = await setApplicationStatusInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'confirmed' },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.previousStatus, 'pending');
+  assert.equal(result.nextStatus, 'confirmed');
+  assert.equal(result.eventType, 'recruiter_confirmed');
+  assert.equal(result.shiftLegacyId, 999);
+  assert.equal(result.shiftAutoClosed, false);
+  assert.equal(result.version, 21);
+  assert.equal(result.updatedAt, now.toISOString());
+  assert.equal(pool.getVersion(), 21);
+  assert.equal(pool.getApplications()[0].status, 'confirmed');
+  assert.equal(pool.getShifts()[0].open, true);
+
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'recruiter_confirmed');
+  const payload = JSON.parse(eventInsert.params[6]);
+  assert.equal(payload.action, 'set_application_status');
+  assert.equal(payload.previousStatus, 'pending');
+  assert.equal(payload.nextStatus, 'confirmed');
+  assert.equal(payload.shiftId, 999);
+  assert.equal(payload.legacyApplicationId, 1001);
+});
+
+test('setApplicationStatusInPostgres invited → feedback passes invite-group guard', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...invitedApp }]
+  });
+  const now = new Date('2026-07-29T13:00:00.000Z');
+  const result = await setApplicationStatusInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'set_application_status', baseVersion: 20, applicationId: 1002, status: 'feedback' },
+    now
+  });
+
+  assert.equal(result.eventType, 'attendance_marked_feedback');
+  assert.equal(pool.getApplications()[0].status, 'feedback');
+  assert.equal(result.shiftAutoClosed, false);
+});
+
+test('setApplicationStatusInPostgres invited → noshow auto-closes shift when it is the last non-final application', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [
+      { ...invitedApp },
+      {
+        id: 'app-uuid-3',
+        legacy_id: 1003,
+        shift_id: 'shift-uuid-99',
+        status: 'passed',
+        invite_group_id: 'group-uuid-1',
+        group_link: 'https://t.me/+xyz',
+        experience: 'experienced',
+        mentor_report_received: true
+      }
+    ]
+  });
+  const now = new Date('2026-07-29T13:00:00.000Z');
+  const result = await setApplicationStatusInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'set_application_status', baseVersion: 20, applicationId: 1002, status: 'noshow' },
+    now
+  });
+
+  assert.equal(result.eventType, 'attendance_marked_noshow');
+  assert.equal(result.shiftAutoClosed, true);
+  assert.equal(pool.getShifts()[0].open, false);
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInserts.length, 2);
+  assert.deepEqual(eventInserts.map(call => call.params[3]), ['attendance_marked_noshow', 'shift_auto_closed']);
+  const closeEventInsert = eventInserts.find(call => call.params[3] === 'shift_auto_closed');
+  assert.ok(closeEventInsert, 'shift_auto_closed event must be inserted');
+  const closePayload = JSON.parse(closeEventInsert.params[6]);
+  assert.equal(closePayload.action, 'set_application_status');
+  assert.equal(closePayload.date, '2026-08-05');
+});
+
+test('setApplicationStatusInPostgres does not auto-close when a non-final application remains', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [
+      { ...invitedApp },
+      {
+        id: 'app-uuid-3',
+        legacy_id: 1003,
+        shift_id: 'shift-uuid-99',
+        status: 'feedback',
+        invite_group_id: 'group-uuid-1',
+        group_link: 'https://t.me/+xyz',
+        experience: null,
+        mentor_report_received: false
+      }
+    ]
+  });
+  const result = await setApplicationStatusInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'set_application_status', baseVersion: 20, applicationId: 1002, status: 'noshow' },
+    now: new Date('2026-07-29T13:00:00.000Z')
+  });
+
+  assert.equal(result.shiftAutoClosed, false);
+  assert.equal(pool.getShifts()[0].open, true);
+});
+
+test('setApplicationStatusInPostgres rejects invited → feedback when application has no invite group', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...invitedApp, invite_group_id: null, group_link: '' }]
+  });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1002, status: 'feedback' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /отправьте кандидату приглашение/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getApplications()[0].status, 'invited');
+});
+
+test('setApplicationStatusInPostgres rejects invited → noshow when application has no invite group', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...invitedApp, invite_group_id: null, group_link: '' }]
+  });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1002, status: 'noshow' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /отправьте кандидату приглашение/.test(err.message)
+  );
+});
+
+test('setApplicationStatusInPostgres rejects transitions disallowed by the recruiter state machine', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...pendingApp }]
+  });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'feedback' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /недоступен/.test(err.message)
+  );
+});
+
+test('setApplicationStatusInPostgres refuses back-to-pending transitions until a dedicated command exists', async () => {
+  for (const previousStatus of ['confirmed', 'invited', 'feedback']) {
+    const pool = fakePool({
+      currentVersion: 20,
+      existingShifts: [{ ...openShift }],
+      existingApplications: [{ ...pendingApp, status: previousStatus, invite_group_id: 'group-uuid-1', group_link: 'https://t.me/+xyz' }]
+    });
+    await assert.rejects(
+      () => setApplicationStatusInPostgres({
+        pool,
+        actor: recruiter,
+        command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'pending' },
+        now: new Date('2026-07-29T13:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError && /отдельной команды/.test(err.message),
+      `expected reject for ${previousStatus} → pending`
+    );
+  }
+});
+
+test('setApplicationStatusInPostgres rejects confirmed target when the application has no shiftId', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingApplications: [{ ...pendingApp, shift_id: null }]
+  });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /must have shiftId/.test(err.message)
+  );
+});
+
+test('setApplicationStatusInPostgres rolls back on stale baseVersion', async () => {
+  const pool = fakePool({
+    currentVersion: 20,
+    existingShifts: [{ ...openShift }],
+    existingApplications: [{ ...pendingApp }]
+  });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 19, applicationId: 1001, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getApplications()[0].status, 'pending');
+});
+
+test('setApplicationStatusInPostgres rejects unknown application', async () => {
+  const pool = fakePool({ currentVersion: 20, existingApplications: [] });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 99999, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /application not found/.test(err.message)
+  );
+});
+
+test('setApplicationStatusInPostgres rejects invalid inputs before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 20, existingApplications: [{ ...pendingApp }] });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'bogus' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    /application.status is invalid/
+  );
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 0, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'set_application_status', baseVersion: 0, applicationId: 1001, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('setApplicationStatusInPostgres rejects non-recruiter actors before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 20, existingApplications: [{ ...pendingApp }] });
+  await assert.rejects(
+    () => setApplicationStatusInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '999' } } },
+      command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'confirmed' },
+      now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
   );
   assert.equal(pool.calls.length, 0);
 });

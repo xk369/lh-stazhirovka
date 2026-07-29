@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { SEAT_HOLDING_STATUSES } from '../booking-state-machine.js';
+import {
+  BOOKING_STATUSES,
+  BOOKING_STATUS_LABELS,
+  SEAT_HOLDING_STATUSES,
+  canRecruiterSetApplicationStatus
+} from '../booking-state-machine.js';
 import { runInPostgresTransaction } from './transaction.js';
 import { insertApplicationEvents } from './write-application-events.js';
 
@@ -74,6 +79,36 @@ function normalizeShiftLegacyId(value) {
   return id;
 }
 
+function normalizeApplicationLegacyId(value) {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new PostgresCommandValidationError('applicationId must be a positive integer.');
+  }
+  return id;
+}
+
+const RECRUITER_BACK_TO_PENDING_SOURCES = new Set(['confirmed', 'invited', 'feedback']);
+const SET_STATUS_TRANSITION_EVENTS = Object.freeze({
+  'pending→confirmed': 'recruiter_confirmed',
+  'invited→feedback': 'attendance_marked_feedback',
+  'invited→noshow': 'attendance_marked_noshow'
+});
+
+function statusLabel(status) {
+  return BOOKING_STATUS_LABELS[status] || status;
+}
+
+function applicationRowHasInviteGroup(row) {
+  return Boolean(row.invite_group_id) || Boolean(String(row.group_link || '').trim());
+}
+
+function applicationRowCompletesShift(row) {
+  const status = String(row.status || '');
+  if (status === 'noshow') return true;
+  if (status === 'passed' || status === 'failed') return Boolean(row.mentor_report_received);
+  return false;
+}
+
 function todayDateValueInMoscow(now) {
   const parts = new Intl.DateTimeFormat('ru-RU', {
     timeZone: 'Europe/Moscow',
@@ -115,6 +150,18 @@ function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
     seats: normalizeSeats(command?.seats),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeSetApplicationStatusInput(command) {
+  const nextStatus = String(command?.status || '').trim();
+  if (!BOOKING_STATUSES.has(nextStatus)) {
+    throw new PostgresCommandValidationError('application.status is invalid.');
+  }
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    nextStatus,
     baseVersion: normalizeBaseVersion(command)
   };
 }
@@ -293,6 +340,168 @@ export async function updateShiftCapacityInPostgres({ pool, actor, command, now 
       date,
       seats,
       previousSeats: currentSeats,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function setApplicationStatusInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, nextStatus, baseVersion } = normalizeSetApplicationStatusInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience
+         FROM applications
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    const previousStatus = String(app.status);
+
+    if (!canRecruiterSetApplicationStatus(previousStatus, nextStatus)) {
+      throw new PostgresCommandValidationError(
+        `Переход заявки из статуса «${statusLabel(previousStatus)}» `
+        + `в «${statusLabel(nextStatus)}» недоступен.`
+      );
+    }
+    if (nextStatus === 'pending' && RECRUITER_BACK_TO_PENDING_SOURCES.has(previousStatus)) {
+      throw new PostgresCommandValidationError(
+        'Возврат заявки в «Заявка отправлена» требует отдельной команды и в Postgres write path пока не поддерживается.'
+      );
+    }
+    if (nextStatus === 'confirmed' && !app.shift_id) {
+      throw new PostgresCommandValidationError('confirmed application must have shiftId.');
+    }
+    if (
+      (nextStatus === 'invited' || nextStatus === 'feedback' || nextStatus === 'noshow')
+      && !applicationRowHasInviteGroup(app)
+    ) {
+      throw new PostgresCommandValidationError(
+        'Сначала отправьте кандидату приглашение в рабочую группу.'
+      );
+    }
+
+    const eventType = SET_STATUS_TRANSITION_EVENTS[`${previousStatus}→${nextStatus}`];
+    if (!eventType) {
+      throw new PostgresCommandValidationError(
+        `Переход ${previousStatus} → ${nextStatus} не реализован в Postgres write path.`
+      );
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const nextExperience = nextStatus === 'passed' ? app.experience : null;
+
+    await client.query(
+      `UPDATE applications
+          SET status = $1,
+              experience = $2,
+              updated_at = $3,
+              row_version = row_version + 1
+        WHERE id = $4`,
+      [nextStatus, nextExperience, nowIso, app.id]
+    );
+
+    let shiftLegacyId = null;
+    let shiftAutoClosed = false;
+    let shiftDateText = '';
+    if (app.shift_id) {
+      const shiftResult = await client.query(
+        `SELECT id, legacy_id, open, canceled, date::text AS date
+           FROM shifts
+          WHERE id = $1
+          FOR UPDATE`,
+        [app.shift_id]
+      );
+      if (shiftResult.rowCount === 1) {
+        const shiftRow = shiftResult.rows[0];
+        shiftLegacyId = Number(shiftRow.legacy_id);
+        shiftDateText = shiftDateAsString(shiftRow.date);
+        if (!shiftRow.canceled && shiftRow.open) {
+          const cohort = await client.query(
+            `SELECT status, mentor_report_received
+               FROM applications
+              WHERE shift_id = $1`,
+            [app.shift_id]
+          );
+          const rows = cohort.rows;
+          const allFinal = rows.length > 0 && rows.every(applicationRowCompletesShift);
+          if (allFinal) {
+            await client.query(
+              `UPDATE shifts
+                  SET open = false,
+                      updated_at = $1,
+                      row_version = row_version + 1
+                WHERE id = $2`,
+              [nowIso, app.shift_id]
+            );
+            shiftAutoClosed = true;
+          }
+        }
+      }
+    }
+
+    const events = [{
+      eventType,
+      applicationId: applicationLegacyId,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'set_application_status',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus,
+        nextStatus,
+        shiftId: shiftLegacyId
+      },
+      createdAt: nowIso
+    }];
+    if (shiftAutoClosed) {
+      events.push({
+        eventType: 'shift_auto_closed',
+        applicationId: null,
+        shiftId: shiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'set_application_status',
+          baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          date: shiftDateText
+        },
+        createdAt: nowIso
+      });
+    }
+    await insertApplicationEvents(client, events);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      nextStatus,
+      eventType,
+      shiftLegacyId,
+      shiftAutoClosed,
+      shiftDate: shiftDateText,
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,
