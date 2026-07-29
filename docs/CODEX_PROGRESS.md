@@ -23,6 +23,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Active branch: `migration/postgres-foundation`
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
+- Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
+- Current migration progress: 30%.
 
 ## Migration Staging
 
@@ -83,6 +85,7 @@ Read before continuing:
 
 - `AGENTS.md`
 - `docs/CODEX_HANDOFF.md`
+- `docs/MIGRATION_EXECUTION_PLAN.md`
 - `docs/INTERNSHIP_WORKFLOW.md`
 - `docs/DATA_MODEL.md`
 - `docs/POSTGRES_MIGRATION_ROADMAP.md`
@@ -93,6 +96,8 @@ Known doc rule:
 
 - `docs/CODEX_HANDOFF.md` is for current production/staging/deploy facts.
 - `docs/CODEX_PROGRESS.md` is the live worklog.
+- `docs/MIGRATION_EXECUTION_PLAN.md` is the concrete execution plan, percent
+  tracking rules and go/no-go gates.
 - `docs/INTERNSHIP_WORKFLOW.md` is business behavior by role.
 - `docs/DATA_MODEL.md` is current JSON state/API fields and relationships.
 - `docs/POSTGRES_MIGRATION_ROADMAP.md` is the migration architecture.
