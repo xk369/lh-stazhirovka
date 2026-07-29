@@ -1493,7 +1493,8 @@ test('sendInvitesInPostgres commits invite group + members + application updates
   const sqlOrder = pool.calls.map(call => call.sql.trim().replace(/\s+/g, ' '));
   const beginIndex = sqlOrder.indexOf('BEGIN');
   const commitIndex = sqlOrder.indexOf('COMMIT');
-  assert.ok(beginIndex >= 0 && commitIndex > beginIndex);
+  const releaseIndex = sqlOrder.indexOf('RELEASE');
+  assert.ok(beginIndex >= 0 && commitIndex > beginIndex && releaseIndex > commitIndex);
   const between = sqlOrder.slice(beginIndex + 1, commitIndex);
   assert.ok(between.some(sql => /SELECT version.*FROM booking_state_meta.*FOR UPDATE/i.test(sql)));
   assert.ok(between.some(sql => /SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)
@@ -1566,6 +1567,7 @@ test('sendInvitesInPostgres rolls back on stale baseVersion', async () => {
   );
   const sqls = pool.calls.map(call => call.sql.trim());
   assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
   assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
   assert.equal(pool.getInviteGroups().length, 0);
   assert.equal(pool.getApplications()[0].status, 'confirmed');

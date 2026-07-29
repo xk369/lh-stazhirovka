@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **58%**.
+Текущий общий прогресс: **61%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -245,12 +245,18 @@ Rollback:
 Следующий технический шаг: расширять writable Postgres command layer по одной
 команде за итерацию. Интегрированные slices:
 `create_shift`, `update_shift_capacity`, forward-переходы
-`set_application_status` и назначение из предварительной очереди
-`assign_shift` выполняются транзакционно в PostgreSQL, пишут
+`set_application_status`, назначение из предварительной очереди
+`assign_shift` и state/events-slice отправки рабочих групп `send_invites`
+выполняются транзакционно в PostgreSQL, пишут
 `application_events`, увеличивают `booking_state_meta.version` при реальном
 изменении и проверяются live smoke внутри `npm run test:postgres`.
 
-Следующая команда: `send_invites`.
+Следующий технический шаг: закрыть notification/outbox-gap для `send_invites`.
+Сейчас Postgres-команда уже создает `invite_groups`, `invite_group_members`,
+переводит заявки в `invited` и пишет audit events, но еще не создает
+durable `notifications(status='pending')`. До этого ее нельзя подключать к
+runtime: иначе state сохранится, а личные Telegram-уведомления стажерам могут
+не уйти.
 
 Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
 действие `Вернуть в новые заявки`: текущий JSON путь делает это через

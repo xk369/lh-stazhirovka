@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 58%.
+- Общий прогресс: 61%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer.
@@ -68,6 +68,20 @@
     events;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `send_invites` writable PostgreSQL state/events slice:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `shifts` row `FOR UPDATE`;
+  - selected `applications` rows `FOR UPDATE`, ordered by `legacy_id`;
+  - optimistic `baseVersion` check;
+  - accepts only selected applications on that shift in `status=confirmed`;
+  - validates Telegram group links;
+  - creates `invite_groups` and `invite_group_members`;
+  - updates selected applications to `status=invited` with venue/group link;
+  - writes `invite_group_sent` and `application_invited` events;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`;
+  - not runtime-ready yet because it does not write notification/outbox rows.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -87,7 +101,7 @@
 
 ## Очередь Writable Команд
 
-1. `send_invites`
+1. `send_invites_notifications_outbox`
 2. `cancel_internship`
 3. `cancel_shift`
 4. `step_back_application`
@@ -114,6 +128,10 @@
   shifts. If UI/API needs to move an already assigned, confirmed or invited
   application, add a separate command that explicitly handles old shift,
   invite-group, venue and archive links before runtime cutover.
+- PostgreSQL `send_invites` currently writes durable state and events only.
+  The command contract declares outbox, so do not wire writable Postgres into
+  runtime until selected trainees also get durable `notifications(status=pending)`
+  rows in the same transaction and the delivery worker/dry-run policy is tested.
 
 ## Two-Agent Rules
 
@@ -129,8 +147,8 @@
 
 ## Next Concrete Step
 
-Claude: implement `send_invites` in a branch based on current
-`migration/postgres-foundation`.
+Claude: implement the `send_invites` notification/outbox slice in a branch
+based on current `migration/postgres-foundation`.
 
 Codex: review, merge into `migration/postgres-foundation`, run full gates, then
-raise progress only if the command is integrated and tested.
+raise progress only if the outbox path is integrated and tested.

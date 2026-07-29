@@ -52,16 +52,17 @@ migration/postgres-foundation
 https://github.com/xk369/lh-stazhirovka/pull/3
 ```
 
-Последний известный migration commit:
+Актуальный migration commit перед каждой новой итерацией брать командой:
 
-```text
-b4c9bbe Record assign shift migration progress
+```bash
+git fetch origin
+git rev-parse origin/migration/postgres-foundation
 ```
 
 Текущий общий прогресс миграции:
 
 ```text
-58%
+61%
 ```
 
 ## Что Нельзя Делать
@@ -142,16 +143,20 @@ PostgreSQL write layer без production-включения.
 - `create_shift`;
 - `update_shift_capacity`;
 - forward-переходы `set_application_status`;
-- `assign_shift` только для `queue -> pending` на открытую неотмененную дату.
+- `assign_shift` только для `queue -> pending` на открытую неотмененную дату;
+- `send_invites` state/events slice: создает рабочую группу, участников,
+  переводит заявки в `invited`, пишет events, но еще не пишет notification
+  outbox.
 
-Следующая крупная команда после `assign_shift`:
+Следующий обязательный work package:
 
-- `send_invites`.
+- закрыть notification/outbox gap для `send_invites`, чтобы приглашения не
+  могли сохраниться в state без durable задачи на Telegram-уведомление.
 
 Не брать без отдельного решения Codex:
 
 - mentor reports;
-- Telegram outbox/live delivery;
+- Telegram live delivery;
 - full `/api/report`;
 - production cutover;
 - перенос уже назначенного/приглашенного стажера на другую дату;
@@ -280,7 +285,7 @@ Suggested next step:
 явно пишет `Incomplete`, чтобы следующий агент не принял полуготовый код за
 готовый.
 
-## Готовый Prompt Для Claude: Следующая Итерация `send_invites`
+## Готовый Prompt Для Claude: Следующая Итерация `send_invites_notifications_outbox`
 
 ```text
 Ты подключаешься к крупной миграции LOFT HALL internship mini app с JSON
@@ -301,10 +306,10 @@ Base commit должен быть актуальным head `migration/postgres-
 
 Создай ветку:
 main не использовать; для этой итерации:
-`migration/postgres-write-send-invites-claude`
+`migration/postgres-send-invites-outbox-claude`
 
 PR должен быть:
-migration/postgres-write-send-invites-claude -> migration/postgres-foundation
+migration/postgres-send-invites-outbox-claude -> migration/postgres-foundation
 
 Не в main.
 
@@ -340,24 +345,28 @@ migration/postgres-write-send-invites-claude -> migration/postgres-foundation
 - git branch --show-current
 - git log --oneline --decorate -8
 
-Задача этой итерации: реализовать только PostgreSQL command `send_invites`.
+Задача этой итерации: закрыть только notification/outbox gap для уже
+интегрированной PostgreSQL command `send_invites`.
 
 Бизнес-смысл:
 Рекрут выбирает дату, рабочую группу, площадку и список стажеров, нажимает
-отправку приглашений. Система должна создать/обновить invite group, привязать
-к ней выбранных стажеров, перевести их в `invited`, сохранить ссылку/площадку
-для дальнейшей цепочки наставника и вернуть fresh state из PostgreSQL.
+отправку приглашений. Postgres path уже создает invite group, привязывает
+участников и переводит заявки в `invited`. Теперь нужно в той же транзакции
+создавать durable `notifications(status='pending')` записи для личных
+Telegram-уведомлений выбранным стажерам, чтобы после runtime cutover state не
+мог сохраниться без задачи на доставку сообщения.
 
 Что команда НЕ должна делать в этой итерации:
 - не отправлять реальные Telegram-сообщения;
-- не создавать live outbox/worker, если это требует изменения этапа;
+- не создавать live worker и не включать delivery loop;
 - не менять `/api/state` runtime wiring в `src/server.js`;
 - не трогать mentor report result;
 - не менять UI;
 - не решать перенос уже приглашенного стажера на другую дату.
 
 JSON-reference, который нужно прочитать и сопоставить:
-- `src/server.js`: текущий обработчик/action `send_invites`;
+- `src/server.js`: текущий обработчик/action `send_invites` и то, как сейчас
+  формируется личное уведомление стажеру после отправки рабочей группы;
 - `src/booking-state-events.js`: события для invite group / invited status;
 - `src/booking-state-machine.js`: статусы, которые держат места и стадийные
   правила;
@@ -371,50 +380,33 @@ JSON-reference, который нужно прочитать и сопостав
 
 Ожидаемая PostgreSQL-логика:
 - actor role: recruiter-only;
-- normalize input до транзакции: `baseVersion`, `shiftId`, `venueId`/venue data,
-  `groupLink`, список `applicationIds`;
-- reject пустой список стажеров;
-- validate Telegram group link тем же смыслом, что server-side JSON/runtime
-  validation;
-- transaction;
-- `booking_state_meta FOR UPDATE`;
-- optimistic conflict: stale `baseVersion` -> 409;
-- target `shifts` row `FOR UPDATE`;
-- выбранные `applications` rows `FOR UPDATE`;
-- validate все выбранные заявки существуют;
-- validate все выбранные заявки относятся к выбранной дате/shift;
-- validate статусы допускают приглашение и повторную отправку не создает дубль;
-- create/update `invite_groups` row;
-- create/update `invite_group_members` без дублей;
-- update selected `applications`:
-  - `status = invited`;
-  - `invite_group_id`;
-  - `venue_id`/hall fields, если они есть в schema;
-  - `group_link`;
-  - `updated_at`;
-  - `row_version = row_version + 1`;
-- write `application_events` in same transaction:
-  - `invite_group_sent` / `invite_group_updated` если контракт/JSON events так
-    ожидают;
-  - `application_invited`;
-  - `application_status_changed` если старый event planner пишет отдельный
-    статусный event;
-- bump `booking_state_meta.version`;
-- return result + fresh state through adapter.
+- сохранить текущую `sendInvitesInPostgres` state/event семантику;
+- в той же transaction, после валидации selected applications и до commit,
+  вставить `notifications` rows для каждого выбранного trainee, у которого есть
+  Telegram chat/user target в schema/read model;
+- notification payload должен быть idempotent и достаточно самодостаточным:
+  action/command `send_invites`, application legacy id, shift legacy id,
+  invite group legacy id, venue id, group link, version/cause, message template
+  data без секретов;
+- использовать stable idempotency key на основе action + shift_id + venue_id +
+  link + sorted_member_ids + конкретный application_id или эквивалентный
+  уникальный ключ, чтобы повторный безопасный retry не создавал дубль;
+- если нужного уникального ограничения/колонки в schema нет, не выдумывай
+  рискованный runtime workaround: опиши минимальную migration/schema правку и
+  покрой тестом;
+- dry-run/live отправку не делать, только durable outbox rows.
 
 Обязательные тесты:
-- unit success: создает/обновляет invite group, members, applications, events,
-  version bump, commit/release;
-- stale `baseVersion` -> conflict/rollback/release;
-- unknown shift -> validation/rollback;
-- empty or invalid application list -> validation before unsafe writes;
-- application not on selected shift -> validation/rollback;
-- invalid link -> validation;
-- already invited / duplicate member behavior matches JSON runtime or explicitly
-  documented stricter behavior;
-- non-recruiter actor rejected before transaction;
-- adapter routes `send_invites`;
-- live PostgreSQL smoke or coverage inside `npm run test:postgres`.
+- unit success: existing invite group/app/event assertions still pass and one
+  pending notification row is created per selected trainee;
+- idempotency: same logical notification key cannot create duplicates;
+- stale `baseVersion` / validation failures rollback and do not create
+  notifications;
+- selected app without Telegram target is handled by an explicit policy
+  (`skipped` notification row or validation), documented and tested;
+- adapter still routes `send_invites`;
+- live PostgreSQL smoke inside `npm run test:postgres` verifies notification
+  rows appear and no real Telegram call is made.
 
 Проверки:
 - npm test
@@ -425,8 +417,9 @@ JSON-reference, который нужно прочитать и сопостав
 Stop conditions:
 - если нужно менять `src/server.js`, production deploy, Telegram live delivery,
   стратегические docs или проценты — остановись;
-- если схема PostgreSQL не содержит нужного поля для сохранения venue/group
-  связи — остановись и опиши точную проблему;
+- если схема PostgreSQL не содержит нужного поля/уникального ключа для durable
+  notifications/idempotency — остановись и опиши точную минимальную schema
+  правку;
 - если JSON runtime допускает сценарий, который кажется опасным в Postgres,
   остановись и вынеси вопрос в `Open questions`, не меняя семантику сам.
 
