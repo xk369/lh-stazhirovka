@@ -111,6 +111,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   it, so runtime remains JSON. No wiring into `server.js`, no Telegram/outbox
   changes, no production or staging deploy. Draft PR opened into
   `migration/postgres-foundation` for Codex review.
+- 2026-07-29 (Codex, branch `migration/postgres-create-shift-integration-codex`):
+  added a real PostgreSQL write smoke for `create_shift` inside
+  `npm run test:postgres`, verifying the inserted shift, version bump and
+  `shift_created` application event after JSON import/parity checks.
 
 ## Documentation Audit
 
