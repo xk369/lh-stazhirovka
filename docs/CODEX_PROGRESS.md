@@ -100,6 +100,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - 2026-07-29: added `docs/CLAUDE_MIGRATION_BRIEF.md` so Claude can join the
   migration safely through a separate branch/PR without touching production,
   `main`, live Telegram delivery or runtime data.
+- 2026-07-29: tightened Claude collaboration rules: Claude is an implementer
+  for scoped work packages, must not change migration strategy/progress/cutover
+  docs, and must end every iteration with `Report For Codex Review`.
 
 ## Documentation Audit
 

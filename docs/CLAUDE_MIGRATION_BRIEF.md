@@ -10,6 +10,11 @@
 как считаешь нужным" без ограничений. Работать только маленькими шагами,
 только в миграционной копии, только через отдельную ветку и PR.
 
+Роль Claude: исполнитель ограниченного work package. Стратегия миграции,
+порядок этапов, проценты прогресса и production cutover остаются за Codex.
+Если Claude видит, что план стоит изменить, он должен написать предложение в
+отчете, но не менять план сам.
+
 ## Где Работать
 
 Локальная папка:
@@ -62,6 +67,12 @@ ee2d552 Expand booking event coverage
 - Не переносить mentor manual-entry feature в production.
 - Не переписывать UI/UX вместе с backend-миграцией.
 - Не делать большие рефакторы `public/booking.html`, если задача про БД.
+- Не менять `docs/MIGRATION_EXECUTION_PLAN.md` без отдельного явного разрешения.
+- Не менять `docs/POSTGRES_MIGRATION_ROADMAP.md` без отдельного явного
+  разрешения.
+- Не менять `docs/CODEX_HANDOFF.md` без отдельного явного разрешения.
+- Не менять общий процент миграции. Процент обновляет Codex после ревью.
+- Не менять порядок этапов миграции и критерии production cutover.
 
 ## Какую Ветку Создать Claude
 
@@ -143,6 +154,20 @@ migration/postgres-write-adapter-claude -> migration/postgres-foundation
 Причина: mentor reports и Telegram outbox - самые рискованные части цепочки.
 Их лучше подключать после того, как простой transactional state write доказан.
 
+## Правило Перед Кодом
+
+Перед любым редактированием Claude должен написать краткий iteration plan:
+
+1. Какая ветка и base commit.
+2. Какой этап из `docs/MIGRATION_EXECUTION_PLAN.md` он выполняет.
+3. Какие файлы планирует менять.
+4. Какие файлы точно не будет менять.
+5. Какие тесты планирует запускать.
+
+Если в процессе выяснилось, что нужно менять стратегические документы,
+production deploy, Telegram routing или `main`, Claude должен остановиться и
+вернуть вопрос пользователю/Codex.
+
 ## Проверки Перед Коммитом Claude
 
 Минимум:
@@ -179,6 +204,49 @@ npm run test:postgres
 5. Почему production не затронут.
 6. Что следующий безопасный шаг.
 
+## Отчет Для Codex После Каждой Итерации
+
+В конце каждой итерации Claude обязан оставить отдельный блок:
+
+```text
+## Report For Codex Review
+
+Branch:
+Base commit:
+Head commit:
+PR:
+
+Claimed scope:
+
+Changed files:
+
+What actually changed:
+
+Tests run:
+
+Tests not run and why:
+
+Production safety:
+
+Data/PII safety:
+
+Telegram safety:
+
+Potential risks:
+
+Open questions:
+
+Suggested next step:
+```
+
+Правило: Codex после этого должен сверить отчет с реальным `git diff`,
+коммитами и тестами. Claude не должен считать работу принятой, пока Codex не
+провел ревью.
+
+Если Claude не успел закончить итерацию, он все равно оставляет этот блок и
+явно пишет `Incomplete`, чтобы следующий агент не принял полуготовый код за
+готовый.
+
 ## Готовый Prompt Для Claude
 
 ```text
@@ -191,6 +259,17 @@ data/db.json на PostgreSQL.
 Production не трогать. В main не коммитить. PR делать только из отдельной
 ветки в migration/postgres-foundation. Не деплоить. Не менять .env, data/db.json,
 Telegram chat routing, live notifications и mentor manual-entry feature.
+
+Ты не меняешь стратегию миграции. Запрещено менять без отдельного разрешения:
+- docs/MIGRATION_EXECUTION_PLAN.md
+- docs/POSTGRES_MIGRATION_ROADMAP.md
+- docs/CODEX_HANDOFF.md
+- общий процент прогресса
+- порядок этапов
+- production cutover / rollback plan
+
+Если считаешь, что план надо изменить, не меняй его сам: напиши предложение в
+отчете для Codex.
 
 Сначала прочитай полностью:
 - AGENTS.md
@@ -217,7 +296,17 @@ Postgres: storage adapter / transaction boundary / тестовый write path �
 default. Telegram/outbox и mentor reports пока не трогай, если без этого можно
 завершить первый слой.
 
-Обязательно обновляй docs/CODEX_PROGRESS.md. Каждый отчет начинай с:
+Перед кодом напиши iteration plan:
+1. ветка и base commit;
+2. этап миграции;
+3. файлы, которые планируешь менять;
+4. файлы, которые точно не будешь менять;
+5. тесты, которые планируешь запускать.
+
+Не обновляй процент миграции. `docs/CODEX_PROGRESS.md` можно обновлять только
+фактическим worklog по своей итерации, без изменения стратегии и процентов.
+
+Каждый отчет начинай с:
 "Прогресс миграции: X%."
 
 Перед завершением запусти:
@@ -226,6 +315,13 @@ git diff --check
 
 Если менялись Postgres-инструменты, также попробуй:
 npm run test:postgres
+
+В конце оставь блок:
+## Report For Codex Review
+
+Заполни в нем: Branch, Base commit, Head commit, PR, changed files, what
+actually changed, tests run, tests not run, production safety, data/PII safety,
+Telegram safety, potential risks, open questions, suggested next step.
 
 Не заявляй, что production готов к миграции. Цель сейчас - безопасный staging
 foundation.
