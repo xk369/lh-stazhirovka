@@ -53,6 +53,9 @@ if [[ "${SOURCE_PATH}" == "${DEFAULT_SOURCE_PATH}" ]]; then
   " | grep -qx "1|2|1|2|1|2"
 fi
 
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-create-shift-write-smoke.js
+
 if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${SOURCE_PATH}" \
   >"${PG_TEST_DIR}/second-import.log" 2>&1; then
