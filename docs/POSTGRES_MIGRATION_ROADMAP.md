@@ -279,6 +279,7 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `application_cancelled`;
 - `application_assigned_to_shift`;
 - `recruiter_confirmed`;
+- `application_invited`;
 - `invite_group_sent`;
 - `attendance_marked_feedback`;
 - `attendance_marked_noshow`;
@@ -451,7 +452,9 @@ Event log нужен, чтобы расследовать жалобы без р
 ### Этап D: запись в Postgres на staging
 
 - Все команды `/api/state` переписать на транзакции Postgres.
-- Добавить `application_events`.
+- [x] Добавить фундамент `application_events`: планировщик событий
+  `currentState -> nextState` и writer в PostgreSQL. Runtime-запись еще не
+  подключена.
 - Добавить `notifications`.
 - Добавить outbox worker.
 - Прогнать полный QA.

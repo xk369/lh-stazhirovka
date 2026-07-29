@@ -52,9 +52,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Current Checks
 
-- 2026-07-29: `npm test` passed, 100/100 tests.
+- 2026-07-29: `npm test` passed, 106/106 tests after adding the
+  event-log foundation.
 - 2026-07-29: `git diff --check` passed.
-- Last known `npm run test:postgres`: passed before staging deployment.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox. The first
+  sandboxed run failed on local PostgreSQL shared memory (`shmget Operation not
+  permitted`), then the same command passed with escalation.
 - Server smoke proved:
   - recruiter read works from PostgreSQL;
   - booking writes return `503 BOOKING_STORAGE_READ_ONLY`;
@@ -67,6 +70,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   staging commit references plus an old README backup path. Added this progress
   log, linked it from `AGENTS.md`, updated staging commit references to
   `f96caed`, and corrected the production backup path in `README.md`.
+- 2026-07-29: started Stage D safely without enabling runtime Postgres writes.
+  Added `src/booking-state-events.js` to plan audit events from
+  `currentState -> nextState`, covering recruiter actions, invite groups,
+  attendance, mentor final results, step-back and clear-state. Added
+  `src/postgres/write-application-events.js` to insert those events into
+  PostgreSQL with legacy IDs preserved in JSON payloads. Added tests for both.
 
 ## Documentation Audit
 
@@ -100,7 +109,9 @@ Known doc rule:
 4. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
 5. Only after QA, design Stage D: writable PostgreSQL staging with
-   transactional commands, `application_events`, `notifications` and outbox.
+   transactional commands, `notifications` and outbox. The first
+   `application_events` planning/writing foundation now exists, but it is not
+   connected to runtime writes yet.
 
 ## Do Not Forget
 

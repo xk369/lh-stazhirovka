@@ -97,6 +97,8 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
 - `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
 - `src/booking-storage-mode.js` - явный выбор `json`/`postgres_readonly` и стабильная ошибка запрета записи.
+- `src/booking-state-events.js` - plans application audit events from current/next booking state.
+- `src/postgres/write-application-events.js` - writes planned audit events into PostgreSQL `application_events`.
 - `deploy/docker-compose.migration-staging.yml` - отдельные app/PostgreSQL-контейнеры для read-only migration staging.
 - `deploy/MIGRATION_STAGING.md` - безопасный порядок импорта, проверки и запуска staging.
 - `src/report.js` - report role validation and chat routing.
