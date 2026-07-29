@@ -154,6 +154,77 @@ function normalizeAssignShiftInput(command) {
   };
 }
 
+function normalizeVenueId(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    throw new PostgresCommandValidationError('inviteGroup.venueId is required.');
+  }
+  if (text.length > 80) {
+    throw new PostgresCommandValidationError('inviteGroup.venueId must be at most 80 characters.');
+  }
+  return text;
+}
+
+function isTelegramGroupHost(hostname) {
+  const host = String(hostname || '').toLowerCase();
+  return /(^|\.)t\.me$/i.test(host) || /(^|\.)telegram\.me$/i.test(host);
+}
+
+function normalizeInviteGroupLink(value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    throw new PostgresCommandValidationError('inviteGroup.link is required.');
+  }
+  if (text.length > 500) {
+    throw new PostgresCommandValidationError('inviteGroup.link must be at most 500 characters.');
+  }
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new PostgresCommandValidationError(
+      'Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...'
+    );
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !isTelegramGroupHost(parsed.hostname)) {
+    throw new PostgresCommandValidationError(
+      'Проверьте ссылку на рабочую группу. Нужна Telegram-ссылка, например https://t.me/+...'
+    );
+  }
+  return text;
+}
+
+function normalizeMemberIds(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new PostgresCommandValidationError('inviteGroup.memberIds is required.');
+  }
+  const seen = new Set();
+  const legacyIds = [];
+  for (const rawId of value) {
+    const legacyId = Number(rawId);
+    if (!Number.isSafeInteger(legacyId) || legacyId <= 0) {
+      throw new PostgresCommandValidationError(
+        'inviteGroup.memberIds must contain positive integers.'
+      );
+    }
+    if (seen.has(legacyId)) continue;
+    seen.add(legacyId);
+    legacyIds.push(legacyId);
+  }
+  legacyIds.sort((left, right) => left - right);
+  return legacyIds;
+}
+
+function normalizeSendInvitesInput(command) {
+  return {
+    shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
+    venueId: normalizeVenueId(command?.venueId),
+    link: normalizeInviteGroupLink(command?.link),
+    memberLegacyIds: normalizeMemberIds(command?.memberIds),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
@@ -645,6 +716,182 @@ export async function assignShiftInPostgres({ pool, actor, command, now = new Da
       shiftDate: shiftDateText,
       shiftSeats: seats,
       usedSeatsAfter: usedSeats + 1,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function sendInvitesInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const {
+    shiftLegacyId,
+    venueId,
+    link,
+    memberLegacyIds,
+    baseVersion
+  } = normalizeSendInvitesInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const shiftResult = await client.query(
+      `SELECT id, legacy_id, seats, open, canceled, date::text AS date
+         FROM shifts
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [shiftLegacyId]
+    );
+    if (shiftResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('shift not found.');
+    }
+    const shift = shiftResult.rows[0];
+    if (shift.canceled) {
+      throw new PostgresCommandValidationError('Нельзя отправить приглашение на отменённую дату.');
+    }
+
+    const appResult = await client.query(
+      `SELECT id, legacy_id, status, shift_id, venue_id, group_link
+         FROM applications
+        WHERE legacy_id = ANY($1::bigint[])
+        ORDER BY legacy_id
+        FOR UPDATE`,
+      [memberLegacyIds]
+    );
+    const rowsByLegacyId = new Map(
+      appResult.rows.map(row => [String(row.legacy_id), row])
+    );
+    const missing = memberLegacyIds.filter(id => !rowsByLegacyId.has(String(id)));
+    if (missing.length) {
+      throw new PostgresCommandValidationError(
+        `application not found: ${missing.join(', ')}.`
+      );
+    }
+    for (const legacyId of memberLegacyIds) {
+      const row = rowsByLegacyId.get(String(legacyId));
+      if (String(row.shift_id) !== String(shift.id)) {
+        throw new PostgresCommandValidationError(
+          `application ${legacyId} is not on the selected shift.`
+        );
+      }
+      if (String(row.status) !== 'confirmed') {
+        throw new PostgresCommandValidationError(
+          `application ${legacyId} is not eligible: expected status 'confirmed', got '${row.status}'.`
+        );
+      }
+    }
+
+    const memberUuids = memberLegacyIds.map(id => rowsByLegacyId.get(String(id)).id);
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const shiftDateText = shift.date;
+
+    const maxLegacyResult = await client.query(
+      'SELECT COALESCE(MAX(legacy_id), 0) AS max_legacy_id FROM invite_groups'
+    );
+    const groupLegacyId = nextLegacyId(now, maxLegacyResult.rows[0]?.max_legacy_id);
+    const groupUuid = randomUUID();
+
+    await client.query(
+      `
+        INSERT INTO invite_groups (
+          id, legacy_id, shift_id, venue_id, link, sent_at,
+          created_by_telegram_user_id, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $6, $6)
+      `,
+      [
+        groupUuid,
+        groupLegacyId,
+        shift.id,
+        venueId,
+        link,
+        nowIso,
+        actorTelegramUserId(actor)
+      ]
+    );
+
+    for (const appUuid of memberUuids) {
+      await client.query(
+        `INSERT INTO invite_group_members (invite_group_id, application_id, created_at)
+         VALUES ($1, $2, $3)`,
+        [groupUuid, appUuid, nowIso]
+      );
+    }
+
+    await client.query(
+      `UPDATE applications
+          SET status = 'invited',
+              invite_group_id = $1,
+              venue_id = $2,
+              group_link = $3,
+              updated_at = $4,
+              row_version = row_version + 1
+        WHERE id = ANY($5::uuid[])`,
+      [groupUuid, venueId, link, nowIso, memberUuids]
+    );
+
+    const causePayload = {
+      action: 'send_invites',
+      baseVersion,
+      previousVersion: meta.version,
+      nextVersion
+    };
+    const events = [
+      {
+        eventType: 'invite_group_sent',
+        applicationId: null,
+        shiftId: shiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          ...causePayload,
+          inviteGroupId: groupLegacyId,
+          venueId,
+          memberIds: [...memberLegacyIds],
+          date: shiftDateText
+        },
+        createdAt: nowIso
+      },
+      ...memberLegacyIds.map(legacyId => ({
+        eventType: 'application_invited',
+        applicationId: legacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          ...causePayload,
+          previousStatus: 'confirmed',
+          nextStatus: 'invited',
+          inviteGroupId: groupLegacyId,
+          venueId,
+          shiftId: shiftLegacyId
+        },
+        createdAt: nowIso
+      }))
+    ];
+    await insertApplicationEvents(client, events);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      inviteGroupLegacyId: groupLegacyId,
+      inviteGroupId: groupUuid,
+      shiftLegacyId,
+      shiftId: shift.id,
+      shiftDate: shiftDateText,
+      venueId,
+      link,
+      memberLegacyIds: [...memberLegacyIds],
+      memberIds: memberUuids,
+      previousStatus: 'confirmed',
+      nextStatus: 'invited',
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,

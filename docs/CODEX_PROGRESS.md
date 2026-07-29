@@ -203,6 +203,21 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   guard matches `docs/DATA_MODEL.md`; any future move of an already assigned or
   invited application should become a separate command before runtime cutover.
   Raised migration progress to 58%.
+- 2026-07-29 (Claude, branch `migration/postgres-write-send-invites-claude`):
+  added a transactional `send_invites` Postgres write path for Codex review.
+  Recruiter-only, `FOR UPDATE` on `booking_state_meta`, the target `shifts`
+  row and the bulk of selected `applications` rows (ordered by `legacy_id`
+  ASC for stable lock order). Deduplicates `memberIds`, requires each member
+  to exist, live on the selected shift and be in `status='confirmed'`,
+  validates Telegram-only http/https link (same host set as JSON runtime),
+  creates one new `invite_groups` row and one `invite_group_members` row per
+  member, bulk-updates `applications.status='invited'` +
+  `invite_group_id`/`venue_id`/`group_link`/`updated_at`/`row_version+1`,
+  writes one `invite_group_sent` event plus one `application_invited` event
+  per member in the same transaction, and bumps the meta version. Wired
+  through the Postgres write adapter and covered by a live Postgres write
+  smoke inside `npm run test:postgres`. Still not wired into `src/server.js`,
+  no Telegram/outbox/notifications changes, no deploy.
 
 ## Documentation Audit
 

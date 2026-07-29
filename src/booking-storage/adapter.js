@@ -3,6 +3,7 @@ import { readBookingStateFromPostgres } from '../postgres/read-booking-state.js'
 import {
   assignShiftInPostgres,
   createShiftInPostgres,
+  sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   updateShiftCapacityInPostgres
 } from '../postgres/write-booking-command.js';
@@ -63,6 +64,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async assign_shift(command, actor) {
       const result = await assignShiftInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async send_invites(command, actor) {
+      const result = await sendInvitesInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }

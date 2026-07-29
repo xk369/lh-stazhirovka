@@ -6,6 +6,7 @@ import {
   PostgresCommandValidationError,
   assignShiftInPostgres,
   createShiftInPostgres,
+  sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   updateShiftCapacityInPostgres
 } from '../src/postgres/write-booking-command.js';
@@ -17,11 +18,14 @@ function fakePool({
   metaUpdatedAt = DEFAULT_META_UPDATED_AT,
   existingShifts = [],
   existingApplications = [],
+  existingInviteGroups = [],
   rollbackThrows = false
 } = {}) {
   const calls = [];
   const shifts = existingShifts.map(row => ({ ...row }));
   const apps = existingApplications.map(row => ({ ...row }));
+  const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
+  const inviteGroupMembers = [];
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
 
@@ -50,6 +54,10 @@ function fakePool({
       }
       if (/SELECT COALESCE\(MAX\(legacy_id\), 0\) AS max_legacy_id FROM shifts/.test(sql)) {
         const max = shifts.reduce((acc, row) => Math.max(acc, Number(row.legacy_id) || 0), 0);
+        return { rowCount: 1, rows: [{ max_legacy_id: max }] };
+      }
+      if (/SELECT COALESCE\(MAX\(legacy_id\), 0\) AS max_legacy_id FROM invite_groups/.test(sql)) {
+        const max = (inviteGroups || []).reduce((acc, row) => Math.max(acc, Number(row.legacy_id) || 0), 0);
         return { rowCount: 1, rows: [{ max_legacy_id: max }] };
       }
       if (/SELECT id, legacy_id, seats, date::text AS date/i.test(sql)) {
@@ -91,6 +99,22 @@ function fakePool({
           shift_id: row.shift_id
         }] : [] };
       }
+      if (/SELECT id, legacy_id, status, shift_id, venue_id, group_link\s+FROM applications/i.test(sql)) {
+        const requested = params[0] || [];
+        const rows = requested
+          .map(legacyId => findAppByLegacyId(legacyId))
+          .filter(Boolean)
+          .map(row => ({
+            id: row.id,
+            legacy_id: row.legacy_id,
+            status: row.status,
+            shift_id: row.shift_id,
+            venue_id: row.venue_id ?? null,
+            group_link: row.group_link ?? ''
+          }));
+        rows.sort((left, right) => Number(left.legacy_id) - Number(right.legacy_id));
+        return { rowCount: rows.length, rows };
+      }
       if (/SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience/i.test(sql)) {
         const row = findAppByLegacyId(params[0]);
         return { rowCount: row ? 1 : 0, rows: row ? [{
@@ -131,6 +155,45 @@ function fakePool({
           canceled: false
         });
         return { rowCount: 1, rows: [] };
+      }
+      if (/INSERT INTO invite_groups/.test(sql)) {
+        inviteGroups.push({
+          id: params[0],
+          legacy_id: params[1],
+          shift_id: params[2],
+          venue_id: params[3],
+          link: params[4],
+          sent_at: params[5],
+          created_by_telegram_user_id: params[6]
+        });
+        return { rowCount: 1, rows: [] };
+      }
+      if (/INSERT INTO invite_group_members/.test(sql)) {
+        inviteGroupMembers.push({
+          invite_group_id: params[0],
+          application_id: params[1],
+          created_at: params[2]
+        });
+        return { rowCount: 1, rows: [] };
+      }
+      if (/UPDATE applications\s+SET status = 'invited'/i.test(sql)) {
+        const groupUuid = params[0];
+        const venueId = params[1];
+        const linkValue = params[2];
+        const nowIso = params[3];
+        const appUuids = new Set((params[4] || []).map(String));
+        let count = 0;
+        for (const app of apps) {
+          if (appUuids.has(String(app.id))) {
+            app.status = 'invited';
+            app.invite_group_id = groupUuid;
+            app.venue_id = venueId;
+            app.group_link = linkValue;
+            app.updated_at = nowIso;
+            count += 1;
+          }
+        }
+        return { rowCount: count, rows: [] };
       }
       if (/UPDATE shifts\s+SET seats/i.test(sql)) {
         const seatsValue = Number(params[0]);
@@ -207,6 +270,8 @@ function fakePool({
     calls,
     getVersion: () => version,
     getUpdatedAt: () => updatedAt,
+    getInviteGroups: () => inviteGroups,
+    getInviteGroupMembers: () => inviteGroupMembers,
     getShifts: () => shifts,
     getApplications: () => apps,
     async connect() {
@@ -1329,6 +1394,427 @@ test('assignShiftInPostgres rejects non-recruiter actors before opening a transa
       actor: { role: 'trainee', telegram: { user: { id: '5' } } },
       command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
       now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// send_invites
+// -----------------------------------------------------------------------------
+
+const inviteShift = {
+  id: 'shift-uuid-invite',
+  legacy_id: 3300,
+  date: '2026-08-25',
+  seats: 4,
+  open: true,
+  canceled: false
+};
+
+function makeConfirmedApp(overrides = {}) {
+  return {
+    id: 'app-uuid-c1',
+    legacy_id: 4001,
+    shift_id: 'shift-uuid-invite',
+    status: 'confirmed',
+    invite_group_id: null,
+    group_link: '',
+    experience: null,
+    venue_id: null,
+    mentor_report_received: false,
+    ...overrides
+  };
+}
+
+const validCommand = {
+  action: 'send_invites',
+  baseVersion: 40,
+  shiftId: 3300,
+  venueId: 'loft5_small',
+  link: 'https://t.me/+abc123',
+  memberIds: [4001, 4002]
+};
+
+test('sendInvitesInPostgres commits invite group + members + application updates + events', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [
+      makeConfirmedApp({ id: 'app-uuid-c1', legacy_id: 4001 }),
+      makeConfirmedApp({ id: 'app-uuid-c2', legacy_id: 4002 })
+    ]
+  });
+  const now = new Date('2026-07-29T15:00:00.000Z');
+  const result = await sendInvitesInPostgres({
+    pool,
+    actor: recruiter,
+    command: validCommand,
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.shiftLegacyId, 3300);
+  assert.equal(result.venueId, 'loft5_small');
+  assert.equal(result.link, 'https://t.me/+abc123');
+  assert.deepEqual(result.memberLegacyIds, [4001, 4002]);
+  assert.equal(result.previousStatus, 'confirmed');
+  assert.equal(result.nextStatus, 'invited');
+  assert.equal(result.version, 41);
+  assert.equal(result.previousVersion, 40);
+  assert.equal(result.updatedAt, now.toISOString());
+  assert.equal(typeof result.inviteGroupId, 'string');
+  assert.ok(result.inviteGroupLegacyId > 0);
+
+  assert.equal(pool.getInviteGroups().length, 1);
+  const createdGroup = pool.getInviteGroups()[0];
+  assert.equal(createdGroup.shift_id, 'shift-uuid-invite');
+  assert.equal(createdGroup.venue_id, 'loft5_small');
+  assert.equal(createdGroup.link, 'https://t.me/+abc123');
+  assert.equal(createdGroup.sent_at, now.toISOString());
+  assert.equal(createdGroup.created_by_telegram_user_id, '111');
+
+  const members = pool.getInviteGroupMembers();
+  assert.equal(members.length, 2);
+  assert.deepEqual(
+    new Set(members.map(m => m.application_id)),
+    new Set(['app-uuid-c1', 'app-uuid-c2'])
+  );
+
+  const updatedApps = pool.getApplications();
+  for (const app of updatedApps) {
+    assert.equal(app.status, 'invited');
+    assert.equal(app.invite_group_id, createdGroup.id);
+    assert.equal(app.venue_id, 'loft5_small');
+    assert.equal(app.group_link, 'https://t.me/+abc123');
+  }
+
+  const sqlOrder = pool.calls.map(call => call.sql.trim().replace(/\s+/g, ' '));
+  const beginIndex = sqlOrder.indexOf('BEGIN');
+  const commitIndex = sqlOrder.indexOf('COMMIT');
+  assert.ok(beginIndex >= 0 && commitIndex > beginIndex);
+  const between = sqlOrder.slice(beginIndex + 1, commitIndex);
+  assert.ok(between.some(sql => /SELECT version.*FROM booking_state_meta.*FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)
+    && /FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /SELECT id, legacy_id, status, shift_id, venue_id, group_link/i.test(sql)
+    && /FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /MAX\(legacy_id\).*FROM invite_groups/i.test(sql)));
+  assert.ok(between.some(sql => /INSERT INTO invite_groups/i.test(sql)));
+  assert.ok(between.some(sql => /INSERT INTO invite_group_members/i.test(sql)));
+  assert.ok(between.some(sql => /UPDATE applications\s+SET status = 'invited'/i.test(sql)));
+  assert.ok(between.some(sql => /UPDATE booking_state_meta/.test(sql)));
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInserts.length, 3);
+  const types = eventInserts.map(call => call.params[3]);
+  assert.deepEqual(types, ['invite_group_sent', 'application_invited', 'application_invited']);
+
+  const sentEvent = eventInserts[0];
+  const sentPayload = JSON.parse(sentEvent.params[6]);
+  assert.equal(sentPayload.action, 'send_invites');
+  assert.equal(sentPayload.inviteGroupId, result.inviteGroupLegacyId);
+  assert.equal(sentPayload.venueId, 'loft5_small');
+  assert.deepEqual(sentPayload.memberIds, [4001, 4002]);
+  assert.equal(sentPayload.date, '2026-08-25');
+  assert.equal(sentPayload.legacyShiftId, 3300);
+
+  const firstInvited = JSON.parse(eventInserts[1].params[6]);
+  assert.equal(firstInvited.previousStatus, 'confirmed');
+  assert.equal(firstInvited.nextStatus, 'invited');
+  assert.equal(firstInvited.inviteGroupId, result.inviteGroupLegacyId);
+  assert.equal(firstInvited.legacyApplicationId, 4001);
+  assert.equal(firstInvited.shiftId, 3300);
+  const secondInvited = JSON.parse(eventInserts[2].params[6]);
+  assert.equal(secondInvited.legacyApplicationId, 4002);
+});
+
+test('sendInvitesInPostgres deduplicates memberIds and sorts them ASC', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [
+      makeConfirmedApp({ id: 'app-uuid-c1', legacy_id: 4001 }),
+      makeConfirmedApp({ id: 'app-uuid-c2', legacy_id: 4002 })
+    ]
+  });
+  const result = await sendInvitesInPostgres({
+    pool,
+    actor: recruiter,
+    command: { ...validCommand, memberIds: [4002, 4001, 4001, 4002] },
+    now: new Date('2026-07-29T15:00:00.000Z')
+  });
+  assert.deepEqual(result.memberLegacyIds, [4001, 4002]);
+  assert.equal(pool.getInviteGroupMembers().length, 2);
+});
+
+test('sendInvitesInPostgres rolls back on stale baseVersion', async () => {
+  const pool = fakePool({
+    currentVersion: 41,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [makeConfirmedApp()]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getInviteGroups().length, 0);
+  assert.equal(pool.getApplications()[0].status, 'confirmed');
+});
+
+test('sendInvitesInPostgres rejects unknown shift and rolls back', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [],
+    existingApplications: [makeConfirmedApp()]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /shift not found/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+});
+
+test('sendInvitesInPostgres rejects canceled shift', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift, canceled: true }],
+    existingApplications: [makeConfirmedApp()]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /отменённую дату/.test(err.message)
+  );
+});
+
+test('sendInvitesInPostgres rejects empty memberIds before opening a transaction', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /memberIds is required/
+  );
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: undefined },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /memberIds is required/
+  );
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [0] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /positive integers/
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('sendInvitesInPostgres rejects empty link with a required-field error', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }]
+  });
+  for (const bad of ['', '   ', undefined, null]) {
+    await assert.rejects(
+      () => sendInvitesInPostgres({
+        pool,
+        actor: recruiter,
+        command: { ...validCommand, link: bad, memberIds: [4001] },
+        now: new Date('2026-07-29T15:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError && /link is required/.test(err.message),
+      `expected required-field reject for link=${JSON.stringify(bad)}`
+    );
+  }
+  assert.equal(pool.calls.length, 0);
+});
+
+test('sendInvitesInPostgres rejects malformed and non-Telegram links before opening a transaction', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }]
+  });
+  for (const bad of [
+    'not-a-url',
+    'ftp://t.me/xyz',
+    'https://example.com/xyz',
+    'https://vk.com/link',
+    'https://faket.me/xyz'
+  ]) {
+    await assert.rejects(
+      () => sendInvitesInPostgres({
+        pool,
+        actor: recruiter,
+        command: { ...validCommand, link: bad, memberIds: [4001] },
+        now: new Date('2026-07-29T15:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError && /ссылку на рабочую группу/.test(err.message),
+      `expected reject for link=${bad}`
+    );
+  }
+  assert.equal(pool.calls.length, 0);
+});
+
+test('sendInvitesInPostgres accepts telegram.me hosts as well', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [makeConfirmedApp()]
+  });
+  const result = await sendInvitesInPostgres({
+    pool,
+    actor: recruiter,
+    command: {
+      ...validCommand,
+      link: 'https://telegram.me/joinchat/xyz',
+      memberIds: [4001]
+    },
+    now: new Date('2026-07-29T15:00:00.000Z')
+  });
+  assert.equal(result.link, 'https://telegram.me/joinchat/xyz');
+});
+
+test('sendInvitesInPostgres rejects when an application is unknown and rolls back', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [makeConfirmedApp({ legacy_id: 4001 })]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001, 999999] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /application not found: 999999/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(pool.getInviteGroups().length, 0);
+});
+
+test('sendInvitesInPostgres rejects an application that belongs to another shift', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [
+      makeConfirmedApp({ shift_id: 'shift-uuid-other' })
+    ]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /not on the selected shift/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+});
+
+test('sendInvitesInPostgres rejects a non-confirmed application (already invited, pending, etc.)', async () => {
+  for (const badStatus of ['pending', 'invited', 'feedback', 'passed', 'failed', 'noshow', 'queue']) {
+    const pool = fakePool({
+      currentVersion: 40,
+      existingShifts: [{ ...inviteShift }],
+      existingApplications: [makeConfirmedApp({ status: badStatus })]
+    });
+    await assert.rejects(
+      () => sendInvitesInPostgres({
+        pool,
+        actor: recruiter,
+        command: { ...validCommand, memberIds: [4001] },
+        now: new Date('2026-07-29T15:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError
+        && /not eligible/.test(err.message)
+        && new RegExp(`got '${badStatus}'`).test(err.message),
+      `expected reject for status=${badStatus}`
+    );
+    assert.equal(pool.getInviteGroups().length, 0);
+  }
+});
+
+test('sendInvitesInPostgres rejects invalid input types before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 40 });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, shiftId: 0, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /shiftId must be a positive integer/
+  );
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, venueId: '', memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /venueId is required/
+  );
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, baseVersion: 0, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('sendInvitesInPostgres rejects non-recruiter actors before opening a transaction', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [makeConfirmedApp()]
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '9' } } },
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
     }),
     err => err instanceof PostgresCommandAuthorizationError
   );
