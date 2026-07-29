@@ -327,7 +327,7 @@ test('Postgres write adapter routes send_invites through the transactional write
             }]
           };
         }
-        if (/SELECT id, legacy_id, status, shift_id, venue_id, group_link\s+FROM applications/i.test(sql)) {
+        if (/SELECT id, legacy_id, status, shift_id, venue_id, group_link/i.test(sql)) {
           return {
             rowCount: 1,
             rows: [{
@@ -336,7 +336,11 @@ test('Postgres write adapter routes send_invites through the transactional write
               status: 'confirmed',
               shift_id: 'shift-uuid-88',
               venue_id: null,
-              group_link: ''
+              group_link: '',
+              trainee_telegram_user_id: '501',
+              trainee_telegram_chat_id: '501',
+              telegram_username: 'trainee501',
+              name: 'Trainee 501'
             }]
           };
         }
@@ -372,6 +376,12 @@ test('Postgres write adapter routes send_invites through the transactional write
   assert.equal(outcome.result.venueId, 'loft5_small');
   assert.equal(outcome.result.link, 'https://t.me/+abc');
   assert.deepEqual(outcome.result.memberLegacyIds, [501]);
+  assert.deepEqual(outcome.result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
   assert.equal(outcome.result.version, 61);
   assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));

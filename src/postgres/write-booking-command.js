@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   BOOKING_STATUSES,
   BOOKING_STATUS_LABELS,
@@ -92,6 +92,18 @@ const SET_STATUS_TRANSITION_EVENTS = Object.freeze({
   'pending→confirmed': 'recruiter_confirmed',
   'invited→feedback': 'attendance_marked_feedback',
   'invited→noshow': 'attendance_marked_noshow'
+});
+const VENUE_LABELS = Object.freeze({
+  loft1: 'LOFT #1',
+  loft2: 'LOFT #2',
+  loft3: 'LOFT #3',
+  loft4: 'LOFT #4',
+  loft5_contrabanda: 'LOFT #5 CONTRABANDA',
+  loft5_small: 'LOFT #5 SMALL',
+  loft8: 'LOFT #8',
+  loft10: 'LOFT #10 (TAU)',
+  birch: 'THE BIRCH',
+  metelitsa: 'МЕТЕЛИЦА'
 });
 
 function statusLabel(status) {
@@ -255,6 +267,148 @@ function shiftUpdatedAtAsString(value) {
   if (!value) return '';
   if (typeof value === 'string') return new Date(value).toISOString();
   return value.toISOString();
+}
+
+function escapeTelegramHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
+}
+
+function displayVenueLabel(venueId) {
+  return VENUE_LABELS[venueId] || String(venueId || '').trim() || 'площадка LOFT HALL';
+}
+
+function displayShiftDate(value) {
+  const date = shiftDateAsString(value);
+  if (!date) return 'выбранную дату';
+  return new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+}
+
+function composeSendInviteNotificationText({ venueId, link, shiftDate }) {
+  const venueLabel = displayVenueLabel(venueId);
+  return [
+    '<b>🎉 Ваша заявка на стажировку одобрена!</b>',
+    '',
+    `Вы записаны на стажировку на <b>${escapeTelegramHtml(displayShiftDate(shiftDate))}</b>.`,
+    `Площадка: <b>${escapeTelegramHtml(venueLabel)}</b>.`,
+    '',
+    'Пожалуйста, перейдите по ссылке ниже и напишите в рабочую группу, что выходите на стажировку.',
+    '',
+    `<b>${escapeTelegramHtml(link)}</b>`,
+    '',
+    '<b>До смены необходимо:</b>',
+    '',
+    '• изучить техническое задание мероприятия;',
+    '• ознакомиться с меню;',
+    '• повторить этапы обслуживания и изучить историю площадки в боте LOFT HELPER.',
+    '',
+    'Вся информация о мероприятии появится в рабочей группе не позднее чем за день до смены.',
+    '',
+    'Во время стажировки за вами будет закреплён опытный наставник, который поможет освоиться и ответит на все вопросы.',
+    '',
+    '❗️Не забудьте о внешнем виде — вы представляете компанию LOFT HALL.',
+    '',
+    'Если по какой-либо причине вы не сможете выйти на стажировку, пожалуйста, сообщите об этом заранее, чтобы мы смогли предложить место другому кандидату.',
+    '',
+    '<b>Условия стажировки:</b>',
+    '• время выхода сообщает менеджер;',
+    '• продолжительность — <b>6 часов</b>;',
+    '• оплата — <b>1000 ₽</b>.',
+    '',
+    'Желаем успешной стажировки! 🚀',
+    '',
+    '#стажировка'
+  ].join('\n');
+}
+
+function stableNotificationKey(parts) {
+  const digest = createHash('sha256')
+    .update(JSON.stringify(parts))
+    .digest('hex')
+    .slice(0, 32);
+  return `${parts.action}:${parts.applicationLegacyId}:${digest}`;
+}
+
+function sendInviteNotificationRow({
+  app,
+  memberLegacyIds,
+  shiftLegacyId,
+  shiftDate,
+  groupLegacyId,
+  venueId,
+  link,
+  nowIso
+}) {
+  const chatId = String(app.trainee_telegram_chat_id || app.trainee_telegram_user_id || '').trim();
+  const notificationKey = stableNotificationKey({
+    action: 'send_invites',
+    applicationLegacyId: Number(app.legacy_id),
+    shiftLegacyId,
+    inviteGroupLegacyId: groupLegacyId,
+    venueId,
+    link,
+    memberLegacyIds
+  });
+  const text = composeSendInviteNotificationText({ venueId, link, shiftDate });
+  const status = chatId ? 'pending' : 'skipped';
+  return {
+    id: randomUUID(),
+    applicationId: app.id,
+    type: 'send_invites',
+    chatId: chatId || null,
+    chatTarget: 'trainee',
+    text,
+    parseMode: 'HTML',
+    status,
+    error: status === 'skipped' ? 'telegram_chat_missing' : null,
+    idempotencyKey: notificationKey,
+    nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
+async function insertNotifications(client, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return { inserted: 0 };
+  let inserted = 0;
+  for (const row of rows) {
+    const result = await client.query(
+      `
+        INSERT INTO notifications (
+          id, application_id, type, chat_id, chat_target, text, parse_mode,
+          status, error, idempotency_key, next_attempt_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (idempotency_key) DO NOTHING
+      `,
+      [
+        row.id,
+        row.applicationId,
+        row.type,
+        row.chatId,
+        row.chatTarget,
+        row.text,
+        row.parseMode,
+        row.status,
+        row.error,
+        row.idempotencyKey,
+        row.nextAttemptAt,
+        row.createdAt,
+        row.updatedAt
+      ]
+    );
+    inserted += result.rowCount || 0;
+  }
+  return { inserted };
 }
 
 export async function createShiftInPostgres({ pool, actor, command, now = new Date() }) {
@@ -754,7 +908,9 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
     }
 
     const appResult = await client.query(
-      `SELECT id, legacy_id, status, shift_id, venue_id, group_link
+      `SELECT id, legacy_id, status, shift_id, venue_id, group_link,
+              trainee_telegram_user_id, trainee_telegram_chat_id,
+              telegram_username, name
          FROM applications
         WHERE legacy_id = ANY($1::bigint[])
         ORDER BY legacy_id
@@ -875,6 +1031,18 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
     ];
     await insertApplicationEvents(client, events);
 
+    const notificationRows = memberLegacyIds.map(legacyId => sendInviteNotificationRow({
+      app: rowsByLegacyId.get(String(legacyId)),
+      memberLegacyIds,
+      shiftLegacyId,
+      shiftDate: shiftDateText,
+      groupLegacyId,
+      venueId,
+      link,
+      nowIso
+    }));
+    const notificationResult = await insertNotifications(client, notificationRows);
+
     await client.query(
       'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
       [nextVersion, nowIso]
@@ -892,6 +1060,12 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
       memberIds: memberUuids,
       previousStatus: 'confirmed',
       nextStatus: 'invited',
+      notifications: {
+        total: notificationRows.length,
+        pending: notificationRows.filter(row => row.status === 'pending').length,
+        skipped: notificationRows.filter(row => row.status === 'skipped').length,
+        inserted: notificationResult.inserted
+      },
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,

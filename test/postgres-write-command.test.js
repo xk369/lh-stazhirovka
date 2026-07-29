@@ -19,12 +19,15 @@ function fakePool({
   existingShifts = [],
   existingApplications = [],
   existingInviteGroups = [],
+  existingNotifications = [],
+  notificationInsertThrows = false,
   rollbackThrows = false
 } = {}) {
   const calls = [];
   const shifts = existingShifts.map(row => ({ ...row }));
   const apps = existingApplications.map(row => ({ ...row }));
   const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
+  const notifications = existingNotifications.map(row => ({ ...row }));
   const inviteGroupMembers = [];
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
@@ -99,7 +102,7 @@ function fakePool({
           shift_id: row.shift_id
         }] : [] };
       }
-      if (/SELECT id, legacy_id, status, shift_id, venue_id, group_link\s+FROM applications/i.test(sql)) {
+      if (/SELECT id, legacy_id, status, shift_id, venue_id, group_link/i.test(sql)) {
         const requested = params[0] || [];
         const rows = requested
           .map(legacyId => findAppByLegacyId(legacyId))
@@ -110,7 +113,11 @@ function fakePool({
             status: row.status,
             shift_id: row.shift_id,
             venue_id: row.venue_id ?? null,
-            group_link: row.group_link ?? ''
+            group_link: row.group_link ?? '',
+            trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
+            trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
+            telegram_username: row.telegram_username ?? '',
+            name: row.name ?? ''
           }));
         rows.sort((left, right) => Number(left.legacy_id) - Number(right.legacy_id));
         return { rowCount: rows.length, rows };
@@ -173,6 +180,34 @@ function fakePool({
           invite_group_id: params[0],
           application_id: params[1],
           created_at: params[2]
+        });
+        return { rowCount: 1, rows: [] };
+      }
+      if (/INSERT INTO notifications/i.test(sql)) {
+        if (notificationInsertThrows) {
+          throw new Error('notification insert failed');
+        }
+        const idempotencyKey = params[9];
+        if (
+          idempotencyKey
+          && notifications.some(row => String(row.idempotency_key) === String(idempotencyKey))
+        ) {
+          return { rowCount: 0, rows: [] };
+        }
+        notifications.push({
+          id: params[0],
+          application_id: params[1],
+          type: params[2],
+          chat_id: params[3],
+          chat_target: params[4],
+          text: params[5],
+          parse_mode: params[6],
+          status: params[7],
+          error: params[8],
+          idempotency_key: params[9],
+          next_attempt_at: params[10],
+          created_at: params[11],
+          updated_at: params[12]
         });
         return { rowCount: 1, rows: [] };
       }
@@ -272,6 +307,7 @@ function fakePool({
     getUpdatedAt: () => updatedAt,
     getInviteGroups: () => inviteGroups,
     getInviteGroupMembers: () => inviteGroupMembers,
+    getNotifications: () => notifications,
     getShifts: () => shifts,
     getApplications: () => apps,
     async connect() {
@@ -1424,6 +1460,10 @@ function makeConfirmedApp(overrides = {}) {
     experience: null,
     venue_id: null,
     mentor_report_received: false,
+    trainee_telegram_user_id: '100001',
+    trainee_telegram_chat_id: '100001',
+    telegram_username: 'trainee',
+    name: 'Test Trainee',
     ...overrides
   };
 }
@@ -1505,6 +1545,8 @@ test('sendInvitesInPostgres commits invite group + members + application updates
   assert.ok(between.some(sql => /INSERT INTO invite_groups/i.test(sql)));
   assert.ok(between.some(sql => /INSERT INTO invite_group_members/i.test(sql)));
   assert.ok(between.some(sql => /UPDATE applications\s+SET status = 'invited'/i.test(sql)));
+  assert.ok(between.some(sql => /INSERT INTO notifications/i.test(sql)
+    && /ON CONFLICT \(idempotency_key\) DO NOTHING/i.test(sql)));
   assert.ok(between.some(sql => /UPDATE booking_state_meta/.test(sql)));
 
   const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
@@ -1529,6 +1571,21 @@ test('sendInvitesInPostgres commits invite group + members + application updates
   assert.equal(firstInvited.shiftId, 3300);
   const secondInvited = JSON.parse(eventInserts[2].params[6]);
   assert.equal(secondInvited.legacyApplicationId, 4002);
+
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 2);
+  assert.deepEqual(notifications.map(row => row.type), ['send_invites', 'send_invites']);
+  assert.deepEqual(notifications.map(row => row.status), ['pending', 'pending']);
+  assert.deepEqual(notifications.map(row => row.chat_target), ['trainee', 'trainee']);
+  assert.deepEqual(notifications.map(row => row.parse_mode), ['HTML', 'HTML']);
+  assert.deepEqual(notifications.map(row => row.chat_id), ['100001', '100001']);
+  assert.ok(notifications.every(row => row.text.includes('https://t.me/+abc123')));
+  assert.ok(notifications.every(row => row.text.includes('LOFT #5 SMALL')));
+  assert.equal(new Set(notifications.map(row => row.idempotency_key)).size, 2);
+  assert.equal(result.notifications.total, 2);
+  assert.equal(result.notifications.pending, 2);
+  assert.equal(result.notifications.skipped, 0);
+  assert.equal(result.notifications.inserted, 2);
 });
 
 test('sendInvitesInPostgres deduplicates memberIds and sorts them ASC', async () => {
@@ -1548,6 +1605,64 @@ test('sendInvitesInPostgres deduplicates memberIds and sorts them ASC', async ()
   });
   assert.deepEqual(result.memberLegacyIds, [4001, 4002]);
   assert.equal(pool.getInviteGroupMembers().length, 2);
+});
+
+test('sendInvitesInPostgres records skipped notification when trainee chat id is missing', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [
+      makeConfirmedApp({
+        id: 'app-uuid-no-chat',
+        legacy_id: 4001,
+        trainee_telegram_chat_id: '',
+        trainee_telegram_user_id: ''
+      })
+    ]
+  });
+  const result = await sendInvitesInPostgres({
+    pool,
+    actor: recruiter,
+    command: { ...validCommand, memberIds: [4001] },
+    now: new Date('2026-07-29T15:00:00.000Z')
+  });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 0,
+    skipped: 1,
+    inserted: 1
+  });
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].status, 'skipped');
+  assert.equal(notifications[0].chat_id, null);
+  assert.equal(notifications[0].chat_target, 'trainee');
+  assert.equal(notifications[0].error, 'telegram_chat_missing');
+});
+
+test('sendInvitesInPostgres rolls back when notification outbox insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...inviteShift }],
+    existingApplications: [makeConfirmedApp()],
+    notificationInsertThrows: true
+  });
+  await assert.rejects(
+    () => sendInvitesInPostgres({
+      pool,
+      actor: recruiter,
+      command: { ...validCommand, memberIds: [4001] },
+      now: new Date('2026-07-29T15:00:00.000Z')
+    }),
+    /notification insert failed/
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getNotifications().length, 0);
 });
 
 test('sendInvitesInPostgres rolls back on stale baseVersion', async () => {

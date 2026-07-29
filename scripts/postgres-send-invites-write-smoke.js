@@ -69,6 +69,12 @@ try {
   assert.equal(result.version, beforeState.version + 1);
   assert.equal(result.updatedAt, sendNow.toISOString());
   assert.ok(result.inviteGroupLegacyId > 0);
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
 
   const afterState = await readBookingStateFromPostgres(pool);
   assert.equal(afterState.version, result.version);
@@ -152,6 +158,34 @@ try {
   assert.equal(invitedEvent.payload.venueId, VENUE_ID);
   assert.equal(invitedEvent.payload.shiftId, SHIFT_LEGACY_ID);
 
+  const notificationResult = await pool.query(
+    `
+      SELECT notifications.type,
+             notifications.status,
+             notifications.chat_id,
+             notifications.chat_target,
+             notifications.parse_mode,
+             notifications.text,
+             notifications.idempotency_key
+        FROM notifications
+        JOIN applications ON applications.id = notifications.application_id
+       WHERE applications.legacy_id = $1
+         AND notifications.type = 'send_invites'
+         AND notifications.created_at = $2::timestamptz
+    `,
+    [CONFIRMED_APP_LEGACY_ID, sendNow.toISOString()]
+  );
+  assert.equal(notificationResult.rowCount, 1);
+  const notification = notificationResult.rows[0];
+  assert.equal(notification.status, 'pending');
+  assert.equal(notification.chat_id, '910');
+  assert.equal(notification.chat_target, 'trainee');
+  assert.equal(notification.parse_mode, 'HTML');
+  assert.match(notification.text, /Ваша заявка на стажировку одобрена/);
+  assert.match(notification.text, /LOFT #5 SMALL/);
+  assert.match(notification.text, new RegExp(LINK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(notification.idempotency_key, /^send_invites:900001:/);
+
   await assert.rejects(
     () => sendInvitesInPostgres({
       pool,
@@ -193,6 +227,18 @@ try {
   );
   assert.equal(finalInvitedApp.status, 'invited');
   assert.equal(Number(finalInvitedApp.inviteGroupId), result.inviteGroupLegacyId);
+
+  const finalNotificationCount = await pool.query(
+    `
+      SELECT COUNT(*)::int AS count
+        FROM notifications
+        JOIN applications ON applications.id = notifications.application_id
+       WHERE applications.legacy_id = $1
+         AND notifications.type = 'send_invites'
+    `,
+    [CONFIRMED_APP_LEGACY_ID]
+  );
+  assert.equal(finalNotificationCount.rows[0].count, 1);
 
   console.log('PostgreSQL send_invites write smoke test passed.');
 } finally {

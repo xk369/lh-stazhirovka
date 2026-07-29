@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **61%**.
+Текущий общий прогресс: **64%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -43,7 +43,7 @@ production работает на PostgreSQL, цепочка проверена, 
 | 3. Синхронизация с актуальным `main` | 10% | готово | Миграционная ветка содержит все свежие prod-фиксы, тесты проходят. |
 | 4. Полный event log | 15% | в работе | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
 | 5. Writable Postgres command layer | 20% | в работе | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
-| 6. Notifications/outbox | 15% | не начато | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
+| 6. Notifications/outbox | 15% | в работе | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
 | 7. Full staging QA и rehearsal | 10% | не начато | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
 
@@ -246,17 +246,17 @@ Rollback:
 команде за итерацию. Интегрированные slices:
 `create_shift`, `update_shift_capacity`, forward-переходы
 `set_application_status`, назначение из предварительной очереди
-`assign_shift` и state/events-slice отправки рабочих групп `send_invites`
+`assign_shift` и отправка рабочих групп `send_invites`
 выполняются транзакционно в PostgreSQL, пишут
 `application_events`, увеличивают `booking_state_meta.version` при реальном
 изменении и проверяются live smoke внутри `npm run test:postgres`.
 
-Следующий технический шаг: закрыть notification/outbox-gap для `send_invites`.
-Сейчас Postgres-команда уже создает `invite_groups`, `invite_group_members`,
-переводит заявки в `invited` и пишет audit events, но еще не создает
-durable `notifications(status='pending')`. До этого ее нельзя подключать к
-runtime: иначе state сохранится, а личные Telegram-уведомления стажерам могут
-не уйти.
+Для `send_invites` дополнительно закрыт notification/outbox-gap: команда в той
+же транзакции пишет `notifications` rows для выбранных стажеров. Если Telegram
+target есть, создается `status='pending'`; если target отсутствует, создается
+явный `status='skipped'` с причиной `telegram_chat_missing`. Runtime все еще не
+переключен на Postgres: live worker доставки pending notifications и остальные
+write-команды остаются следующими шагами.
 
 Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
 действие `Вернуть в новые заявки`: текущий JSON путь делает это через

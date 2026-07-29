@@ -6,10 +6,10 @@
 
 ## Current Progress
 
-- Общий прогресс: 61%.
+- Общий прогресс: 64%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: writable PostgreSQL command layer.
+- Текущий stage: writable PostgreSQL command layer + notifications/outbox.
 
 ## Что Уже Интегрировано В Base
 
@@ -68,7 +68,7 @@
     events;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
-- `send_invites` writable PostgreSQL state/events slice:
+- `send_invites` writable PostgreSQL command:
   - recruiter-only;
   - `booking_state_meta FOR UPDATE`;
   - target `shifts` row `FOR UPDATE`;
@@ -79,9 +79,14 @@
   - creates `invite_groups` and `invite_group_members`;
   - updates selected applications to `status=invited` with venue/group link;
   - writes `invite_group_sent` and `application_invited` events;
+  - writes one durable `notifications` row per selected trainee in the same
+    transaction;
+  - uses `status='pending'` when a Telegram target exists;
+  - uses explicit `status='skipped'` + `telegram_chat_missing` when the trainee
+    has no Telegram target;
+  - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
   - version bump;
-  - live PostgreSQL smoke inside `npm run test:postgres`;
-  - not runtime-ready yet because it does not write notification/outbox rows.
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -101,19 +106,18 @@
 
 ## Очередь Writable Команд
 
-1. `send_invites_notifications_outbox`
-2. `cancel_internship`
-3. `cancel_shift`
-4. `step_back_application`
-5. `mark_experienced`
-6. `return_to_queue`
-7. `update_comment`
-8. `upsert_trainee_application`
-9. `cancel_application`
-10. `toggle_shift`
-11. `clear_state`
-12. `reset_demo_state`
-13. `mentor_report_result` через `/api/report`
+1. `cancel_internship`
+2. `cancel_shift`
+3. `step_back_application`
+4. `mark_experienced`
+5. `return_to_queue`
+6. `update_comment`
+7. `upsert_trainee_application`
+8. `cancel_application`
+9. `toggle_shift`
+10. `clear_state`
+11. `reset_demo_state`
+12. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -128,10 +132,10 @@
   shifts. If UI/API needs to move an already assigned, confirmed or invited
   application, add a separate command that explicitly handles old shift,
   invite-group, venue and archive links before runtime cutover.
-- PostgreSQL `send_invites` currently writes durable state and events only.
-  The command contract declares outbox, so do not wire writable Postgres into
-  runtime until selected trainees also get durable `notifications(status=pending)`
-  rows in the same transaction and the delivery worker/dry-run policy is tested.
+- PostgreSQL `send_invites` now writes durable `notifications` rows, but there
+  is still no worker that claims pending rows and marks delivery as `sent`,
+  `failed` or `skipped`. Do not wire writable Postgres into runtime until the
+  worker/dry-run policy is implemented and tested.
 
 ## Two-Agent Rules
 
@@ -147,8 +151,8 @@
 
 ## Next Concrete Step
 
-Claude: implement the `send_invites` notification/outbox slice in a branch
-based on current `migration/postgres-foundation`.
+Claude: paused/exhausted. If Claude is reintroduced, give it the next single
+command work package, not the already completed `send_invites` outbox slice.
 
-Codex: review, merge into `migration/postgres-foundation`, run full gates, then
-raise progress only if the outbox path is integrated and tested.
+Codex: continue from `migration/postgres-foundation`; next recommended command
+slice is `cancel_internship`, then `cancel_shift` or `step_back_application`.

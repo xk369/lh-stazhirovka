@@ -19,12 +19,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Production container: `loft-internship-unified`
 - Production still uses JSON storage: `data/db.json`.
 - Migration worktree:
-  `/Users/a1/Desktop/Loft_Hall/Helper_bot/loft_hall_internship_unified_hall_sync`
+  `/Users/a1/Desktop/Loft_Hall/Helper_bot/loft_hall_internship_unified_migration_integrate`
 - Active branch: `migration/postgres-foundation`
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 61%.
+- Current migration progress: 64%.
 
 ## Migration Staging
 
@@ -63,6 +63,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added a transactional `send_invites` Postgres write path for creating invite
   groups, linking members and moving confirmed applications to `invited` with
   live PostgreSQL smoke inside `npm run test:postgres`.
+- Added durable `notifications` outbox rows to the transactional
+  `send_invites` Postgres write path: one `pending` row per reachable trainee,
+  explicit `skipped` row when the Telegram target is missing, stable
+  idempotency key and live PostgreSQL smoke inside `npm run test:postgres`.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -90,6 +94,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   live `send_invites` PostgreSQL write smoke.
 - 2026-07-29: migration PR safety check passed after integrating
   `send_invites`, 7 changed paths checked.
+- 2026-07-29: `npm test` passed, 188/188 tests after adding durable
+  `notifications` outbox rows to PostgreSQL `send_invites`.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `send_invites` notification/outbox assertions.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -234,6 +242,15 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   not runtime-ready by itself because it intentionally does not write
   `notifications`/outbox rows yet, even though the command contract requires
   outbox before production runtime wiring. Raised migration progress to 61%.
+- 2026-07-29: closed the `send_invites` notification/outbox gap directly in
+  `migration/postgres-foundation` after Claude limits ended. The command now
+  writes durable `notifications` rows in the same transaction as invite group,
+  member links, application status updates and audit events. Pending rows are
+  created for trainees with Telegram targets; missing targets are recorded as
+  explicit skipped rows with `telegram_chat_missing`, so the business action
+  does not silently fail. Added unit coverage, adapter assertions and live
+  PostgreSQL smoke assertions. No `src/server.js` runtime wiring, no live
+  Telegram worker and no deploy. Raised migration progress to 64%.
 
 ## Documentation Audit
 
@@ -268,11 +285,12 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Close the `send_invites` notification/outbox gap before treating invite
-   flow as runtime-ready: state/events are implemented, but trainee Telegram
-   delivery must become durable `notifications(status='pending')` work.
-3. After the `send_invites` outbox slice, continue Stage 5 by implementing one
-   remaining writable Postgres command per iteration.
+2. Continue Stage 5 by implementing one remaining writable Postgres command per
+   iteration; the next high-value backend commands are `cancel_internship`,
+   `cancel_shift`, `step_back_application` and `mark_experienced`.
+3. Continue Stage 6 after enough notifier commands exist: add the notification
+   worker/dry-run runner that claims pending rows and records sent/failed/skipped
+   delivery results without touching production.
 4. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 5. Run `npm run test:postgres` after every Postgres write command.
