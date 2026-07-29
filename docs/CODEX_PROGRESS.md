@@ -103,6 +103,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - 2026-07-29: tightened Claude collaboration rules: Claude is an implementer
   for scoped work packages, must not change migration strategy/progress/cutover
   docs, and must end every iteration with `Report For Codex Review`.
+- 2026-07-29 (Claude, branch `migration/postgres-write-adapter-claude`): added
+  a Postgres transaction helper, a booking storage adapter seam and a
+  transactional `create_shift` write path with unit tests. `BOOKING_STORAGE_MODE`
+  enum now also accepts `postgres`, gated by `isRuntimeWiredBookingStorageMode`
+  and a source-level assertion that `src/server.js` still does not branch on
+  it, so runtime remains JSON. No wiring into `server.js`, no Telegram/outbox
+  changes, no production or staging deploy. Draft PR opened into
+  `migration/postgres-foundation` for Codex review.
 
 ## Documentation Audit
 
