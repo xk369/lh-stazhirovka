@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **45%**.
+Текущий общий прогресс: **50%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -42,7 +42,7 @@ production работает на PostgreSQL, цепочка проверена, 
 | 2. Postgres schema/import/read-only parity | 20% | готово | JSON импортируется в Postgres, обратное чтение совпадает с JSON, read-only staging поднят. |
 | 3. Синхронизация с актуальным `main` | 10% | готово | Миграционная ветка содержит все свежие prod-фиксы, тесты проходят. |
 | 4. Полный event log | 15% | в работе | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
-| 5. Writable Postgres command layer | 20% | не начато | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
+| 5. Writable Postgres command layer | 20% | в работе | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
 | 6. Notifications/outbox | 15% | не начато | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
 | 7. Full staging QA и rehearsal | 10% | не начато | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
@@ -242,6 +242,8 @@ Rollback:
 
 ## Текущее Следующее Действие
 
-Следующий технический шаг: подключить планирование `application_events` к
-будущему writable Postgres command layer и спроектировать transactional write
-path без изменения production JSON runtime.
+Следующий технический шаг: расширять writable Postgres command layer по одной
+команде за итерацию. Первый интегрированный slice готов:
+`create_shift` выполняется транзакционно в PostgreSQL, пишет `shift_created`,
+увеличивает `booking_state_meta.version` и проверяется live smoke внутри
+`npm run test:postgres`. Следующая команда: `update_shift_capacity`.

@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 45%.
+- Current migration progress: 50%.
 
 ## Migration Staging
 
@@ -50,10 +50,20 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added isolated Docker Compose contour for migration staging.
 - Deployed read-only migration staging with a copied production snapshot.
 - Verified import/parity/runtime smoke before exposing staging.
+- Added a Postgres write adapter seam and transactional `create_shift` path.
+- Added live PostgreSQL write smoke for `create_shift` inside `npm run test:postgres`.
+- Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
 ## Current Checks
 
+- 2026-07-29: `npm test` passed, 135/135 tests after integrating
+  `create_shift` writable Postgres slice, safety check and command contracts
+  into `migration/postgres-foundation`.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `create_shift` PostgreSQL write smoke.
+- 2026-07-29: migration PR safety check passed for integrated
+  `migration/postgres-foundation` changes, 17 changed paths checked.
 - 2026-07-29: `npm test` passed, 109/109 tests after expanding
   `application_events` coverage.
 - 2026-07-29: `git diff --check` passed after expanding event coverage.
@@ -115,6 +125,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   added a real PostgreSQL write smoke for `create_shift` inside
   `npm run test:postgres`, verifying the inserted shift, version bump and
   `shift_created` application event after JSON import/parity checks.
+- 2026-07-29: integrated accepted Claude/Codex migration slices into
+  `migration/postgres-foundation`: transactional Postgres `create_shift`,
+  live write smoke, PR safety check and command contracts. Raised migration
+  progress to 50% because Stage 5 is now genuinely in progress on the base
+  migration branch, not only in side branches.
 
 ## Documentation Audit
 
@@ -123,6 +138,7 @@ Read before continuing:
 - `AGENTS.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/MIGRATION_EXECUTION_PLAN.md`
+- `docs/MIGRATION_DELIVERY_SCOREBOARD.md`
 - `docs/CLAUDE_MIGRATION_BRIEF.md`
 - `docs/INTERNSHIP_WORKFLOW.md`
 - `docs/DATA_MODEL.md`
@@ -136,6 +152,8 @@ Known doc rule:
 - `docs/CODEX_PROGRESS.md` is the live worklog.
 - `docs/MIGRATION_EXECUTION_PLAN.md` is the concrete execution plan, percent
   tracking rules and go/no-go gates.
+- `docs/MIGRATION_DELIVERY_SCOREBOARD.md` is the practical delivery board:
+  integrated slices, next commands, gates and two-agent ownership.
 - `docs/CLAUDE_MIGRATION_BRIEF.md` is the safe handoff prompt and guardrail set
   for involving Claude in the migration without touching production.
 - `docs/INTERNSHIP_WORKFLOW.md` is business behavior by role.
@@ -146,20 +164,18 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Continue Stage 4: wire `application_events` planning into the future
-   writable Postgres command layer design and decide exact transaction
-   boundaries.
+2. Continue Stage 5 by implementing one writable Postgres command per
+   iteration, starting with `update_shift_capacity`.
 3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
-4. Do full role QA on migration staging:
+4. Run `npm run test:postgres` after every Postgres write command.
+5. Do full role QA on migration staging:
    trainee view, recruiter view, mentor report validation, registry, groups,
    archive, bad links, duplicate clicks and version conflicts.
-5. For UI QA that needs Telegram identity, use signed test `initData` or a
+6. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-6. Only after Stage 4 is complete, implement writable PostgreSQL staging with
-   transactional commands, `notifications` and outbox. The first
-   `application_events` planning/writing foundation exists, but it is not
-   connected to runtime writes yet.
+7. Only after the critical `/api/state` write commands are implemented and
+   smoke-tested should we wire writable Postgres mode into `src/server.js`.
 
 ## Do Not Forget
 
