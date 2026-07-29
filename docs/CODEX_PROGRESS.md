@@ -97,6 +97,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   invite group membership changes, automatic shift close, and mentor result
   notification delivery statuses. Added tests and raised migration progress to
   45%.
+- 2026-07-29: added `docs/CLAUDE_MIGRATION_BRIEF.md` so Claude can join the
+  migration safely through a separate branch/PR without touching production,
+  `main`, live Telegram delivery or runtime data.
 
 ## Documentation Audit
 
@@ -105,6 +108,7 @@ Read before continuing:
 - `AGENTS.md`
 - `docs/CODEX_HANDOFF.md`
 - `docs/MIGRATION_EXECUTION_PLAN.md`
+- `docs/CLAUDE_MIGRATION_BRIEF.md`
 - `docs/INTERNSHIP_WORKFLOW.md`
 - `docs/DATA_MODEL.md`
 - `docs/POSTGRES_MIGRATION_ROADMAP.md`
@@ -117,6 +121,8 @@ Known doc rule:
 - `docs/CODEX_PROGRESS.md` is the live worklog.
 - `docs/MIGRATION_EXECUTION_PLAN.md` is the concrete execution plan, percent
   tracking rules and go/no-go gates.
+- `docs/CLAUDE_MIGRATION_BRIEF.md` is the safe handoff prompt and guardrail set
+  for involving Claude in the migration without touching production.
 - `docs/INTERNSHIP_WORKFLOW.md` is business behavior by role.
 - `docs/DATA_MODEL.md` is current JSON state/API fields and relationships.
 - `docs/POSTGRES_MIGRATION_ROADMAP.md` is the migration architecture.
