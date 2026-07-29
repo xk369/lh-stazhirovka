@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **52%**.
+Текущий общий прогресс: **55%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -244,7 +244,14 @@ Rollback:
 
 Следующий технический шаг: расширять writable Postgres command layer по одной
 команде за итерацию. Интегрированные slices:
-`create_shift` и `update_shift_capacity` выполняются транзакционно в
-PostgreSQL, пишут `application_events`, увеличивают
-`booking_state_meta.version` при реальном изменении и проверяются live smoke
-внутри `npm run test:postgres`. Следующая команда: `set_application_status`.
+`create_shift`, `update_shift_capacity` и forward-переходы
+`set_application_status` выполняются транзакционно в PostgreSQL, пишут
+`application_events`, увеличивают `booking_state_meta.version` при реальном
+изменении и проверяются live smoke внутри `npm run test:postgres`.
+
+Следующая команда: `assign_shift`.
+
+Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
+действие `Вернуть в новые заявки`: текущий JSON путь делает это через
+`set_application_status -> pending`, но roadmap требует отдельную бизнес-команду
+с явным решением по старой рабочей группе, площадке и архивным связям.

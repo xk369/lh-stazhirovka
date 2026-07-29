@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 52%.
+- Current migration progress: 55%.
 
 ## Migration Staging
 
@@ -54,6 +54,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added live PostgreSQL write smoke for `create_shift` inside `npm run test:postgres`.
 - Added a transactional `update_shift_capacity` Postgres write path with live
   PostgreSQL smoke inside `npm run test:postgres`.
+- Added a transactional `set_application_status` Postgres write path for
+  forward recruiter transitions with live PostgreSQL smoke inside
+  `npm run test:postgres`.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -64,6 +67,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   seat-holding statuses from the shared state machine.
 - 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
   live `update_shift_capacity` PostgreSQL write smoke.
+- 2026-07-29: `npm test` passed, 158/158 tests after integrating
+  `set_application_status` into `migration/postgres-foundation`.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `set_application_status` PostgreSQL write smoke.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -162,6 +169,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   version. Wired through the Postgres write adapter and covered by a live
   Postgres write smoke inside `npm run test:postgres`. Still not wired into
   `src/server.js`, no Telegram/outbox/notifications changes, no deploy.
+- 2026-07-29: reviewed and integrated `set_application_status` into
+  `migration/postgres-foundation`. Confirmed the explicit `→ pending` rejection
+  matches `docs/POSTGRES_MIGRATION_ROADMAP.md`: the current UI correction
+  action must become a separate business command before Postgres write runtime
+  is enabled. Raised migration progress to 55%.
 
 ## Documentation Audit
 
@@ -197,7 +209,7 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one writable Postgres command per
-   iteration, starting with `set_application_status`.
+   iteration, starting with `assign_shift`.
 3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 4. Run `npm run test:postgres` after every Postgres write command.
