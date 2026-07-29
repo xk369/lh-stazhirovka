@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 66%.
+- Current migration progress: 68%.
 
 ## Migration Staging
 
@@ -71,6 +71,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   a single pre-attendance trainee to preliminary queue, cleaning invite group
   membership, removing an empty invite group, writing audit events and writing
   a durable trainee notification/outbox row inside the same transaction.
+- Added a transactional `cancel_shift` Postgres write path for canceling a
+  whole internship date, returning only pre-attendance trainees to preliminary
+  queue, preserving attended trainees on the canceled date for history, cleaning
+  invite group membership, writing audit events and writing durable trainee
+  notification/outbox rows in the same transaction.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -106,6 +111,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   PostgreSQL `cancel_internship`, adapter routing and unit coverage.
 - 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
   live `cancel_internship` PostgreSQL write smoke. A sandboxed run failed first
+  because local PostgreSQL could not create shared memory (`shmget Operation
+  not permitted`), then the same command passed with escalation.
+- 2026-07-29: `npm test` passed, 205/205 tests after adding transactional
+  PostgreSQL `cancel_shift`, adapter routing and unit coverage.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `cancel_shift` PostgreSQL write smoke. A sandboxed run failed first
   because local PostgreSQL could not create shared memory (`shmget Operation
   not permitted`), then the same command passed with escalation.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
@@ -272,6 +283,19 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   routing, unit coverage and live PostgreSQL smoke. No `src/server.js` runtime
   wiring, no live Telegram worker and no deploy. Raised migration progress to
   66%.
+- 2026-07-29: added transactional PostgreSQL `cancel_shift` directly in
+  `migration/postgres-foundation`. The command is recruiter-only, locks
+  `booking_state_meta`, the shift, affected pre-attendance applications and
+  linked invite groups, rejects stale versions, marks the date as canceled,
+  returns only `pending`/`confirmed`/`invited` trainees to `queue`, preserves
+  post-attendance trainees on the canceled date for history/result visibility,
+  cleans affected application assignment/report fields, removes affected invite
+  memberships, updates or deletes invite groups, writes `shift_cancelled`,
+  `invite_group_updated`/`invite_group_removed` and `internship_cancelled`
+  events, and writes durable trainee notification/outbox rows with
+  pending/skipped semantics. Added adapter routing, unit coverage and live
+  PostgreSQL smoke. No `src/server.js` runtime wiring, no live Telegram worker
+  and no deploy. Raised migration progress to 68%.
 
 ## Documentation Audit
 
@@ -307,8 +331,8 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `cancel_internship`,
-   `cancel_shift`, `step_back_application` and `mark_experienced`.
+   iteration; the next high-value backend commands are `step_back_application`,
+   `mark_experienced`, `return_to_queue` and `update_comment`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.
