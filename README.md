@@ -79,10 +79,12 @@ loft-internship-unified
 
 ## Безопасный порядок на сервере
 
-1. Сделать архив/копию текущего рабочего проекта:
+1. Сделать архив/копию текущего рабочего проекта. Для актуального продакшена
+   используется `/opt/loft-hall-internship-unified`; старый путь
+   `/opt/loft-hall-internship` считать legacy-примером:
 
 ```bash
-cp -a /opt/loft-hall-internship /opt/loft-hall-internship.backup-$(date +%Y%m%d-%H%M)
+cp -a /opt/loft-hall-internship-unified /opt/loft-hall-internship-unified.backup-$(date +%Y%m%d-%H%M)
 ```
 
 2. Поднять объединённый проект рядом, отдельной директорией:

@@ -37,7 +37,7 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   after the check.
 - Migration staging is deployed at
   `https://stazhirovka-migration.151.244.243.164.sslip.io` from commit
-  `6c2af21`, server path `/opt/loft-hall-internship-migration-staging`.
+  `f96caed`, server path `/opt/loft-hall-internship-migration-staging`.
 - Its app is bound to `127.0.0.1:3502`; containers are
   `loft-internship-app-migration-staging` and
   `loft-internship-postgres-migration-staging`; PostgreSQL uses the dedicated
@@ -67,6 +67,7 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - Do not weaken Telegram `initData` verification or recruiter server-side authorization.
 - Do not edit runtime `data/db.json` unless explicitly requested and backed up.
 - Keep this file current. Update it in the same commit as any change to production state, deploy procedure, server path, report chat routing, or important UI/business decisions.
+- Keep `docs/CODEX_PROGRESS.md` current during active multi-step work so future agents can resume after compaction.
 - Keep `docs/INTERNSHIP_WORKFLOW.md` current when the actual role flow, statuses, Telegram messages, report side effects, or recruiter/mentor/trainee actions change.
 - Keep `docs/DATA_MODEL.md` current when fields, entities, validation rules, or relationships change.
 - Keep `docs/POSTGRES_MIGRATION_ROADMAP.md` current while planning or implementing the Postgres/event-log migration.
@@ -106,6 +107,7 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `docs/INTERNSHIP_WORKFLOW.md` - full business workflow by role.
 - `docs/DATA_MODEL.md` - current JSON-state fields, API payloads, relationships, and future-edit rules.
 - `docs/POSTGRES_MIGRATION_ROADMAP.md` - planned Postgres schema, event log, outbox, staging sequence, and migration order.
+- `docs/CODEX_PROGRESS.md` - active worklog, current checks and next actions.
 
 ## Recent UI Decisions
 

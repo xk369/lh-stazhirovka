@@ -27,6 +27,7 @@
 - `docs/INTERNSHIP_WORKFLOW.md` - бизнес-цепочка по ролям;
 - `docs/DATA_MODEL.md` - текущие поля и связи;
 - `docs/CODEX_HANDOFF.md` - краткий handoff по продакшену и деплою.
+- `docs/CODEX_PROGRESS.md` - активный журнал текущей работы и следующих шагов.
 
 ## 2. Главное правило
 
@@ -439,7 +440,7 @@ Event log нужен, чтобы расследовать жалобы без р
 - [x] Добавить явный `BOOKING_STORAGE_MODE=postgres_readonly` без изменения
   production default `json`.
 - [x] Переключить отдельный migration staging на чтение из Postgres:
-  `stazhirovka-migration.151.244.243.164.sslip.io`, commit `6c2af21`,
+  `stazhirovka-migration.151.244.243.164.sslip.io`, commit `f96caed`,
   отдельные app/DB containers и volume, host port `3502`.
 - JSON оставить офлайн-бэкапом для управляемого rollback; автоматического
   fallback между источниками истины не делать.
