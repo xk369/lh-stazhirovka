@@ -278,20 +278,31 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `application_updated`;
 - `application_cancelled`;
 - `application_assigned_to_shift`;
+- `application_returned_to_queue`;
+- `application_comment_updated`;
 - `recruiter_confirmed`;
 - `application_invited`;
 - `invite_group_sent`;
+- `invite_group_updated`;
+- `invite_group_removed`;
 - `attendance_marked_feedback`;
 - `attendance_marked_noshow`;
 - `mentor_report_received`;
 - `mentor_result_notification_sent`;
+- `mentor_result_notification_skipped`;
+- `mentor_result_notification_failed`;
 - `application_passed`;
 - `application_failed`;
 - `application_step_back`;
+- `trainee_report_received`;
 - `internship_cancelled`;
+- `shift_created`;
+- `shift_opened`;
+- `shift_closed`;
 - `shift_cancelled`;
 - `shift_capacity_changed`;
 - `shift_auto_closed`;
+- `shift_deleted`;
 - `experienced_marked`.
 
 ## 5. State machine

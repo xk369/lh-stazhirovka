@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 40%.
+- Current migration progress: 45%.
 
 ## Migration Staging
 
@@ -54,6 +54,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Current Checks
 
+- 2026-07-29: `npm test` passed, 109/109 tests after expanding
+  `application_events` coverage.
+- 2026-07-29: `git diff --check` passed after expanding event coverage.
 - 2026-07-29: `git fetch origin` confirmed `origin/main` is already included
   in `migration/postgres-foundation` (`10 ahead / 0 behind` versus
   `origin/main`).
@@ -88,6 +91,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   go/no-go gates, QA scope and production cutover rollback rules. Confirmed
   migration branch already contains current `origin/main`, ran `npm test`
   successfully, and raised migration progress to 40%.
+- 2026-07-29: expanded `src/booking-state-events.js` coverage without
+  touching production runtime writes. Added explicit events for trainee profile
+  updates, recruiter comment updates, trainee reports, internship cancellation,
+  invite group membership changes, automatic shift close, and mentor result
+  notification delivery statuses. Added tests and raised migration progress to
+  45%.
 
 ## Documentation Audit
 
@@ -116,8 +125,9 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Continue Stage 4: complete `application_events` coverage and decide where
-   runtime Postgres writes will call the event planner.
+2. Continue Stage 4: wire `application_events` planning into the future
+   writable Postgres command layer design and decide exact transaction
+   boundaries.
 3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 4. Do full role QA on migration staging:

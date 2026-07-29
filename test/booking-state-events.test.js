@@ -124,13 +124,15 @@ test('booking state event planner records attendance and mentor final result', (
 
   assert.deepEqual(events.map(event => event.eventType), [
     'application_passed',
-    'mentor_report_received'
+    'mentor_report_received',
+    'mentor_result_notification_sent'
   ]);
   assert.equal(events[0].actorType, 'mentor');
   assert.equal(events[0].actorTelegramUserId, '700');
   assert.equal(events[1].payload.mentorDecision, 'Стажировка пройдена');
   assert.equal(events[1].payload.mentorReportHall, 'SMALL');
   assert.equal(events[1].payload.mentorMessageStatus, 'sent');
+  assert.equal(events[2].payload.deliveryStatus, 'sent');
 });
 
 test('booking state event planner records step back and mentor result cleanup', () => {
@@ -197,4 +199,156 @@ test('booking state event planner records clear state as an explicit audit event
   assert.equal(clearEvent.payload.removedShifts, 1);
   assert.equal(clearEvent.payload.removedApplications, 1);
   assert.equal(clearEvent.actorType, 'recruiter');
+});
+
+test('booking state event planner records trainee profile, comment and trainee report updates without PII values', () => {
+  const currentState = {
+    ...baseState(),
+    applications: [{
+      ...baseState().applications[0],
+      status: 'pending',
+      trainingDate: '2026-07-20',
+      comment: '',
+      candidateReport: false
+    }]
+  };
+  const nextState = {
+    ...currentState,
+    version: 11,
+    applications: [{
+      ...currentState.applications[0],
+      trainingDate: '2026-07-21',
+      limits: 'После 18:00',
+      comment: 'Внутренний комментарий рекрута',
+      candidateReport: true
+    }]
+  };
+
+  const events = planBookingStateEvents({
+    currentState,
+    nextState,
+    actor: recruiterActor,
+    cause: { action: 'upsert_trainee_application', baseVersion: 10 },
+    now
+  });
+
+  assert.deepEqual(events.map(event => event.eventType), [
+    'application_updated',
+    'application_comment_updated',
+    'trainee_report_received'
+  ]);
+  assert.deepEqual(events[0].payload.changedFields, ['trainingDate', 'limits']);
+  assert.equal(events[0].payload.limits, undefined);
+  assert.equal(events[1].payload.previousLength, 0);
+  assert.equal(events[1].payload.nextLength, 'Внутренний комментарий рекрута'.length);
+});
+
+test('booking state event planner records one-trainee internship cancellation and group membership update', () => {
+  const currentState = {
+    ...baseState(),
+    applications: [
+      {
+        ...baseState().applications[0],
+        status: 'invited',
+        inviteGroupId: 200,
+        venueId: 'loft5_small',
+        groupLink: 'https://t.me/+group'
+      },
+      {
+        ...baseState().applications[0],
+        id: 101,
+        status: 'invited',
+        inviteGroupId: 200,
+        venueId: 'loft5_small',
+        groupLink: 'https://t.me/+group'
+      }
+    ],
+    inviteGroups: [{
+      id: 200,
+      shiftId: 1,
+      venueId: 'loft5_small',
+      link: 'https://t.me/+group',
+      memberIds: [100, 101],
+      sentAt: '2026-07-29T09:30:00.000Z'
+    }]
+  };
+  const nextState = {
+    ...currentState,
+    version: 11,
+    applications: [
+      {
+        ...currentState.applications[0],
+        shiftId: null,
+        status: 'queue',
+        inviteGroupId: null,
+        venueId: null,
+        groupLink: ''
+      },
+      currentState.applications[1]
+    ],
+    inviteGroups: [{
+      ...currentState.inviteGroups[0],
+      memberIds: [101]
+    }]
+  };
+
+  const events = planBookingStateEvents({
+    currentState,
+    nextState,
+    actor: recruiterActor,
+    cause: { action: 'cancel_internship', baseVersion: 10 },
+    now
+  });
+
+  assert.deepEqual(events.map(event => event.eventType), [
+    'invite_group_updated',
+    'internship_cancelled'
+  ]);
+  assert.deepEqual(events[0].payload.removedMemberIds, [100]);
+  assert.equal(events[1].applicationId, 100);
+  assert.equal(events[1].payload.previousShiftId, 1);
+  assert.equal(events[1].payload.nextShiftId, null);
+});
+
+test('booking state event planner records automatic shift close separately from manual close', () => {
+  const currentState = {
+    ...baseState(),
+    applications: [{
+      ...baseState().applications[0],
+      status: 'feedback',
+      mentorReport: false
+    }]
+  };
+  const nextState = {
+    ...currentState,
+    version: 11,
+    shifts: [{
+      ...currentState.shifts[0],
+      open: false
+    }],
+    applications: [{
+      ...currentState.applications[0],
+      status: 'passed',
+      mentorReport: true,
+      mentorDecision: 'Стажировка пройдена',
+      mentorCommentDeliveryStatus: 'skipped'
+    }]
+  };
+
+  const events = planBookingStateEvents({
+    currentState,
+    nextState,
+    actor: mentorActor,
+    cause: { action: 'mentor_report_result', baseVersion: 10 },
+    now
+  });
+
+  assert.deepEqual(events.map(event => event.eventType), [
+    'shift_auto_closed',
+    'application_passed',
+    'mentor_report_received',
+    'mentor_result_notification_skipped'
+  ]);
+  assert.equal(events[0].shiftId, 1);
+  assert.equal(events[3].payload.deliveryStatus, 'skipped');
 });

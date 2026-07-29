@@ -1,6 +1,25 @@
 import { normalizeBookingState } from './booking-state.js';
 import { normalizeBookingStatus } from './booking-state-machine.js';
 
+const PROFILE_FIELDS = [
+  'name',
+  'phone',
+  'training',
+  'trainingDate',
+  'attempt',
+  'limits',
+  'telegramCode',
+  'telegramChatId',
+  'telegramUserId',
+  'telegramUsername'
+];
+
+const MENTOR_NOTIFICATION_EVENTS = Object.freeze({
+  sent: 'mentor_result_notification_sent',
+  skipped: 'mentor_result_notification_skipped',
+  failed: 'mentor_result_notification_failed'
+});
+
 function indexedById(items) {
   return new Map(items.map(item => [String(item.id), item]));
 }
@@ -49,8 +68,28 @@ function shiftEvent(type, shift, actor, payload, now) {
   });
 }
 
-function statusTransitionEventType(previousStatus, nextStatus, nextApplication) {
+function applicationCompletesShift(application) {
+  const status = normalizeBookingStatus(application?.status);
+  if (status === 'noshow') return true;
+  if (['passed', 'failed'].includes(status)) return Boolean(application?.mentorReport);
+  return false;
+}
+
+function shouldTreatShiftCloseAsAutomatic(state, shiftId, action) {
+  if (!['mentor_report_result', 'set_application_status'].includes(action)) return false;
+  const applications = state.applications.filter(application => String(application.shiftId) === String(shiftId));
+  return applications.length > 0 && applications.every(applicationCompletesShift);
+}
+
+function statusTransitionEventType(previousStatus, nextStatus, nextApplication, action) {
   if (previousStatus === nextStatus) return '';
+  if (
+    ['cancel_shift', 'cancel_internship'].includes(action)
+    && nextStatus === 'queue'
+    && !nextApplication?.shiftId
+  ) {
+    return 'internship_cancelled';
+  }
   if (
     ['feedback', 'passed', 'failed', 'noshow'].includes(previousStatus)
     && ['invited', 'feedback'].includes(nextStatus)
@@ -69,6 +108,36 @@ function statusTransitionEventType(previousStatus, nextStatus, nextApplication) 
 
 function mentorReportWasReceived(previousApplication, nextApplication) {
   return !previousApplication?.mentorReport && Boolean(nextApplication?.mentorReport);
+}
+
+function traineeReportWasReceived(previousApplication, nextApplication) {
+  return !previousApplication?.candidateReport && Boolean(nextApplication?.candidateReport);
+}
+
+function mentorNotificationEventType(previousApplication, nextApplication) {
+  const previousStatus = String(previousApplication?.mentorCommentDeliveryStatus || '').trim();
+  const nextStatus = String(nextApplication?.mentorCommentDeliveryStatus || '').trim();
+  if (!nextStatus || previousStatus === nextStatus) return '';
+  return MENTOR_NOTIFICATION_EVENTS[nextStatus] || 'mentor_result_notification_updated';
+}
+
+function changedFields(previousApplication, nextApplication, fields) {
+  return fields.filter(field => (
+    String(previousApplication?.[field] ?? '') !== String(nextApplication?.[field] ?? '')
+  ));
+}
+
+function memberIdSet(group) {
+  return new Set((Array.isArray(group?.memberIds) ? group.memberIds : []).map(id => String(id)));
+}
+
+function memberIdsDelta(previousGroup, nextGroup) {
+  const before = memberIdSet(previousGroup);
+  const after = memberIdSet(nextGroup);
+  return {
+    addedMemberIds: [...after].filter(id => !before.has(id)).map(Number),
+    removedMemberIds: [...before].filter(id => !after.has(id)).map(Number)
+  };
 }
 
 function compactApplicationPayload(application) {
@@ -97,6 +166,7 @@ export function planBookingStateEvents({
     previousVersion: before.version,
     nextVersion: after.version
   };
+  const causeAction = causePayload.action || '';
   const events = [];
   const beforeShifts = indexedById(before.shifts);
   const afterShifts = indexedById(after.shifts);
@@ -129,7 +199,10 @@ export function planBookingStateEvents({
         date: shift.date
       }, now));
     } else if (previous.open !== shift.open) {
-      events.push(shiftEvent(shift.open ? 'shift_opened' : 'shift_closed', shift, actor, {
+      const eventType = !shift.open && shouldTreatShiftCloseAsAutomatic(after, shift.id, causeAction)
+        ? 'shift_auto_closed'
+        : (shift.open ? 'shift_opened' : 'shift_closed');
+      events.push(shiftEvent(eventType, shift, actor, {
         ...causePayload,
         date: shift.date
       }, now));
@@ -146,7 +219,25 @@ export function planBookingStateEvents({
   }
 
   for (const group of after.inviteGroups) {
-    if (beforeInviteGroups.has(String(group.id))) continue;
+    const previous = beforeInviteGroups.get(String(group.id));
+    if (previous) {
+      const membersDelta = memberIdsDelta(previous, group);
+      const groupFieldsChanged = previous.venueId !== group.venueId || previous.link !== group.link;
+      if (
+        groupFieldsChanged
+        || membersDelta.addedMemberIds.length
+        || membersDelta.removedMemberIds.length
+      ) {
+        events.push(shiftEvent('invite_group_updated', afterShifts.get(String(group.shiftId)) || null, actor, {
+          ...causePayload,
+          inviteGroupId: group.id,
+          venueId: group.venueId,
+          addedMemberIds: membersDelta.addedMemberIds,
+          removedMemberIds: membersDelta.removedMemberIds
+        }, now));
+      }
+      continue;
+    }
     events.push(shiftEvent('invite_group_sent', afterShifts.get(String(group.shiftId)) || null, actor, {
       ...causePayload,
       inviteGroupId: group.id,
@@ -179,16 +270,26 @@ export function planBookingStateEvents({
     const nextStatus = normalizeBookingStatus(application.status);
     if (previousStatus !== nextStatus) {
       events.push(applicationEvent(
-        statusTransitionEventType(previousStatus, nextStatus, application),
+        statusTransitionEventType(previousStatus, nextStatus, application, causeAction),
         application,
         actor,
         {
           ...causePayload,
           previousStatus,
-          nextStatus
+          nextStatus,
+          previousShiftId: previous.shiftId ?? null,
+          nextShiftId: application.shiftId ?? null
         },
         now
       ));
+    }
+
+    const profileChanges = changedFields(previous, application, PROFILE_FIELDS);
+    if (profileChanges.length) {
+      events.push(applicationEvent('application_updated', application, actor, {
+        ...causePayload,
+        changedFields: profileChanges
+      }, now));
     }
 
     if (previous.shiftId !== application.shiftId && application.shiftId) {
@@ -196,6 +297,20 @@ export function planBookingStateEvents({
         ...causePayload,
         previousShiftId: previous.shiftId ?? null,
         nextShiftId: application.shiftId
+      }, now));
+    }
+
+    if (previous.comment !== application.comment) {
+      events.push(applicationEvent('application_comment_updated', application, actor, {
+        ...causePayload,
+        previousLength: String(previous.comment || '').length,
+        nextLength: String(application.comment || '').length
+      }, now));
+    }
+
+    if (traineeReportWasReceived(previous, application)) {
+      events.push(applicationEvent('trainee_report_received', application, actor, {
+        ...causePayload
       }, now));
     }
 
@@ -212,6 +327,15 @@ export function planBookingStateEvents({
         mentorReportVenueId: application.mentorReportVenueId || '',
         mentorReportHall: application.mentorReportHall || '',
         mentorMessageStatus: application.mentorCommentDeliveryStatus || ''
+      }, now));
+    }
+
+    const notificationEventType = mentorNotificationEventType(previous, application);
+    if (notificationEventType) {
+      events.push(applicationEvent(notificationEventType, application, actor, {
+        ...causePayload,
+        deliveryStatus: application.mentorCommentDeliveryStatus || '',
+        hasDeliveryError: Boolean(application.mentorCommentDeliveryError)
       }, now));
     }
   }
