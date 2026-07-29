@@ -5,6 +5,7 @@ import {
   PostgresCommandConflictError,
   PostgresCommandValidationError,
   assignShiftInPostgres,
+  cancelInternshipInPostgres,
   createShiftInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
@@ -19,6 +20,7 @@ function fakePool({
   existingShifts = [],
   existingApplications = [],
   existingInviteGroups = [],
+  existingInviteGroupMembers = [],
   existingNotifications = [],
   notificationInsertThrows = false,
   rollbackThrows = false
@@ -28,7 +30,7 @@ function fakePool({
   const apps = existingApplications.map(row => ({ ...row }));
   const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
   const notifications = existingNotifications.map(row => ({ ...row }));
-  const inviteGroupMembers = [];
+  const inviteGroupMembers = existingInviteGroupMembers.map(row => ({ ...row }));
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
 
@@ -37,6 +39,9 @@ function fakePool({
   }
   function findShiftByUuid(uuid) {
     return shifts.find(row => String(row.id) === String(uuid));
+  }
+  function findInviteGroupByUuid(uuid) {
+    return inviteGroups.find(row => String(row.id) === String(uuid));
   }
 
   const client = {
@@ -92,6 +97,47 @@ function fakePool({
           canceled: row.canceled,
           date: row.date
         }] : [] };
+      }
+      if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        const shift = row ? findShiftByUuid(row.shift_id) : null;
+        const group = row ? findInviteGroupByUuid(row.invite_group_id) : null;
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          status: row.status,
+          shift_id: row.shift_id,
+          shift_legacy_id: shift?.legacy_id ?? null,
+          shift_date: shift?.date ?? null,
+          invite_group_id: row.invite_group_id ?? null,
+          invite_group_legacy_id: group?.legacy_id ?? null,
+          venue_id: row.venue_id ?? null,
+          group_link: row.group_link ?? '',
+          trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
+          trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
+          telegram_username: row.telegram_username ?? '',
+          name: row.name ?? ''
+        }] : [] };
+      }
+      if (/SELECT id, legacy_id, shift_id, venue_id, link\s+FROM invite_groups/i.test(sql)) {
+        const row = findInviteGroupByUuid(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          shift_id: row.shift_id,
+          venue_id: row.venue_id,
+          link: row.link
+        }] : [] };
+      }
+      if (/SELECT applications\.legacy_id\s+FROM invite_group_members/i.test(sql)) {
+        const groupUuid = String(params[0]);
+        const rows = inviteGroupMembers
+          .filter(member => String(member.invite_group_id) === groupUuid)
+          .map(member => apps.find(app => String(app.id) === String(member.application_id)))
+          .filter(Boolean)
+          .map(app => ({ legacy_id: app.legacy_id }))
+          .sort((left, right) => Number(left.legacy_id) - Number(right.legacy_id));
+        return { rowCount: rows.length, rows };
       }
       if (/SELECT id, legacy_id, status, shift_id\s+FROM applications/i.test(sql)) {
         const row = findAppByLegacyId(params[0]);
@@ -229,6 +275,61 @@ function fakePool({
           }
         }
         return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE applications\s+SET shift_id = NULL/i.test(sql)) {
+        const nowIso = params[0];
+        const appUuid = String(params[1]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.shift_id = null;
+          target.invite_group_id = null;
+          target.status = 'queue';
+          target.venue_id = null;
+          target.group_link = '';
+          target.candidate_report = false;
+          target.mentor_report_received = false;
+          target.mentor_report_at = null;
+          target.mentor_reporter_telegram_user_id = null;
+          target.mentor_decision = '';
+          target.mentor_report_venue_id = '';
+          target.mentor_report_venue = '';
+          target.mentor_report_loft = '';
+          target.mentor_report_hall = '';
+          target.mentor_comment_for_trainee = '';
+          target.mentor_comment_sent_at = null;
+          target.mentor_comment_delivery_status = null;
+          target.mentor_comment_delivery_error = '';
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/DELETE FROM invite_group_members/i.test(sql)) {
+        const groupUuid = String(params[0]);
+        const appUuid = String(params[1]);
+        const before = inviteGroupMembers.length;
+        for (let index = inviteGroupMembers.length - 1; index >= 0; index -= 1) {
+          const member = inviteGroupMembers[index];
+          if (
+            String(member.invite_group_id) === groupUuid
+            && String(member.application_id) === appUuid
+          ) {
+            inviteGroupMembers.splice(index, 1);
+          }
+        }
+        return { rowCount: before - inviteGroupMembers.length, rows: [] };
+      }
+      if (/DELETE FROM invite_groups WHERE id/i.test(sql)) {
+        const groupUuid = String(params[0]);
+        const index = inviteGroups.findIndex(group => String(group.id) === groupUuid);
+        if (index >= 0) inviteGroups.splice(index, 1);
+        return { rowCount: index >= 0 ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE invite_groups\s+SET updated_at/i.test(sql)) {
+        const nowIso = params[0];
+        const groupUuid = String(params[1]);
+        const target = findInviteGroupByUuid(groupUuid);
+        if (target) target.updated_at = nowIso;
+        return { rowCount: target ? 1 : 0, rows: [] };
       }
       if (/UPDATE shifts\s+SET seats/i.test(sql)) {
         const seatsValue = Number(params[0]);
@@ -1936,4 +2037,341 @@ test('sendInvitesInPostgres rejects non-recruiter actors before opening a transa
     err => err instanceof PostgresCommandAuthorizationError
   );
   assert.equal(pool.calls.length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// cancel_internship
+// -----------------------------------------------------------------------------
+
+const cancellationShift = {
+  id: 'shift-uuid-cancel',
+  legacy_id: 7700,
+  date: '2026-08-30',
+  seats: 4,
+  open: true,
+  canceled: false
+};
+
+const cancellationGroup = {
+  id: 'group-uuid-cancel',
+  legacy_id: 8800,
+  shift_id: 'shift-uuid-cancel',
+  venue_id: 'loft5_small',
+  link: 'https://t.me/+cancel_group'
+};
+
+function makeInvitedCancellationApp(overrides = {}) {
+  return {
+    id: 'app-uuid-cancel-1',
+    legacy_id: 9001,
+    shift_id: 'shift-uuid-cancel',
+    status: 'invited',
+    invite_group_id: 'group-uuid-cancel',
+    venue_id: 'loft5_small',
+    group_link: 'https://t.me/+cancel_group',
+    candidate_report: true,
+    mentor_report_received: true,
+    mentor_report_at: '2026-08-30T12:00:00.000Z',
+    mentor_reporter_telegram_user_id: 'mentor',
+    mentor_decision: 'Стажировка пройдена',
+    mentor_report_venue_id: 'loft5_small',
+    mentor_report_venue: 'LOFT #5 SMALL',
+    mentor_report_loft: 'LOFT #5',
+    mentor_report_hall: 'SMALL',
+    mentor_comment_for_trainee: 'comment',
+    mentor_comment_sent_at: '2026-08-30T12:05:00.000Z',
+    mentor_comment_delivery_status: 'sent',
+    mentor_comment_delivery_error: '',
+    trainee_telegram_user_id: '900100',
+    trainee_telegram_chat_id: '900100',
+    telegram_username: 'cancel_trainee',
+    name: 'Cancel Trainee',
+    ...overrides
+  };
+}
+
+test('cancelInternshipInPostgres returns an invited trainee to queue and keeps remaining group members', async () => {
+  const pool = fakePool({
+    currentVersion: 70,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [
+      makeInvitedCancellationApp(),
+      makeInvitedCancellationApp({
+        id: 'app-uuid-cancel-2',
+        legacy_id: 9002,
+        trainee_telegram_user_id: '900200',
+        trainee_telegram_chat_id: '900200'
+      })
+    ],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' },
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-2' }
+    ]
+  });
+  const now = new Date('2026-07-29T17:00:00.000Z');
+  const result = await cancelInternshipInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 9001);
+  assert.equal(result.previousStatus, 'invited');
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(result.previousShiftId, 7700);
+  assert.equal(result.previousInviteGroupId, 8800);
+  assert.equal(result.inviteGroupChanged, true);
+  assert.equal(result.inviteGroupRemoved, false);
+  assert.deepEqual(result.remainingMemberLegacyIds, [9002]);
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.equal(result.version, 71);
+  assert.equal(result.previousVersion, 70);
+  assert.equal(result.updatedAt, now.toISOString());
+
+  const canceledApp = pool.getApplications().find(app => Number(app.legacy_id) === 9001);
+  assert.equal(canceledApp.status, 'queue');
+  assert.equal(canceledApp.shift_id, null);
+  assert.equal(canceledApp.invite_group_id, null);
+  assert.equal(canceledApp.venue_id, null);
+  assert.equal(canceledApp.group_link, '');
+  assert.equal(canceledApp.candidate_report, false);
+  assert.equal(canceledApp.mentor_report_received, false);
+  assert.equal(canceledApp.mentor_report_at, null);
+  assert.equal(canceledApp.mentor_decision, '');
+  assert.equal(canceledApp.mentor_comment_delivery_status, null);
+
+  assert.equal(pool.getInviteGroups().length, 1);
+  assert.equal(pool.getInviteGroups()[0].updated_at, now.toISOString());
+  assert.deepEqual(
+    pool.getInviteGroupMembers().map(member => member.application_id),
+    ['app-uuid-cancel-2']
+  );
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.deepEqual(
+    eventInserts.map(call => call.params[3]),
+    ['invite_group_updated', 'internship_cancelled']
+  );
+  const groupPayload = JSON.parse(eventInserts[0].params[6]);
+  assert.equal(groupPayload.action, 'cancel_internship');
+  assert.equal(groupPayload.inviteGroupId, 8800);
+  assert.deepEqual(groupPayload.removedMemberIds, [9001]);
+  assert.deepEqual(groupPayload.memberIds, [9002]);
+  assert.equal(groupPayload.legacyShiftId, 7700);
+
+  const cancelPayload = JSON.parse(eventInserts[1].params[6]);
+  assert.equal(cancelPayload.previousStatus, 'invited');
+  assert.equal(cancelPayload.nextStatus, 'queue');
+  assert.equal(cancelPayload.previousShiftId, 7700);
+  assert.equal(cancelPayload.nextShiftId, null);
+  assert.equal(cancelPayload.previousInviteGroupId, 8800);
+  assert.equal(cancelPayload.legacyApplicationId, 9001);
+
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].type, 'cancel_internship');
+  assert.equal(notifications[0].status, 'pending');
+  assert.equal(notifications[0].chat_id, '900100');
+  assert.equal(notifications[0].chat_target, 'trainee');
+  assert.equal(notifications[0].parse_mode, 'HTML');
+  assert.match(notifications[0].text, /Стажировка отменена/);
+  assert.match(notifications[0].text, /30\.08\.2026/);
+  assert.match(notifications[0].text, /предварительную запись/);
+  assert.match(notifications[0].idempotency_key, /^cancel_internship:9001:/);
+});
+
+test('cancelInternshipInPostgres removes an empty invite group when the last member is canceled', async () => {
+  const pool = fakePool({
+    currentVersion: 70,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [makeInvitedCancellationApp()],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ]
+  });
+  const result = await cancelInternshipInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+    now: new Date('2026-07-29T17:00:00.000Z')
+  });
+
+  assert.equal(result.inviteGroupRemoved, true);
+  assert.deepEqual(result.remainingMemberLegacyIds, []);
+  assert.equal(pool.getInviteGroups().length, 0);
+  assert.equal(pool.getInviteGroupMembers().length, 0);
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['invite_group_removed', 'internship_cancelled']);
+});
+
+test('cancelInternshipInPostgres records skipped notification when trainee chat id is missing', async () => {
+  const pool = fakePool({
+    currentVersion: 70,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [
+      makeInvitedCancellationApp({
+        trainee_telegram_user_id: '',
+        trainee_telegram_chat_id: ''
+      })
+    ],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ]
+  });
+  const result = await cancelInternshipInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+    now: new Date('2026-07-29T17:00:00.000Z')
+  });
+
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 0,
+    skipped: 1,
+    inserted: 1
+  });
+  assert.equal(pool.getNotifications()[0].status, 'skipped');
+  assert.equal(pool.getNotifications()[0].chat_id, null);
+  assert.equal(pool.getNotifications()[0].error, 'telegram_chat_missing');
+});
+
+test('cancelInternshipInPostgres rejects after attendance is marked', async () => {
+  for (const status of ['feedback', 'passed', 'failed', 'noshow', 'queue']) {
+    const pool = fakePool({
+      currentVersion: 70,
+      existingShifts: [{ ...cancellationShift }],
+      existingApplications: [makeInvitedCancellationApp({ status })],
+      existingInviteGroups: [{ ...cancellationGroup }],
+      existingInviteGroupMembers: [
+        { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+      ]
+    });
+    await assert.rejects(
+      () => cancelInternshipInPostgres({
+        pool,
+        actor: recruiter,
+        command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+        now: new Date('2026-07-29T17:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError && /только до выхода/.test(err.message),
+      `expected reject for status=${status}`
+    );
+    assert.equal(pool.getApplications()[0].status, status);
+    assert.equal(pool.getVersion(), 70);
+    const sqls = pool.calls.map(call => call.sql.trim());
+    assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+    assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  }
+});
+
+test('cancelInternshipInPostgres rolls back on stale baseVersion', async () => {
+  const pool = fakePool({
+    currentVersion: 71,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [makeInvitedCancellationApp()],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ]
+  });
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  assert.equal(pool.getApplications()[0].status, 'invited');
+  assert.equal(pool.getInviteGroups().length, 1);
+  assert.equal(pool.getNotifications().length, 0);
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+});
+
+test('cancelInternshipInPostgres rejects unknown application and invalid inputs', async () => {
+  const pool = fakePool({ currentVersion: 70 });
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'cancel_internship', baseVersion: 70, applicationId: 999999 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /application not found/.test(err.message)
+  );
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'cancel_internship', baseVersion: 70, applicationId: 0 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'cancel_internship', baseVersion: 0, applicationId: 9001 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+});
+
+test('cancelInternshipInPostgres rejects non-recruiter actors before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 70 });
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '5' } } },
+      command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('cancelInternshipInPostgres rolls back when notification outbox insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 70,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [makeInvitedCancellationApp()],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ],
+    notificationInsertThrows: true
+  });
+  await assert.rejects(
+    () => cancelInternshipInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'cancel_internship', baseVersion: 70, applicationId: 9001 },
+      now: new Date('2026-07-29T17:00:00.000Z')
+    }),
+    /notification insert failed/
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getNotifications().length, 0);
 });

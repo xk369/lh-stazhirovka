@@ -387,6 +387,99 @@ test('Postgres write adapter routes send_invites through the transactional write
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes cancel_internship through the transactional writer and returns fresh state', async () => {
+  const fakeState = {
+    version: 72,
+    updatedAt: '2026-07-29T17:00:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T17:00:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase() });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 71, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'app-uuid-501',
+              legacy_id: 501,
+              status: 'invited',
+              shift_id: 'shift-uuid-88',
+              shift_legacy_id: 88,
+              shift_date: '2026-08-20',
+              invite_group_id: 'group-uuid-300',
+              invite_group_legacy_id: 300,
+              venue_id: 'loft5_small',
+              group_link: 'https://t.me/+abc',
+              trainee_telegram_user_id: '501',
+              trainee_telegram_chat_id: '501',
+              telegram_username: 'trainee501',
+              name: 'Trainee 501'
+            }]
+          };
+        }
+        if (/SELECT id, legacy_id, shift_id, venue_id, link\s+FROM invite_groups/i.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'group-uuid-300',
+              legacy_id: 300,
+              shift_id: 'shift-uuid-88',
+              venue_id: 'loft5_small',
+              link: 'https://t.me/+abc'
+            }]
+          };
+        }
+        if (/SELECT applications\.legacy_id\s+FROM invite_group_members/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501 }] };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501, id: 'app-uuid-501' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 88, id: 'shift-uuid-88' }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'cancel_internship', baseVersion: 71, applicationId: 501 },
+    recruiter
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.changed, true);
+  assert.equal(outcome.result.applicationLegacyId, 501);
+  assert.equal(outcome.result.previousStatus, 'invited');
+  assert.equal(outcome.result.nextStatus, 'queue');
+  assert.equal(outcome.result.previousShiftId, 88);
+  assert.equal(outcome.result.previousInviteGroupId, 300);
+  assert.equal(outcome.result.inviteGroupRemoved, true);
+  assert.deepEqual(outcome.result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.equal(outcome.result.version, 72);
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter rejects still-unsupported commands with a stable code', async () => {
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { throw new Error('connect must not be called'); } }

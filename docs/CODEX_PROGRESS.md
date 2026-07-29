@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 64%.
+- Current migration progress: 66%.
 
 ## Migration Staging
 
@@ -67,6 +67,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `send_invites` Postgres write path: one `pending` row per reachable trainee,
   explicit `skipped` row when the Telegram target is missing, stable
   idempotency key and live PostgreSQL smoke inside `npm run test:postgres`.
+- Added a transactional `cancel_internship` Postgres write path for returning
+  a single pre-attendance trainee to preliminary queue, cleaning invite group
+  membership, removing an empty invite group, writing audit events and writing
+  a durable trainee notification/outbox row inside the same transaction.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -98,6 +102,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `notifications` outbox rows to PostgreSQL `send_invites`.
 - 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
   live `send_invites` notification/outbox assertions.
+- 2026-07-29: `npm test` passed, 197/197 tests after adding transactional
+  PostgreSQL `cancel_internship`, adapter routing and unit coverage.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `cancel_internship` PostgreSQL write smoke. A sandboxed run failed first
+  because local PostgreSQL could not create shared memory (`shmget Operation
+  not permitted`), then the same command passed with escalation.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -251,6 +261,17 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   does not silently fail. Added unit coverage, adapter assertions and live
   PostgreSQL smoke assertions. No `src/server.js` runtime wiring, no live
   Telegram worker and no deploy. Raised migration progress to 64%.
+- 2026-07-29: added transactional PostgreSQL `cancel_internship` directly in
+  `migration/postgres-foundation`. The command is recruiter-only, locks
+  `booking_state_meta`, the application and any linked invite group, rejects
+  stale versions and post-attendance statuses, moves the trainee back to
+  `queue`, clears shift/group/venue/report fields, removes invite group
+  membership, deletes an empty group, writes `invite_group_updated` or
+  `invite_group_removed` plus `internship_cancelled`, and writes a durable
+  trainee notification/outbox row with pending/skipped semantics. Added adapter
+  routing, unit coverage and live PostgreSQL smoke. No `src/server.js` runtime
+  wiring, no live Telegram worker and no deploy. Raised migration progress to
+  66%.
 
 ## Documentation Audit
 

@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 64%.
+- Общий прогресс: 66%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -87,6 +87,28 @@
   - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `cancel_internship` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - linked `invite_groups` row `FOR UPDATE` when present;
+  - optimistic `baseVersion` check;
+  - accepts only pre-attendance statuses:
+    `pending`, `confirmed`, `invited`;
+  - returns the application to preliminary queue with `status=queue`;
+  - clears shift, invite group, venue, group link, candidate report and mentor
+    result/delivery fields on the application;
+  - removes the application from `invite_group_members`;
+  - deletes the invite group when that application was the last member;
+  - writes `invite_group_updated` or `invite_group_removed` plus
+    `internship_cancelled` events;
+  - writes one durable trainee `notifications` row in the same transaction;
+  - uses `status='pending'` when a Telegram target exists;
+  - uses explicit `status='skipped'` + `telegram_chat_missing` when the trainee
+    has no Telegram target;
+  - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -106,18 +128,17 @@
 
 ## Очередь Writable Команд
 
-1. `cancel_internship`
-2. `cancel_shift`
-3. `step_back_application`
-4. `mark_experienced`
-5. `return_to_queue`
-6. `update_comment`
-7. `upsert_trainee_application`
-8. `cancel_application`
-9. `toggle_shift`
-10. `clear_state`
-11. `reset_demo_state`
-12. `mentor_report_result` через `/api/report`
+1. `cancel_shift`
+2. `step_back_application`
+3. `mark_experienced`
+4. `return_to_queue`
+5. `update_comment`
+6. `upsert_trainee_application`
+7. `cancel_application`
+8. `toggle_shift`
+9. `clear_state`
+10. `reset_demo_state`
+11. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -155,4 +176,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `cancel_internship`, then `cancel_shift` or `step_back_application`.
+slice is `cancel_shift`, then `step_back_application`.

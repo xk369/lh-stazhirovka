@@ -3,6 +3,7 @@ import {
   BOOKING_STATUSES,
   BOOKING_STATUS_LABELS,
   SEAT_HOLDING_STATUSES,
+  SHIFT_CANCELLATION_APPLICATION_STATUSES,
   canRecruiterSetApplicationStatus
 } from '../booking-state-machine.js';
 import { runInPostgresTransaction } from './transaction.js';
@@ -237,6 +238,13 @@ function normalizeSendInvitesInput(command) {
   };
 }
 
+function normalizeCancelInternshipInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
@@ -330,6 +338,18 @@ function composeSendInviteNotificationText({ venueId, link, shiftDate }) {
   ].join('\n');
 }
 
+function composeShiftCancellationNotificationText({ shiftDate }) {
+  return [
+    '⚠️ <b>Стажировка отменена</b>',
+    '',
+    `К сожалению, стажировка на <b>${escapeTelegramHtml(displayShiftDate(shiftDate))}</b> не состоится.`,
+    '',
+    'Ваша заявка возвращена в <b>предварительную запись</b>. Откройте мини-приложение и выберите другую доступную дату.',
+    '',
+    'Если подходящей даты пока нет, заявка останется в предварительной записи — рекрут сможет назначить новую дату позже.'
+  ].join('\n');
+}
+
 function stableNotificationKey(parts) {
   const digest = createHash('sha256')
     .update(JSON.stringify(parts))
@@ -367,6 +387,38 @@ function sendInviteNotificationRow({
     chatId: chatId || null,
     chatTarget: 'trainee',
     text,
+    parseMode: 'HTML',
+    status,
+    error: status === 'skipped' ? 'telegram_chat_missing' : null,
+    idempotencyKey: notificationKey,
+    nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
+function cancelInternshipNotificationRow({
+  app,
+  previousShiftLegacyId,
+  previousShiftDate,
+  previousInviteGroupLegacyId,
+  nowIso
+}) {
+  const chatId = String(app.trainee_telegram_chat_id || app.trainee_telegram_user_id || '').trim();
+  const notificationKey = stableNotificationKey({
+    action: 'cancel_internship',
+    applicationLegacyId: Number(app.legacy_id),
+    previousShiftLegacyId,
+    previousInviteGroupLegacyId: previousInviteGroupLegacyId || null
+  });
+  const status = chatId ? 'pending' : 'skipped';
+  return {
+    id: randomUUID(),
+    applicationId: app.id,
+    type: 'cancel_internship',
+    chatId: chatId || null,
+    chatTarget: 'trainee',
+    text: composeShiftCancellationNotificationText({ shiftDate: previousShiftDate }),
     parseMode: 'HTML',
     status,
     error: status === 'skipped' ? 'telegram_chat_missing' : null,
@@ -1060,6 +1112,218 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
       memberIds: memberUuids,
       previousStatus: 'confirmed',
       nextStatus: 'invited',
+      notifications: {
+        total: notificationRows.length,
+        pending: notificationRows.filter(row => row.status === 'pending').length,
+        skipped: notificationRows.filter(row => row.status === 'skipped').length,
+        inserted: notificationResult.inserted
+      },
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function cancelInternshipInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, baseVersion } = normalizeCancelInternshipInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              shifts.date::text AS shift_date,
+              applications.invite_group_id,
+              invite_groups.legacy_id AS invite_group_legacy_id,
+              applications.venue_id,
+              applications.group_link,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.name
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+         LEFT JOIN invite_groups ON invite_groups.id = applications.invite_group_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    const previousStatus = String(app.status || '');
+    if (!SHIFT_CANCELLATION_APPLICATION_STATUSES.has(previousStatus)) {
+      throw new PostgresCommandValidationError(
+        'Стажировку можно отменить только до выхода стажёра.'
+      );
+    }
+
+    let inviteGroup = null;
+    let previousMemberLegacyIds = [];
+    let remainingMemberLegacyIds = [];
+    if (app.invite_group_id) {
+      const groupResult = await client.query(
+        `SELECT id, legacy_id, shift_id, venue_id, link
+           FROM invite_groups
+          WHERE id = $1
+          FOR UPDATE`,
+        [app.invite_group_id]
+      );
+      inviteGroup = groupResult.rows[0] || null;
+      if (inviteGroup) {
+        const membersResult = await client.query(
+          `SELECT applications.legacy_id
+             FROM invite_group_members
+             JOIN applications ON applications.id = invite_group_members.application_id
+            WHERE invite_group_members.invite_group_id = $1
+            ORDER BY applications.legacy_id`,
+          [inviteGroup.id]
+        );
+        previousMemberLegacyIds = membersResult.rows
+          .map(row => Number(row.legacy_id))
+          .filter(value => Number.isSafeInteger(value) && value > 0);
+        remainingMemberLegacyIds = previousMemberLegacyIds
+          .filter(legacyId => legacyId !== applicationLegacyId);
+      }
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const previousShiftLegacyId = app.shift_legacy_id ? Number(app.shift_legacy_id) : null;
+    const previousInviteGroupLegacyId = app.invite_group_legacy_id
+      ? Number(app.invite_group_legacy_id)
+      : null;
+
+    await client.query(
+      `UPDATE applications
+          SET shift_id = NULL,
+              invite_group_id = NULL,
+              status = 'queue',
+              venue_id = NULL,
+              group_link = '',
+              candidate_report = false,
+              mentor_report_received = false,
+              mentor_report_at = NULL,
+              mentor_reporter_telegram_user_id = NULL,
+              mentor_decision = '',
+              mentor_report_venue_id = '',
+              mentor_report_venue = '',
+              mentor_report_loft = '',
+              mentor_report_hall = '',
+              mentor_comment_for_trainee = '',
+              mentor_comment_sent_at = NULL,
+              mentor_comment_delivery_status = NULL,
+              mentor_comment_delivery_error = '',
+              updated_at = $1,
+              row_version = row_version + 1
+        WHERE id = $2`,
+      [nowIso, app.id]
+    );
+
+    let inviteGroupChanged = false;
+    let inviteGroupRemoved = false;
+    if (inviteGroup && previousMemberLegacyIds.includes(applicationLegacyId)) {
+      await client.query(
+        `DELETE FROM invite_group_members
+          WHERE invite_group_id = $1
+            AND application_id = $2`,
+        [inviteGroup.id, app.id]
+      );
+      inviteGroupChanged = true;
+      if (remainingMemberLegacyIds.length === 0) {
+        await client.query(
+          'DELETE FROM invite_groups WHERE id = $1',
+          [inviteGroup.id]
+        );
+        inviteGroupRemoved = true;
+      } else {
+        await client.query(
+          `UPDATE invite_groups
+              SET updated_at = $1,
+                  row_version = row_version + 1
+            WHERE id = $2`,
+          [nowIso, inviteGroup.id]
+        );
+      }
+    }
+
+    const events = [];
+    if (inviteGroupChanged) {
+      events.push({
+        eventType: inviteGroupRemoved ? 'invite_group_removed' : 'invite_group_updated',
+        applicationId: null,
+        shiftId: previousShiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'cancel_internship',
+          baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          inviteGroupId: previousInviteGroupLegacyId,
+          venueId: app.venue_id || inviteGroup.venue_id || '',
+          removedMemberIds: [applicationLegacyId],
+          memberIds: remainingMemberLegacyIds
+        },
+        createdAt: nowIso
+      });
+    }
+    events.push({
+      eventType: 'internship_cancelled',
+      applicationId: applicationLegacyId,
+      shiftId: previousShiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'cancel_internship',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus,
+        nextStatus: 'queue',
+        previousShiftId: previousShiftLegacyId,
+        nextShiftId: null,
+        previousInviteGroupId: previousInviteGroupLegacyId,
+        previousVenueId: app.venue_id || null,
+        previousGroupLink: app.group_link || ''
+      },
+      createdAt: nowIso
+    });
+    await insertApplicationEvents(client, events);
+
+    const notificationRows = [cancelInternshipNotificationRow({
+      app,
+      previousShiftLegacyId,
+      previousShiftDate: app.shift_date,
+      previousInviteGroupLegacyId,
+      nowIso
+    })];
+    const notificationResult = await insertNotifications(client, notificationRows);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      nextStatus: 'queue',
+      previousShiftId: previousShiftLegacyId,
+      previousInviteGroupId: previousInviteGroupLegacyId,
+      inviteGroupChanged,
+      inviteGroupRemoved,
+      remainingMemberLegacyIds,
       notifications: {
         total: notificationRows.length,
         pending: notificationRows.filter(row => row.status === 'pending').length,
