@@ -130,6 +130,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   live write smoke, PR safety check and command contracts. Raised migration
   progress to 50% because Stage 5 is now genuinely in progress on the base
   migration branch, not only in side branches.
+- 2026-07-29 (Claude, branch `migration/postgres-write-capacity-claude`): added
+  a transactional `update_shift_capacity` Postgres write path for Codex review.
+  Uses `FOR UPDATE` on `booking_state_meta` and on the target `shifts` row,
+  refuses to shrink `seats` below the current seat-holding count, writes a
+  `shift_capacity_changed` row into `application_events` and bumps the meta
+  version. When requested seats equal current seats the command is a no-op:
+  no `UPDATE shifts`, no event, no version bump. Still not wired into
+  `src/server.js`. No Telegram/outbox/notifications changes, no deploy.
 
 ## Documentation Audit
 
