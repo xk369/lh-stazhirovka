@@ -174,6 +174,20 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   matches `docs/POSTGRES_MIGRATION_ROADMAP.md`: the current UI correction
   action must become a separate business command before Postgres write runtime
   is enabled. Raised migration progress to 55%.
+- 2026-07-29 (Claude, branch `migration/postgres-write-assign-shift-claude`):
+  added a transactional `assign_shift` Postgres write path for Codex review.
+  Recruiter-only, `FOR UPDATE` on `booking_state_meta`, the target
+  `applications` row and the target `shifts` row. Requires the source
+  application to be in preliminary queue (`status=queue` and `shift_id IS NULL`),
+  requires the target shift to exist, be `open=true` and not `canceled`, and
+  refuses assignment when seat-holding usage already fills seats. Updates
+  `applications.shift_id`/`status`/`row_version`, writes both
+  `application_status_changed` (queue → pending) and
+  `application_assigned_to_shift` audit events in the same transaction, and
+  bumps the meta version. Wired through the Postgres write adapter and covered
+  by a live Postgres write smoke inside `npm run test:postgres`. Still not
+  wired into `src/server.js`, no Telegram/outbox/notifications changes, no
+  deploy.
 
 ## Documentation Audit
 

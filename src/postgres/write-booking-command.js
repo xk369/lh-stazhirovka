@@ -146,6 +146,14 @@ function normalizeCreateShiftInput(command) {
   };
 }
 
+function normalizeAssignShiftInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
@@ -502,6 +510,141 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
       shiftLegacyId,
       shiftAutoClosed,
       shiftDate: shiftDateText,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function assignShiftInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, shiftLegacyId, baseVersion } = normalizeAssignShiftInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT id, legacy_id, status, shift_id
+         FROM applications
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    const previousStatus = String(app.status);
+
+    if (previousStatus !== 'queue' || app.shift_id !== null) {
+      throw new PostgresCommandValidationError(
+        'assign_shift поддерживает только заявки из предварительной записи (status=queue, без даты).'
+      );
+    }
+
+    const shiftResult = await client.query(
+      `SELECT id, legacy_id, seats, open, canceled, date::text AS date
+         FROM shifts
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [shiftLegacyId]
+    );
+    if (shiftResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('shift not found.');
+    }
+    const shift = shiftResult.rows[0];
+    if (shift.canceled) {
+      throw new PostgresCommandValidationError('Нельзя назначить на отменённую дату.');
+    }
+    if (!shift.open) {
+      throw new PostgresCommandValidationError('Нельзя назначить на закрытую дату.');
+    }
+
+    const usageResult = await client.query(
+      `SELECT COUNT(*)::int AS used
+         FROM applications
+        WHERE shift_id = $1
+          AND status = ANY($2::text[])`,
+      [shift.id, SEAT_HOLDING_STATUS_VALUES]
+    );
+    const usedSeats = Number(usageResult.rows[0]?.used || 0);
+    const seats = Number(shift.seats) || 0;
+    if (usedSeats >= seats) {
+      throw new PostgresCommandValidationError('На выбранную дату больше нет свободных мест.');
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const nextStatus = 'pending';
+    const shiftDateText = shift.date;
+
+    await client.query(
+      `UPDATE applications
+          SET shift_id = $1,
+              status = $2,
+              updated_at = $3,
+              row_version = row_version + 1
+        WHERE id = $4`,
+      [shift.id, nextStatus, nowIso, app.id]
+    );
+
+    await insertApplicationEvents(client, [
+      {
+        eventType: 'application_status_changed',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'assign_shift',
+          baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          previousStatus,
+          nextStatus,
+          previousShiftId: null,
+          nextShiftId: shiftLegacyId
+        },
+        createdAt: nowIso
+      },
+      {
+        eventType: 'application_assigned_to_shift',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'recruiter',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'assign_shift',
+          baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          previousShiftId: null,
+          nextShiftId: shiftLegacyId,
+          date: shiftDateText
+        },
+        createdAt: nowIso
+      }
+    ]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      nextStatus,
+      previousShiftId: null,
+      shiftLegacyId,
+      shiftId: shift.id,
+      shiftDate: shiftDateText,
+      shiftSeats: seats,
+      usedSeatsAfter: usedSeats + 1,
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,

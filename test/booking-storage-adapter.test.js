@@ -221,12 +221,83 @@ test('Postgres write adapter routes set_application_status through the transacti
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes assign_shift through the transactional writer and returns fresh state', async () => {
+  const fakeState = {
+    version: 51,
+    updatedAt: '2026-07-29T14:00:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T14:00:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase() });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 50, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/SELECT id, legacy_id, status, shift_id\s+FROM applications/i.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{ id: 'app-uuid-77', legacy_id: 77, status: 'queue', shift_id: null }]
+          };
+        }
+        if (/SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'shift-uuid-99',
+              legacy_id: 99,
+              seats: 4,
+              open: true,
+              canceled: false,
+              date: '2026-08-15'
+            }]
+          };
+        }
+        if (/COUNT\(\*\)::int AS used/i.test(sql)) {
+          return { rowCount: 1, rows: [{ used: 1 }] };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 77, id: 'app-uuid-77' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 99, id: 'shift-uuid-99' }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'assign_shift', baseVersion: 50, applicationId: 77, shiftId: 99 },
+    recruiter
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.changed, true);
+  assert.equal(outcome.result.previousStatus, 'queue');
+  assert.equal(outcome.result.nextStatus, 'pending');
+  assert.equal(outcome.result.shiftLegacyId, 99);
+  assert.equal(outcome.result.shiftId, 'shift-uuid-99');
+  assert.equal(outcome.result.version, 51);
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter rejects still-unsupported commands with a stable code', async () => {
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { throw new Error('connect must not be called'); } }
   });
   await assert.rejects(
-    () => adapter.applyCommand({ action: 'assign_shift' }, recruiter),
+    () => adapter.applyCommand({ action: 'mark_experienced' }, recruiter),
     err => err instanceof BookingCommandNotImplementedError
       && err.code === 'BOOKING_COMMAND_NOT_IMPLEMENTED_IN_POSTGRES'
   );

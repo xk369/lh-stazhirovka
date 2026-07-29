@@ -4,6 +4,7 @@ import {
   PostgresCommandAuthorizationError,
   PostgresCommandConflictError,
   PostgresCommandValidationError,
+  assignShiftInPostgres,
   createShiftInPostgres,
   setApplicationStatusInPostgres,
   updateShiftCapacityInPostgres
@@ -60,6 +61,17 @@ function fakePool({
           date: row.date
         }] : [] };
       }
+      if (/SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)) {
+        const row = shifts.find(item => Number(item.legacy_id) === Number(params[0]));
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          seats: row.seats,
+          open: row.open,
+          canceled: row.canceled,
+          date: row.date
+        }] : [] };
+      }
       if (/SELECT id, legacy_id, open, canceled, date::text AS date/i.test(sql)) {
         const row = findShiftByUuid(params[0]);
         return { rowCount: row ? 1 : 0, rows: row ? [{
@@ -68,6 +80,15 @@ function fakePool({
           open: row.open,
           canceled: row.canceled,
           date: row.date
+        }] : [] };
+      }
+      if (/SELECT id, legacy_id, status, shift_id\s+FROM applications/i.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          status: row.status,
+          shift_id: row.shift_id
         }] : [] };
       }
       if (/SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience/i.test(sql)) {
@@ -139,6 +160,19 @@ function fakePool({
         if (target) {
           target.status = nextStatus;
           target.experience = nextExperience;
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET shift_id/i.test(sql)) {
+        const shiftUuid = params[0];
+        const nextStatus = params[1];
+        const nowIso = params[2];
+        const appUuid = String(params[3]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.shift_id = shiftUuid;
+          target.status = nextStatus;
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -935,6 +969,365 @@ test('setApplicationStatusInPostgres rejects non-recruiter actors before opening
       actor: { role: 'trainee', telegram: { user: { id: '999' } } },
       command: { action: 'set_application_status', baseVersion: 20, applicationId: 1001, status: 'confirmed' },
       now: new Date('2026-07-29T13:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// assign_shift
+// -----------------------------------------------------------------------------
+
+const openTargetShift = {
+  id: 'shift-uuid-target',
+  legacy_id: 4242,
+  date: '2026-08-15',
+  seats: 3,
+  open: true,
+  canceled: false
+};
+
+const queuedApp = {
+  id: 'app-uuid-queue',
+  legacy_id: 2001,
+  shift_id: null,
+  status: 'queue',
+  invite_group_id: null,
+  group_link: '',
+  experience: null,
+  mentor_report_received: false
+};
+
+test('assignShiftInPostgres moves queue application onto target shift with pending status', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  const now = new Date('2026-07-29T14:00:00.000Z');
+  const result = await assignShiftInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.previousStatus, 'queue');
+  assert.equal(result.nextStatus, 'pending');
+  assert.equal(result.previousShiftId, null);
+  assert.equal(result.shiftLegacyId, 4242);
+  assert.equal(result.shiftId, 'shift-uuid-target');
+  assert.equal(result.shiftDate, '2026-08-15');
+  assert.equal(result.shiftSeats, 3);
+  assert.equal(result.usedSeatsAfter, 1);
+  assert.equal(result.version, 31);
+  assert.equal(result.previousVersion, 30);
+  assert.equal(result.updatedAt, now.toISOString());
+
+  assert.equal(pool.getVersion(), 31);
+  const movedApp = pool.getApplications()[0];
+  assert.equal(movedApp.shift_id, 'shift-uuid-target');
+  assert.equal(movedApp.status, 'pending');
+
+  const sqlOrder = pool.calls.map(call => call.sql.trim().replace(/\s+/g, ' '));
+  const beginIndex = sqlOrder.indexOf('BEGIN');
+  const commitIndex = sqlOrder.indexOf('COMMIT');
+  assert.ok(beginIndex >= 0 && commitIndex > beginIndex);
+  const between = sqlOrder.slice(beginIndex + 1, commitIndex);
+  assert.ok(between.some(sql => /SELECT version.*FROM booking_state_meta.*FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /SELECT id, legacy_id, status, shift_id FROM applications/i.test(sql)
+    && /FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)
+    && /FOR UPDATE/i.test(sql)));
+  assert.ok(between.some(sql => /COUNT\(\*\)::int AS used/i.test(sql)));
+  assert.ok(between.some(sql => /UPDATE applications\s+SET shift_id/i.test(sql)));
+  assert.ok(between.some(sql => /UPDATE booking_state_meta/.test(sql)));
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInserts.length, 2);
+  const eventTypes = eventInserts.map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['application_status_changed', 'application_assigned_to_shift']);
+
+  const statusEvent = eventInserts[0];
+  const statusPayload = JSON.parse(statusEvent.params[6]);
+  assert.equal(statusPayload.action, 'assign_shift');
+  assert.equal(statusPayload.previousStatus, 'queue');
+  assert.equal(statusPayload.nextStatus, 'pending');
+  assert.equal(statusPayload.previousShiftId, null);
+  assert.equal(statusPayload.nextShiftId, 4242);
+  assert.equal(statusPayload.previousVersion, 30);
+  assert.equal(statusPayload.nextVersion, 31);
+  assert.equal(statusPayload.legacyApplicationId, 2001);
+  assert.equal(statusPayload.legacyShiftId, 4242);
+
+  const assignEvent = eventInserts[1];
+  const assignPayload = JSON.parse(assignEvent.params[6]);
+  assert.equal(assignPayload.action, 'assign_shift');
+  assert.equal(assignPayload.previousShiftId, null);
+  assert.equal(assignPayload.nextShiftId, 4242);
+  assert.equal(assignPayload.date, '2026-08-15');
+});
+
+test('assignShiftInPostgres rejects non-queue applications and rolls back', async () => {
+  for (const previousStatus of ['pending', 'confirmed', 'invited', 'feedback', 'passed']) {
+    const pool = fakePool({
+      currentVersion: 30,
+      existingShifts: [{ ...openTargetShift }],
+      existingApplications: [{ ...queuedApp, status: previousStatus, shift_id: 'shift-uuid-other' }]
+    });
+    await assert.rejects(
+      () => assignShiftInPostgres({
+        pool,
+        actor: recruiter,
+        command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+        now: new Date('2026-07-29T14:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError
+        && /предварительной записи/.test(err.message),
+      `expected reject for status=${previousStatus}`
+    );
+    const sqls = pool.calls.map(call => call.sql.trim());
+    assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+    assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+    assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-other');
+    assert.equal(pool.getApplications()[0].status, previousStatus);
+  }
+});
+
+test('assignShiftInPostgres rejects queue application that still has shift_id (defensive)', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp, shift_id: 'shift-uuid-stale' }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /предварительной записи/.test(err.message)
+  );
+});
+
+test('assignShiftInPostgres rejects unknown application and rolls back', async () => {
+  const pool = fakePool({ currentVersion: 30, existingShifts: [{ ...openTargetShift }] });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 999999, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /application not found/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+});
+
+test('assignShiftInPostgres rejects unknown shift and rolls back', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /shift not found/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(pool.getApplications()[0].status, 'queue');
+  assert.equal(pool.getApplications()[0].shift_id, null);
+});
+
+test('assignShiftInPostgres rejects closed shift and rolls back', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift, open: false }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /закрытую дату/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(pool.getApplications()[0].status, 'queue');
+});
+
+test('assignShiftInPostgres rejects canceled shift and rolls back', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift, open: false, canceled: true }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /отменённую дату/.test(err.message)
+  );
+});
+
+test('assignShiftInPostgres rejects when target shift has no free seats', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift, seats: 2 }],
+    existingApplications: [
+      { ...queuedApp },
+      {
+        id: 'app-uuid-a',
+        legacy_id: 2100,
+        shift_id: 'shift-uuid-target',
+        status: 'pending',
+        invite_group_id: null,
+        group_link: '',
+        experience: null,
+        mentor_report_received: false
+      },
+      {
+        id: 'app-uuid-b',
+        legacy_id: 2101,
+        shift_id: 'shift-uuid-target',
+        status: 'confirmed',
+        invite_group_id: null,
+        group_link: '',
+        experience: null,
+        mentor_report_received: false
+      }
+    ]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /нет свободных мест/.test(err.message)
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getApplications()[0].status, 'queue');
+  assert.equal(pool.getApplications()[0].shift_id, null);
+});
+
+test('assignShiftInPostgres allows filling the last free seat exactly', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift, seats: 2 }],
+    existingApplications: [
+      { ...queuedApp },
+      {
+        id: 'app-uuid-a',
+        legacy_id: 2100,
+        shift_id: 'shift-uuid-target',
+        status: 'pending',
+        invite_group_id: null,
+        group_link: '',
+        experience: null,
+        mentor_report_received: false
+      }
+    ]
+  });
+  const result = await assignShiftInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+    now: new Date('2026-07-29T14:00:00.000Z')
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.usedSeatsAfter, 2);
+  assert.equal(pool.getApplications()[0].status, 'pending');
+  assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-target');
+});
+
+test('assignShiftInPostgres rolls back on stale baseVersion without touching state', async () => {
+  const pool = fakePool({
+    currentVersion: 42,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 41, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  assert.equal(pool.getVersion(), 42);
+  assert.equal(pool.getApplications()[0].status, 'queue');
+});
+
+test('assignShiftInPostgres rejects invalid inputs before opening a transaction', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 0, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 0 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    /shiftId must be a positive integer/
+  );
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'assign_shift', baseVersion: 0, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('assignShiftInPostgres rejects non-recruiter actors before opening a transaction', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  await assert.rejects(
+    () => assignShiftInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '5' } } },
+      command: { action: 'assign_shift', baseVersion: 30, applicationId: 2001, shiftId: 4242 },
+      now: new Date('2026-07-29T14:00:00.000Z')
     }),
     err => err instanceof PostgresCommandAuthorizationError
   );

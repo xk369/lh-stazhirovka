@@ -1,6 +1,7 @@
 import { BOOKING_STORAGE_MODES, BookingStorageReadOnlyError } from '../booking-storage-mode.js';
 import { readBookingStateFromPostgres } from '../postgres/read-booking-state.js';
 import {
+  assignShiftInPostgres,
   createShiftInPostgres,
   setApplicationStatusInPostgres,
   updateShiftCapacityInPostgres
@@ -57,6 +58,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async set_application_status(command, actor) {
       const result = await setApplicationStatusInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async assign_shift(command, actor) {
+      const result = await assignShiftInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }
