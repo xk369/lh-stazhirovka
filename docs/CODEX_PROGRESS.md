@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 30%.
+- Current migration progress: 40%.
 
 ## Migration Staging
 
@@ -54,6 +54,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Current Checks
 
+- 2026-07-29: `git fetch origin` confirmed `origin/main` is already included
+  in `migration/postgres-foundation` (`10 ahead / 0 behind` versus
+  `origin/main`).
+- 2026-07-29: `npm test` passed, 106/106 tests after documenting the
+  migration execution plan and confirming main synchronization.
+- 2026-07-29: `git diff --check` passed after documenting the migration plan.
 - 2026-07-29: `npm test` passed, 106/106 tests after adding the
   event-log foundation.
 - 2026-07-29: `git diff --check` passed.
@@ -78,6 +84,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   attendance, mentor final results, step-back and clear-state. Added
   `src/postgres/write-application-events.js` to insert those events into
   PostgreSQL with legacy IDs preserved in JSON payloads. Added tests for both.
+- 2026-07-29: added `docs/MIGRATION_EXECUTION_PLAN.md` with stage weights,
+  go/no-go gates, QA scope and production cutover rollback rules. Confirmed
+  migration branch already contains current `origin/main`, ran `npm test`
+  successfully, and raised migration progress to 40%.
 
 ## Documentation Audit
 
@@ -106,16 +116,18 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Run local tests again after any doc/code changes:
+2. Continue Stage 4: complete `application_events` coverage and decide where
+   runtime Postgres writes will call the event planner.
+3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
-3. Do full role QA on migration staging:
+4. Do full role QA on migration staging:
    trainee view, recruiter view, mentor report validation, registry, groups,
    archive, bad links, duplicate clicks and version conflicts.
-4. For UI QA that needs Telegram identity, use signed test `initData` or a
+5. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-5. Only after QA, design Stage D: writable PostgreSQL staging with
+6. Only after Stage 4 is complete, implement writable PostgreSQL staging with
    transactional commands, `notifications` and outbox. The first
-   `application_events` planning/writing foundation now exists, but it is not
+   `application_events` planning/writing foundation exists, but it is not
    connected to runtime writes yet.
 
 ## Do Not Forget
