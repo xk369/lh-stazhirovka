@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **50%**.
+Текущий общий прогресс: **52%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -243,7 +243,8 @@ Rollback:
 ## Текущее Следующее Действие
 
 Следующий технический шаг: расширять writable Postgres command layer по одной
-команде за итерацию. Первый интегрированный slice готов:
-`create_shift` выполняется транзакционно в PostgreSQL, пишет `shift_created`,
-увеличивает `booking_state_meta.version` и проверяется live smoke внутри
-`npm run test:postgres`. Следующая команда: `update_shift_capacity`.
+команде за итерацию. Интегрированные slices:
+`create_shift` и `update_shift_capacity` выполняются транзакционно в
+PostgreSQL, пишут `application_events`, увеличивают
+`booking_state_meta.version` при реальном изменении и проверяются live smoke
+внутри `npm run test:postgres`. Следующая команда: `set_application_status`.

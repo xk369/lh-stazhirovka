@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SEAT_HOLDING_STATUSES } from '../booking-state-machine.js';
 import { runInPostgresTransaction } from './transaction.js';
 import { insertApplicationEvents } from './write-application-events.js';
 
@@ -29,15 +30,7 @@ export class PostgresCommandConflictError extends Error {
   }
 }
 
-const SEAT_HOLDING_STATUS_VALUES = Object.freeze([
-  'pending',
-  'confirmed',
-  'invited',
-  'feedback',
-  'passed',
-  'failed',
-  'noshow'
-]);
+const SEAT_HOLDING_STATUS_VALUES = Object.freeze([...SEAT_HOLDING_STATUSES]);
 
 function requireRecruiter(actor) {
   if (!actor || actor.role !== 'recruiter') {

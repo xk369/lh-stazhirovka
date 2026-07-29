@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 50%.
+- Current migration progress: 52%.
 
 ## Migration Staging
 
@@ -52,11 +52,18 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Verified import/parity/runtime smoke before exposing staging.
 - Added a Postgres write adapter seam and transactional `create_shift` path.
 - Added live PostgreSQL write smoke for `create_shift` inside `npm run test:postgres`.
+- Added a transactional `update_shift_capacity` Postgres write path with live
+  PostgreSQL smoke inside `npm run test:postgres`.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
 ## Current Checks
 
+- 2026-07-29: `npm test` passed, 144/144 tests after integrating
+  `update_shift_capacity` into `migration/postgres-foundation` and importing
+  seat-holding statuses from the shared state machine.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `update_shift_capacity` PostgreSQL write smoke.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -138,6 +145,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   version. When requested seats equal current seats the command is a no-op:
   no `UPDATE shifts`, no event, no version bump. Still not wired into
   `src/server.js`. No Telegram/outbox/notifications changes, no deploy.
+- 2026-07-29: integrated the `update_shift_capacity` slice into
+  `migration/postgres-foundation`, moved seat-holding status usage to the
+  shared state-machine source, added real PostgreSQL write smoke for increasing
+  seats and rejecting shrink-below-usage, and raised migration progress to 52%.
 
 ## Documentation Audit
 
@@ -173,7 +184,7 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one writable Postgres command per
-   iteration, starting with `update_shift_capacity`.
+   iteration, starting with `set_application_status`.
 3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 4. Run `npm run test:postgres` after every Postgres write command.
