@@ -5,6 +5,7 @@ import {
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
   createShiftInPostgres,
+  markExperiencedInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
@@ -87,6 +88,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async step_back_application(command, actor) {
       const result = await stepBackApplicationInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async mark_experienced(command, actor) {
+      const result = await markExperiencedInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }

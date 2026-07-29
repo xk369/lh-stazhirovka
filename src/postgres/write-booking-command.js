@@ -260,6 +260,13 @@ function normalizeStepBackApplicationInput(command) {
   };
 }
 
+function normalizeMarkExperiencedInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
@@ -748,6 +755,101 @@ export async function stepBackApplicationInPostgres({ pool, actor, command, now 
         skipped: notificationRows.filter(row => row.status === 'skipped').length,
         inserted: notificationResult.inserted
       },
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function markExperiencedInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, baseVersion } = normalizeMarkExperiencedInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              applications.experience
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    if (String(app.status || '') !== 'passed') {
+      throw new PostgresCommandValidationError(
+        'Опытным стажёром можно отметить только того, кто прошёл стажировку.'
+      );
+    }
+
+    const previousExperience = app.experience || null;
+    if (previousExperience === 'experienced') {
+      return {
+        applicationLegacyId,
+        applicationId: app.id,
+        previousExperience,
+        nextExperience: 'experienced',
+        shiftLegacyId: app.shift_legacy_id ? Number(app.shift_legacy_id) : null,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const shiftLegacyId = app.shift_legacy_id ? Number(app.shift_legacy_id) : null;
+
+    await client.query(
+      `UPDATE applications
+          SET experience = 'experienced',
+              updated_at = $1,
+              row_version = row_version + 1
+        WHERE id = $2`,
+      [nowIso, app.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: 'experienced_marked',
+      applicationId: applicationLegacyId,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'mark_experienced',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousExperience,
+        nextExperience: 'experienced'
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousExperience,
+      nextExperience: 'experienced',
+      shiftLegacyId,
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,

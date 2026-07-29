@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 70%.
+- Общий прогресс: 72%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -160,6 +160,19 @@
   - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `mark_experienced` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - accepts only applications with `status='passed'`;
+  - sets `experience='experienced'`;
+  - writes `experienced_marked` event;
+  - returns an idempotent no-op when the trainee is already marked experienced;
+  - no trainee notification/outbox write, because this is a recruiter-owned
+    internal experience flag rather than a trainee-facing stage change;
+  - version bump only when the flag changes;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -179,15 +192,14 @@
 
 ## Очередь Writable Команд
 
-1. `mark_experienced`
-2. `return_to_queue`
-3. `update_comment`
-4. `upsert_trainee_application`
-5. `cancel_application`
-6. `toggle_shift`
-7. `clear_state`
-8. `reset_demo_state`
-9. `mentor_report_result` через `/api/report`
+1. `return_to_queue`
+2. `update_comment`
+3. `upsert_trainee_application`
+4. `cancel_application`
+5. `toggle_shift`
+6. `clear_state`
+7. `reset_demo_state`
+8. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -225,4 +237,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `mark_experienced`, then `return_to_queue`.
+slice is `return_to_queue`, then `update_comment`.

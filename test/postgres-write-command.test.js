@@ -8,6 +8,7 @@ import {
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
   createShiftInPostgres,
+  markExperiencedInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
@@ -25,6 +26,7 @@ function fakePool({
   existingInviteGroupMembers = [],
   existingMentorReports = [],
   existingNotifications = [],
+  eventInsertThrows = false,
   notificationInsertThrows = false,
   rollbackThrows = false
 } = {}) {
@@ -156,7 +158,8 @@ function fakePool({
           trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
           trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
           telegram_username: row.telegram_username ?? '',
-          name: row.name ?? ''
+          name: row.name ?? '',
+          experience: row.experience ?? null
         }] : [] };
       }
       if (/FROM invite_groups\s+WHERE id = ANY\(\$1::uuid\[\]\)/i.test(sql)) {
@@ -497,6 +500,16 @@ function fakePool({
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
+      if (/UPDATE applications\s+SET experience = 'experienced'/is.test(sql)) {
+        const nowIso = params[0];
+        const appUuid = String(params[1]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.experience = 'experienced';
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
       if (/UPDATE applications\s+SET status/i.test(sql)) {
         const nextStatus = params[0];
         const nextExperience = params[1];
@@ -542,7 +555,10 @@ function fakePool({
           .map(row => ({ legacy_id: row.legacy_id, id: row.id }));
         return { rowCount: rows.length, rows };
       }
-      if (/INSERT INTO application_events/.test(sql)) return { rowCount: 1, rows: [] };
+      if (/INSERT INTO application_events/.test(sql)) {
+        if (eventInsertThrows) throw new Error('event insert failed');
+        return { rowCount: 1, rows: [] };
+      }
       return { rowCount: 0, rows: [] };
     },
     release() {
@@ -3174,4 +3190,180 @@ test('stepBackApplicationInPostgres rolls back when notification outbox insert f
   assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
   assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
   assert.equal(pool.getNotifications().length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// mark_experienced
+// -----------------------------------------------------------------------------
+
+const experiencedShift = {
+  id: 'shift-uuid-experienced',
+  legacy_id: 9970,
+  date: '2026-09-06',
+  seats: 2,
+  open: false,
+  canceled: false
+};
+
+function makeExperiencedApp(overrides = {}) {
+  return {
+    id: 'app-uuid-experienced',
+    legacy_id: 9971,
+    shift_id: 'shift-uuid-experienced',
+    status: 'passed',
+    experience: null,
+    ...overrides
+  };
+}
+
+test('markExperiencedInPostgres marks a passed trainee as experienced and writes an event', async () => {
+  const pool = fakePool({
+    currentVersion: 120,
+    existingShifts: [{ ...experiencedShift }],
+    existingApplications: [makeExperiencedApp()]
+  });
+  const now = new Date('2026-07-29T20:00:00.000Z');
+
+  const result = await markExperiencedInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'mark_experienced', baseVersion: 120, applicationId: 9971 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 9971);
+  assert.equal(result.previousExperience, null);
+  assert.equal(result.nextExperience, 'experienced');
+  assert.equal(result.shiftLegacyId, 9970);
+  assert.equal(result.previousVersion, 120);
+  assert.equal(result.version, 121);
+  assert.equal(result.updatedAt, now.toISOString());
+  assert.equal(pool.getApplications()[0].experience, 'experienced');
+  assert.equal(pool.getApplications()[0].updated_at, now.toISOString());
+  assert.equal(pool.getVersion(), 121);
+
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'experienced_marked');
+  assert.equal(eventInsert.params[4], 'recruiter');
+  assert.equal(eventInsert.params[5], '111');
+  const payload = JSON.parse(eventInsert.params[6]);
+  assert.equal(payload.action, 'mark_experienced');
+  assert.equal(payload.previousExperience, null);
+  assert.equal(payload.nextExperience, 'experienced');
+  assert.equal(payload.previousVersion, 120);
+  assert.equal(payload.nextVersion, 121);
+  assert.equal(payload.legacyApplicationId, 9971);
+  assert.equal(payload.legacyShiftId, 9970);
+
+  const sqls = pool.calls.map(call => call.sql);
+  assert.ok(sqls.some(sql => /^COMMIT$/i.test(sql)));
+  assert.ok(sqls.some(sql => /RELEASE/.test(sql)));
+});
+
+test('markExperiencedInPostgres is a no-op when trainee is already experienced', async () => {
+  const pool = fakePool({
+    currentVersion: 120,
+    existingShifts: [{ ...experiencedShift }],
+    existingApplications: [makeExperiencedApp({ experience: 'experienced' })]
+  });
+
+  const result = await markExperiencedInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'mark_experienced', baseVersion: 120, applicationId: 9971 },
+    now: new Date('2026-07-29T20:05:00.000Z')
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.version, 120);
+  assert.equal(result.previousVersion, 120);
+  assert.equal(pool.getVersion(), 120);
+  const sqls = pool.calls.map(call => call.sql);
+  assert.equal(sqls.some(sql => /UPDATE applications\s+SET experience/i.test(sql)), false);
+  assert.equal(sqls.some(sql => /INSERT INTO application_events/i.test(sql)), false);
+  assert.ok(sqls.some(sql => /^COMMIT$/i.test(sql)));
+});
+
+test('markExperiencedInPostgres rejects stale version, unknown app, invalid input and non-passed status', async () => {
+  const pool = fakePool({
+    currentVersion: 120,
+    existingShifts: [{ ...experiencedShift }],
+    existingApplications: [makeExperiencedApp({ status: 'feedback' })]
+  });
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'mark_experienced', baseVersion: 119, applicationId: 9971 },
+      now: new Date('2026-07-29T20:10:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'mark_experienced', baseVersion: 120, applicationId: 999999 },
+      now: new Date('2026-07-29T20:15:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /not found/.test(err.message)
+  );
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'mark_experienced', baseVersion: 120, applicationId: 0 },
+      now: new Date('2026-07-29T20:20:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /applicationId/.test(err.message)
+  );
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'mark_experienced', baseVersion: 120, applicationId: 9971 },
+      now: new Date('2026-07-29T20:25:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /прошёл стажировку/.test(err.message)
+  );
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '5' } } },
+      command: { action: 'mark_experienced', baseVersion: 120, applicationId: 9971 },
+      now: new Date('2026-07-29T20:30:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+});
+
+test('markExperiencedInPostgres rolls back when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 120,
+    eventInsertThrows: true,
+    existingShifts: [{ ...experiencedShift }],
+    existingApplications: [makeExperiencedApp()]
+  });
+
+  await assert.rejects(
+    () => markExperiencedInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'mark_experienced', baseVersion: 120, applicationId: 9971 },
+      now: new Date('2026-07-29T20:35:00.000Z')
+    }),
+    /event insert failed/
+  );
+
+  const sqls = pool.calls.map(call => call.sql);
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.some(sql => /RELEASE/.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getVersion(), 120);
 });
