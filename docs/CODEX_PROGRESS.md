@@ -111,6 +111,16 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   it, so runtime remains JSON. No wiring into `server.js`, no Telegram/outbox
   changes, no production or staging deploy. Draft PR opened into
   `migration/postgres-foundation` for Codex review.
+- 2026-07-29 (Claude, branch `migration/postgres-write-capacity-claude`): added
+  a transactional `update_shift_capacity` Postgres write path on top of the
+  adapter branch. Uses `FOR UPDATE` on `booking_state_meta` and on the target
+  `shifts` row, refuses to shrink `seats` below the current seat-holding count,
+  writes a `shift_capacity_changed` row into `application_events` and bumps
+  the meta version. When the requested seats equal current seats the command
+  is a no-op: no `UPDATE shifts`, no event, no version bump. Registered
+  through the Postgres write adapter. Still not wired into `src/server.js`.
+  No Telegram/outbox/notifications changes, no deploy. Draft PR stacked on
+  top of the adapter branch.
 
 ## Documentation Audit
 

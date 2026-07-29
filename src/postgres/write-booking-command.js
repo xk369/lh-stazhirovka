@@ -29,21 +29,15 @@ export class PostgresCommandConflictError extends Error {
   }
 }
 
-function normalizeCreateShiftInput(command) {
-  const date = String(command?.date || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new PostgresCommandValidationError('shift.date must be YYYY-MM-DD.');
-  }
-  const seats = Number(command?.seats);
-  if (!Number.isInteger(seats) || seats < 1 || seats > 30) {
-    throw new PostgresCommandValidationError('shift.seats must be an integer between 1 and 30.');
-  }
-  const baseVersion = Number(command?.baseVersion);
-  if (!Number.isSafeInteger(baseVersion) || baseVersion <= 0) {
-    throw new PostgresCommandValidationError('baseVersion is required.');
-  }
-  return { date, seats, baseVersion };
-}
+const SEAT_HOLDING_STATUS_VALUES = Object.freeze([
+  'pending',
+  'confirmed',
+  'invited',
+  'feedback',
+  'passed',
+  'failed',
+  'noshow'
+]);
 
 function requireRecruiter(actor) {
   if (!actor || actor.role !== 'recruiter') {
@@ -53,6 +47,38 @@ function requireRecruiter(actor) {
 
 function actorTelegramUserId(actor) {
   return String(actor?.telegram?.user?.id || actor?.userId || '').trim() || null;
+}
+
+function normalizeBaseVersion(command) {
+  const baseVersion = Number(command?.baseVersion);
+  if (!Number.isSafeInteger(baseVersion) || baseVersion <= 0) {
+    throw new PostgresCommandValidationError('baseVersion is required.');
+  }
+  return baseVersion;
+}
+
+function normalizeSeats(value) {
+  const seats = Number(value);
+  if (!Number.isInteger(seats) || seats < 1 || seats > 30) {
+    throw new PostgresCommandValidationError('shift.seats must be an integer between 1 and 30.');
+  }
+  return seats;
+}
+
+function normalizeIsoDate(value) {
+  const date = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new PostgresCommandValidationError('shift.date must be YYYY-MM-DD.');
+  }
+  return date;
+}
+
+function normalizeShiftLegacyId(value) {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new PostgresCommandValidationError('shiftId must be a positive integer.');
+  }
+  return id;
 }
 
 function todayDateValueInMoscow(now) {
@@ -71,6 +97,47 @@ function nextLegacyId(now, maxLegacyId) {
   return Math.max(now.getTime(), base + 1);
 }
 
+async function lockBookingStateMeta(client) {
+  const metaResult = await client.query(
+    'SELECT version, updated_at FROM booking_state_meta WHERE singleton = true FOR UPDATE'
+  );
+  if (metaResult.rowCount !== 1) {
+    throw new PostgresCommandValidationError('booking_state_meta must contain exactly one row.');
+  }
+  return {
+    version: Number(metaResult.rows[0].version),
+    updatedAt: metaResult.rows[0].updated_at
+  };
+}
+
+function normalizeCreateShiftInput(command) {
+  return {
+    date: normalizeIsoDate(command?.date),
+    seats: normalizeSeats(command?.seats),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeUpdateShiftCapacityInput(command) {
+  return {
+    shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
+    seats: normalizeSeats(command?.seats),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function shiftDateAsString(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 10);
+  return value.toISOString().slice(0, 10);
+}
+
+function shiftUpdatedAtAsString(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return new Date(value).toISOString();
+  return value.toISOString();
+}
+
 export async function createShiftInPostgres({ pool, actor, command, now = new Date() }) {
   requireRecruiter(actor);
   const { date, seats, baseVersion } = normalizeCreateShiftInput(command);
@@ -79,14 +146,8 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
   }
 
   return runInPostgresTransaction(pool, async client => {
-    const metaResult = await client.query(
-      'SELECT version FROM booking_state_meta WHERE singleton = true FOR UPDATE'
-    );
-    if (metaResult.rowCount !== 1) {
-      throw new PostgresCommandValidationError('booking_state_meta must contain exactly one row.');
-    }
-    const currentVersion = Number(metaResult.rows[0].version);
-    if (baseVersion !== currentVersion) throw new PostgresCommandConflictError();
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
 
     const duplicate = await client.query(
       'SELECT 1 FROM shifts WHERE date = $1::date',
@@ -102,7 +163,7 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
     const legacyId = nextLegacyId(now, maxLegacyResult.rows[0]?.max_legacy_id);
     const shiftId = randomUUID();
     const nowIso = now.toISOString();
-    const nextVersion = currentVersion + 1;
+    const nextVersion = meta.version + 1;
 
     await client.query(
       `
@@ -123,7 +184,7 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
       payload: {
         action: 'create_shift',
         baseVersion,
-        previousVersion: currentVersion,
+        previousVersion: meta.version,
         nextVersion,
         date,
         seats
@@ -142,8 +203,107 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
       date,
       seats,
       version: nextVersion,
-      previousVersion: currentVersion,
+      previousVersion: meta.version,
       updatedAt: nowIso
+    };
+  });
+}
+
+export async function updateShiftCapacityInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { shiftLegacyId, seats, baseVersion } = normalizeUpdateShiftCapacityInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const shiftResult = await client.query(
+      `SELECT id, legacy_id, seats, date::text AS date
+         FROM shifts
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [shiftLegacyId]
+    );
+    if (shiftResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('shift not found.');
+    }
+    const shift = shiftResult.rows[0];
+    const currentSeats = Number(shift.seats);
+    const date = shiftDateAsString(shift.date);
+
+    if (seats === currentSeats) {
+      return {
+        legacyId: shiftLegacyId,
+        shiftId: shift.id,
+        date,
+        seats: currentSeats,
+        previousSeats: currentSeats,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const usageResult = await client.query(
+      `SELECT COUNT(*)::int AS used
+         FROM applications
+        WHERE shift_id = $1
+          AND status = ANY($2::text[])`,
+      [shift.id, SEAT_HOLDING_STATUS_VALUES]
+    );
+    const usedSeats = Number(usageResult.rows[0]?.used || 0);
+    if (seats < usedSeats) {
+      throw new PostgresCommandValidationError(
+        `Нельзя уменьшить количество мест до ${seats}: на эту дату уже записано ${usedSeats} стажёров.`
+      );
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+
+    await client.query(
+      `UPDATE shifts
+          SET seats = $1,
+              updated_at = $2,
+              row_version = row_version + 1
+        WHERE id = $3`,
+      [seats, nowIso, shift.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: 'shift_capacity_changed',
+      applicationId: null,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'update_shift_capacity',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousSeats: currentSeats,
+        nextSeats: seats,
+        date
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      legacyId: shiftLegacyId,
+      shiftId: shift.id,
+      date,
+      seats,
+      previousSeats: currentSeats,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
     };
   });
 }

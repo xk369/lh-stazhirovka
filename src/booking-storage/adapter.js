@@ -1,6 +1,9 @@
 import { BOOKING_STORAGE_MODES, BookingStorageReadOnlyError } from '../booking-storage-mode.js';
 import { readBookingStateFromPostgres } from '../postgres/read-booking-state.js';
-import { createShiftInPostgres } from '../postgres/write-booking-command.js';
+import {
+  createShiftInPostgres,
+  updateShiftCapacityInPostgres
+} from '../postgres/write-booking-command.js';
 
 export class BookingCommandNotImplementedError extends Error {
   constructor(action) {
@@ -43,6 +46,11 @@ export function createPostgresWriteBookingStorageAdapter({
   const commandHandlers = {
     async create_shift(command, actor) {
       const result = await createShiftInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async update_shift_capacity(command, actor) {
+      const result = await updateShiftCapacityInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }
