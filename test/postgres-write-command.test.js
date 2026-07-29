@@ -176,6 +176,36 @@ test('createShiftInPostgres rejects past dates before opening a transaction', as
   assert.equal(pool.calls.length, 0);
 });
 
+test('createShiftInPostgres treats today by Europe/Moscow, not UTC', async () => {
+  // 2026-07-29T21:30:00.000Z is already 2026-07-30T00:30 in Moscow (UTC+3),
+  // so a shift for 2026-07-29 must be rejected as past even though UTC calendar
+  // still shows 2026-07-29.
+  const pool = fakePool({ currentVersion: 10 });
+  await assert.rejects(
+    () => createShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'create_shift', baseVersion: 10, date: '2026-07-29', seats: 5 },
+      now: new Date('2026-07-29T21:30:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /в прошлом/.test(err.message)
+  );
+  assert.equal(pool.calls.length, 0);
+
+  // Same instant, the Moscow-today date (2026-07-30) is still accepted, so
+  // the check really depends on the Europe/Moscow calendar boundary and not
+  // just on a stricter comparison.
+  const acceptingPool = fakePool({ currentVersion: 10 });
+  const result = await createShiftInPostgres({
+    pool: acceptingPool,
+    actor: recruiter,
+    command: { action: 'create_shift', baseVersion: 10, date: '2026-07-30', seats: 5 },
+    now: new Date('2026-07-29T21:30:00.000Z')
+  });
+  assert.equal(result.date, '2026-07-30');
+  assert.equal(result.version, 11);
+});
+
 test('createShiftInPostgres rejects invalid seats and malformed dates before opening a transaction', async () => {
   const pool = fakePool({ currentVersion: 10 });
   await assert.rejects(

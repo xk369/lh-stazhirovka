@@ -55,8 +55,15 @@ function actorTelegramUserId(actor) {
   return String(actor?.telegram?.user?.id || actor?.userId || '').trim() || null;
 }
 
-function todayDateString(now) {
-  return now.toISOString().slice(0, 10);
+function todayDateValueInMoscow(now) {
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+  const value = type => parts.find(part => part.type === type)?.value || '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
 function nextLegacyId(now, maxLegacyId) {
@@ -67,7 +74,7 @@ function nextLegacyId(now, maxLegacyId) {
 export async function createShiftInPostgres({ pool, actor, command, now = new Date() }) {
   requireRecruiter(actor);
   const { date, seats, baseVersion } = normalizeCreateShiftInput(command);
-  if (date < todayDateString(now)) {
+  if (date < todayDateValueInMoscow(now)) {
     throw new PostgresCommandValidationError('Нельзя создать дату стажировки в прошлом.');
   }
 
