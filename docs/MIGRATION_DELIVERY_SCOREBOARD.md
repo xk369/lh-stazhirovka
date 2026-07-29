@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 55%.
+- Общий прогресс: 58%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer.
@@ -53,6 +53,21 @@
   - writes status and optional `shift_auto_closed` events;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `assign_shift` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - source `applications` row `FOR UPDATE`;
+  - target `shifts` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - accepts only preliminary queue applications (`status=queue`,
+    `shift_id IS NULL`);
+  - requires target shift to be open and not canceled;
+  - refuses assignment when seat-holding applications already fill all seats;
+  - moves the application to the target shift with `status=pending`;
+  - writes `application_status_changed` and `application_assigned_to_shift`
+    events;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -72,20 +87,19 @@
 
 ## Очередь Writable Команд
 
-1. `assign_shift`
-2. `send_invites`
-3. `cancel_internship`
-4. `cancel_shift`
-5. `step_back_application`
-6. `mark_experienced`
-7. `return_to_queue`
-8. `update_comment`
-9. `upsert_trainee_application`
-10. `cancel_application`
-11. `toggle_shift`
-12. `clear_state`
-13. `reset_demo_state`
-14. `mentor_report_result` через `/api/report`
+1. `send_invites`
+2. `cancel_internship`
+3. `cancel_shift`
+4. `step_back_application`
+5. `mark_experienced`
+6. `return_to_queue`
+7. `update_comment`
+8. `upsert_trainee_application`
+9. `cancel_application`
+10. `toggle_shift`
+11. `clear_state`
+12. `reset_demo_state`
+13. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -95,6 +109,11 @@
   decides how to handle the previous invite group, venue and archive links.
   Do not wire `BOOKING_STORAGE_MODE=postgres` into `src/server.js` until this
   correction path is implemented or the UI/API is adjusted.
+- PostgreSQL `assign_shift` is intentionally stricter than the legacy JSON
+  helper: it only moves preliminary queue applications to open, non-canceled
+  shifts. If UI/API needs to move an already assigned, confirmed or invited
+  application, add a separate command that explicitly handles old shift,
+  invite-group, venue and archive links before runtime cutover.
 
 ## Two-Agent Rules
 
@@ -110,7 +129,7 @@
 
 ## Next Concrete Step
 
-Claude: implement `assign_shift` in a branch based on current
+Claude: implement `send_invites` in a branch based on current
 `migration/postgres-foundation`.
 
 Codex: review, merge into `migration/postgres-foundation`, run full gates, then

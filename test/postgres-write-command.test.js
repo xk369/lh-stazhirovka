@@ -1034,7 +1034,8 @@ test('assignShiftInPostgres moves queue application onto target shift with pendi
   const sqlOrder = pool.calls.map(call => call.sql.trim().replace(/\s+/g, ' '));
   const beginIndex = sqlOrder.indexOf('BEGIN');
   const commitIndex = sqlOrder.indexOf('COMMIT');
-  assert.ok(beginIndex >= 0 && commitIndex > beginIndex);
+  const releaseIndex = sqlOrder.indexOf('RELEASE');
+  assert.ok(beginIndex >= 0 && commitIndex > beginIndex && releaseIndex > commitIndex);
   const between = sqlOrder.slice(beginIndex + 1, commitIndex);
   assert.ok(between.some(sql => /SELECT version.*FROM booking_state_meta.*FOR UPDATE/i.test(sql)));
   assert.ok(between.some(sql => /SELECT id, legacy_id, status, shift_id FROM applications/i.test(sql)

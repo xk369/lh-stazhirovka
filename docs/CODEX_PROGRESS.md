@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 55%.
+- Current migration progress: 58%.
 
 ## Migration Staging
 
@@ -57,6 +57,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added a transactional `set_application_status` Postgres write path for
   forward recruiter transitions with live PostgreSQL smoke inside
   `npm run test:postgres`.
+- Added a transactional `assign_shift` Postgres write path for moving queue
+  applications to open shifts with live PostgreSQL smoke inside
+  `npm run test:postgres`.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -71,6 +74,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `set_application_status` into `migration/postgres-foundation`.
 - 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
   live `set_application_status` PostgreSQL write smoke.
+- 2026-07-29: `npm test` passed, 171/171 tests after integrating
+  `assign_shift` into `migration/postgres-foundation`.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `assign_shift` PostgreSQL write smoke.
+- 2026-07-29: migration PR safety check passed after integrating
+  `assign_shift`, 7 changed paths checked.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -188,6 +197,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   by a live Postgres write smoke inside `npm run test:postgres`. Still not
   wired into `src/server.js`, no Telegram/outbox/notifications changes, no
   deploy.
+- 2026-07-29: reviewed and integrated `assign_shift` into
+  `migration/postgres-foundation`. Added a Codex assertion that the command
+  releases the client after commit. Confirmed the stricter queue-only/open-shift
+  guard matches `docs/DATA_MODEL.md`; any future move of an already assigned or
+  invited application should become a separate command before runtime cutover.
+  Raised migration progress to 58%.
 
 ## Documentation Audit
 
@@ -223,7 +238,7 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one writable Postgres command per
-   iteration, starting with `assign_shift`.
+   iteration, starting with `send_invites`.
 3. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 4. Run `npm run test:postgres` after every Postgres write command.
