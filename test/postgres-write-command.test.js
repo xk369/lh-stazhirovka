@@ -10,6 +10,7 @@ import {
   createShiftInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
+  stepBackApplicationInPostgres,
   updateShiftCapacityInPostgres
 } from '../src/postgres/write-booking-command.js';
 
@@ -22,6 +23,7 @@ function fakePool({
   existingApplications = [],
   existingInviteGroups = [],
   existingInviteGroupMembers = [],
+  existingMentorReports = [],
   existingNotifications = [],
   notificationInsertThrows = false,
   rollbackThrows = false
@@ -32,6 +34,7 @@ function fakePool({
   const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
   const notifications = existingNotifications.map(row => ({ ...row }));
   const inviteGroupMembers = existingInviteGroupMembers.map(row => ({ ...row }));
+  const mentorReports = existingMentorReports.map(row => ({ ...row }));
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
 
@@ -348,6 +351,18 @@ function fakePool({
         }
         return { rowCount: count, rows: [] };
       }
+      if (/UPDATE mentor_reports\s+SET voided_at/i.test(sql)) {
+        const nowIso = params[0];
+        const appUuid = String(params[1]);
+        let count = 0;
+        for (const report of mentorReports) {
+          if (String(report.application_id) === appUuid && !report.voided_at) {
+            report.voided_at = nowIso;
+            count += 1;
+          }
+        }
+        return { rowCount: count, rows: [] };
+      }
       if (/UPDATE applications\s+SET shift_id = NULL/i.test(sql)) {
         const nowIso = params[0];
         const targetUuids = Array.isArray(params[1])
@@ -447,6 +462,41 @@ function fakePool({
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
+      if (/UPDATE applications\s+SET status = \$1,\s+mentor_report_received = false/is.test(sql)) {
+        const nextStatus = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[2]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.status = nextStatus;
+          target.mentor_report_received = false;
+          target.mentor_report_at = null;
+          target.mentor_reporter_telegram_user_id = null;
+          target.mentor_decision = '';
+          target.mentor_report_venue_id = '';
+          target.mentor_report_venue = '';
+          target.mentor_report_loft = '';
+          target.mentor_report_hall = '';
+          target.mentor_comment_for_trainee = '';
+          target.mentor_comment_sent_at = null;
+          target.mentor_comment_delivery_status = null;
+          target.mentor_comment_delivery_error = '';
+          target.experience = null;
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET status = \$1,\s+updated_at = \$2/is.test(sql)) {
+        const nextStatus = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[2]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.status = nextStatus;
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
       if (/UPDATE applications\s+SET status/i.test(sql)) {
         const nextStatus = params[0];
         const nextExperience = params[1];
@@ -505,6 +555,7 @@ function fakePool({
     getUpdatedAt: () => updatedAt,
     getInviteGroups: () => inviteGroups,
     getInviteGroupMembers: () => inviteGroupMembers,
+    getMentorReports: () => mentorReports,
     getNotifications: () => notifications,
     getShifts: () => shifts,
     getApplications: () => apps,
@@ -2841,6 +2892,281 @@ test('cancelShiftInPostgres rolls back when notification outbox insert fails', a
       actor: recruiter,
       command: { action: 'cancel_shift', baseVersion: 90, shiftId: 9900 },
       now: new Date('2026-07-29T18:00:00.000Z')
+    }),
+    /notification insert failed/
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.equal(pool.getNotifications().length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// step_back_application
+// -----------------------------------------------------------------------------
+
+const stepBackShift = {
+  id: 'shift-uuid-step-back',
+  legacy_id: 9950,
+  date: '2026-09-05',
+  seats: 3,
+  open: true,
+  canceled: false
+};
+
+function makeStepBackApp(overrides = {}) {
+  return {
+    id: 'app-uuid-step-back',
+    legacy_id: 9961,
+    shift_id: 'shift-uuid-step-back',
+    status: 'passed',
+    invite_group_id: 'group-uuid-step-back',
+    venue_id: 'loft1',
+    group_link: 'https://t.me/+step_back',
+    candidate_report: false,
+    mentor_report_received: true,
+    mentor_report_at: '2026-09-05T12:00:00.000Z',
+    mentor_reporter_telegram_user_id: 'mentor',
+    mentor_decision: 'Стажировка пройдена',
+    mentor_report_venue_id: 'loft1',
+    mentor_report_venue: 'LOFT #1',
+    mentor_report_loft: 'LOFT #1',
+    mentor_report_hall: '',
+    mentor_comment_for_trainee: 'old comment',
+    mentor_comment_sent_at: '2026-09-05T12:05:00.000Z',
+    mentor_comment_delivery_status: 'sent',
+    mentor_comment_delivery_error: '',
+    experience: 'experienced',
+    trainee_telegram_user_id: '996100',
+    trainee_telegram_chat_id: '996100',
+    telegram_username: 'step_back_trainee',
+    name: 'Step Back Trainee',
+    ...overrides
+  };
+}
+
+test('stepBackApplicationInPostgres rolls passed trainee back to feedback and voids mentor report', async () => {
+  const pool = fakePool({
+    currentVersion: 100,
+    existingShifts: [{ ...stepBackShift }],
+    existingApplications: [makeStepBackApp()],
+    existingMentorReports: [{
+      id: 'mentor-report-step-back',
+      application_id: 'app-uuid-step-back',
+      voided_at: null
+    }]
+  });
+  const now = new Date('2026-07-29T19:00:00.000Z');
+  const result = await stepBackApplicationInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 9961);
+  assert.equal(result.previousStatus, 'passed');
+  assert.equal(result.nextStatus, 'feedback');
+  assert.equal(result.shiftLegacyId, 9950);
+  assert.equal(result.mentorReportVoided, true);
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.equal(result.version, 101);
+
+  const app = pool.getApplications()[0];
+  assert.equal(app.status, 'feedback');
+  assert.equal(app.mentor_report_received, false);
+  assert.equal(app.mentor_report_at, null);
+  assert.equal(app.mentor_decision, '');
+  assert.equal(app.mentor_comment_delivery_status, null);
+  assert.equal(app.experience, null);
+  assert.equal(pool.getMentorReports()[0].voided_at, now.toISOString());
+
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'application_step_back');
+  const payload = JSON.parse(eventInsert.params[6]);
+  assert.equal(payload.action, 'step_back_application');
+  assert.equal(payload.previousStatus, 'passed');
+  assert.equal(payload.nextStatus, 'feedback');
+  assert.equal(payload.previousShiftId, 9950);
+  assert.equal(payload.nextShiftId, 9950);
+  assert.equal(payload.mentorReportVoided, true);
+  assert.equal(payload.legacyApplicationId, 9961);
+  assert.equal(payload.legacyShiftId, 9950);
+
+  const notification = pool.getNotifications()[0];
+  assert.equal(notification.type, 'booking_stage_changed');
+  assert.equal(notification.status, 'pending');
+  assert.equal(notification.chat_id, '996100');
+  assert.equal(notification.chat_target, 'trainee');
+  assert.equal(notification.parse_mode, 'HTML');
+  assert.match(notification.text, /Этап стажировки изменён/);
+  assert.match(notification.text, /Стажировка пройдена/);
+  assert.match(notification.text, /Ждем отчет/);
+  assert.match(notification.idempotency_key, /^step_back_application:9961:/);
+});
+
+test('stepBackApplicationInPostgres rolls noshow back to invited without clearing mentor fields', async () => {
+  const pool = fakePool({
+    currentVersion: 100,
+    existingShifts: [{ ...stepBackShift }],
+    existingApplications: [
+      makeStepBackApp({
+        status: 'noshow',
+        mentor_report_received: false,
+        mentor_decision: '',
+        mentor_comment_delivery_status: null,
+        experience: null
+      })
+    ]
+  });
+  const result = await stepBackApplicationInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+    now: new Date('2026-07-29T19:00:00.000Z')
+  });
+
+  assert.equal(result.previousStatus, 'noshow');
+  assert.equal(result.nextStatus, 'invited');
+  assert.equal(result.mentorReportVoided, false);
+  assert.equal(pool.getApplications()[0].status, 'invited');
+  assert.equal(pool.getApplications()[0].mentor_report_received, false);
+  assert.equal(pool.getMentorReports().length, 0);
+  assert.match(pool.getNotifications()[0].text, /Приглашение отправлено/);
+});
+
+test('stepBackApplicationInPostgres records skipped notification when trainee chat id is missing', async () => {
+  const pool = fakePool({
+    currentVersion: 100,
+    existingShifts: [{ ...stepBackShift }],
+    existingApplications: [
+      makeStepBackApp({
+        trainee_telegram_user_id: '',
+        trainee_telegram_chat_id: ''
+      })
+    ]
+  });
+  const result = await stepBackApplicationInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+    now: new Date('2026-07-29T19:00:00.000Z')
+  });
+
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 0,
+    skipped: 1,
+    inserted: 1
+  });
+  assert.equal(pool.getNotifications()[0].status, 'skipped');
+  assert.equal(pool.getNotifications()[0].chat_id, null);
+  assert.equal(pool.getNotifications()[0].error, 'telegram_chat_missing');
+});
+
+test('stepBackApplicationInPostgres rolls back on stale baseVersion and rejects unsupported statuses', async () => {
+  const stalePool = fakePool({
+    currentVersion: 101,
+    existingShifts: [{ ...stepBackShift }],
+    existingApplications: [makeStepBackApp()]
+  });
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool: stalePool,
+      actor: recruiter,
+      command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+      now: new Date('2026-07-29T19:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  assert.equal(stalePool.getApplications()[0].status, 'passed');
+  assert.equal(stalePool.getNotifications().length, 0);
+
+  for (const status of ['pending', 'queue', 'confirmed', 'invited']) {
+    const pool = fakePool({
+      currentVersion: 100,
+      existingShifts: [{ ...stepBackShift }],
+      existingApplications: [makeStepBackApp({ status })]
+    });
+    await assert.rejects(
+      () => stepBackApplicationInPostgres({
+        pool,
+        actor: recruiter,
+        command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+        now: new Date('2026-07-29T19:00:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError && /нельзя вернуть/.test(err.message),
+      `expected reject for status=${status}`
+    );
+    assert.equal(pool.getApplications()[0].status, status);
+    assert.equal(pool.getNotifications().length, 0);
+  }
+});
+
+test('stepBackApplicationInPostgres rejects unknown application, invalid input and non-recruiter', async () => {
+  const unknownPool = fakePool({ currentVersion: 100 });
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool: unknownPool,
+      actor: recruiter,
+      command: { action: 'step_back_application', baseVersion: 100, applicationId: 999999 },
+      now: new Date('2026-07-29T19:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError && /application not found/.test(err.message)
+  );
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool: unknownPool,
+      actor: recruiter,
+      command: { action: 'step_back_application', baseVersion: 100, applicationId: 0 },
+      now: new Date('2026-07-29T19:00:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool: unknownPool,
+      actor: recruiter,
+      command: { action: 'step_back_application', baseVersion: 0, applicationId: 9961 },
+      now: new Date('2026-07-29T19:00:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool: unknownPool,
+      actor: { role: 'trainee', telegram: { user: { id: '5' } } },
+      command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+      now: new Date('2026-07-29T19:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+});
+
+test('stepBackApplicationInPostgres rolls back when notification outbox insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 100,
+    existingShifts: [{ ...stepBackShift }],
+    existingApplications: [makeStepBackApp()],
+    existingMentorReports: [{
+      id: 'mentor-report-step-back',
+      application_id: 'app-uuid-step-back',
+      voided_at: null
+    }],
+    notificationInsertThrows: true
+  });
+  await assert.rejects(
+    () => stepBackApplicationInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'step_back_application', baseVersion: 100, applicationId: 9961 },
+      now: new Date('2026-07-29T19:00:00.000Z')
     }),
     /notification insert failed/
   );

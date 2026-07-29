@@ -565,12 +565,83 @@ test('Postgres write adapter routes cancel_shift through the transactional write
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes step_back_application through the transactional writer and returns fresh state', async () => {
+  const fakeState = {
+    version: 102,
+    updatedAt: '2026-07-29T19:00:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T19:00:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase() });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 101, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'app-uuid-501',
+              legacy_id: 501,
+              status: 'passed',
+              shift_id: 'shift-uuid-88',
+              shift_legacy_id: 88,
+              trainee_telegram_user_id: '501',
+              trainee_telegram_chat_id: '501',
+              telegram_username: 'trainee501',
+              name: 'Trainee 501'
+            }]
+          };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501, id: 'app-uuid-501' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 88, id: 'shift-uuid-88' }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'step_back_application', baseVersion: 101, applicationId: 501 },
+    recruiter
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.changed, true);
+  assert.equal(outcome.result.applicationLegacyId, 501);
+  assert.equal(outcome.result.previousStatus, 'passed');
+  assert.equal(outcome.result.nextStatus, 'feedback');
+  assert.equal(outcome.result.mentorReportVoided, true);
+  assert.deepEqual(outcome.result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.equal(outcome.result.version, 102);
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter rejects still-unsupported commands with a stable code', async () => {
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { throw new Error('connect must not be called'); } }
   });
   await assert.rejects(
-    () => adapter.applyCommand({ action: 'step_back_application' }, recruiter),
+    () => adapter.applyCommand({ action: 'mark_experienced' }, recruiter),
     err => err instanceof BookingCommandNotImplementedError
       && err.code === 'BOOKING_COMMAND_NOT_IMPLEMENTED_IN_POSTGRES'
   );

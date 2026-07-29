@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 68%.
+- Current migration progress: 70%.
 
 ## Migration Staging
 
@@ -76,6 +76,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   queue, preserving attended trainees on the canceled date for history, cleaning
   invite group membership, writing audit events and writing durable trainee
   notification/outbox rows in the same transaction.
+- Added a transactional `step_back_application` Postgres write path for
+  recruiter stage correction: `passed`/`failed` back to `feedback`,
+  `feedback` back to `invited`, and `noshow` back to `invited`, with previous
+  mentor reports voided when a final result is rolled back and a durable trainee
+  notification/outbox row written in the same transaction.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -119,6 +124,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   live `cancel_shift` PostgreSQL write smoke. A sandboxed run failed first
   because local PostgreSQL could not create shared memory (`shmget Operation
   not permitted`), then the same command passed with escalation.
+- 2026-07-29: `npm test` passed, 212/212 tests after adding transactional
+  PostgreSQL `step_back_application`, adapter routing and unit coverage.
+- 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
+  live `step_back_application` PostgreSQL write smoke. A sandboxed run failed
+  first because local PostgreSQL could not create shared memory (`shmget
+  Operation not permitted`), then the same command passed with escalation.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -296,6 +307,17 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   pending/skipped semantics. Added adapter routing, unit coverage and live
   PostgreSQL smoke. No `src/server.js` runtime wiring, no live Telegram worker
   and no deploy. Raised migration progress to 68%.
+- 2026-07-29: added transactional PostgreSQL `step_back_application` directly
+  in `migration/postgres-foundation`. The command is recruiter-only, locks
+  `booking_state_meta` and the target application, rejects stale versions and
+  unsupported statuses, uses the shared step-back state-machine map, rolls final
+  `passed`/`failed` results back to `feedback` while voiding the active mentor
+  report and clearing mentor-result/delivery/experience fields, rolls
+  `feedback` or `noshow` back to `invited`, writes an `application_step_back`
+  event and a durable `booking_stage_changed` notification/outbox row with
+  pending/skipped semantics. Added adapter routing, unit coverage and live
+  PostgreSQL smoke. No `src/server.js` runtime wiring, no live Telegram worker
+  and no deploy. Raised migration progress to 70%.
 
 ## Documentation Audit
 
@@ -331,8 +353,8 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `step_back_application`,
-   `mark_experienced`, `return_to_queue` and `update_comment`.
+   iteration; the next high-value backend commands are `mark_experienced`,
+   `return_to_queue` and `update_comment`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

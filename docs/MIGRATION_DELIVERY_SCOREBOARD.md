@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 68%.
+- Общий прогресс: 70%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -140,6 +140,26 @@
   - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `step_back_application` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - uses shared `BOOKING_STEP_BACK_STATUSES`;
+  - supports `passed -> feedback`, `failed -> feedback`,
+    `feedback -> invited`, and `noshow -> invited`;
+  - voids the active `mentor_reports` row when a final result is rolled back;
+  - clears mentor-result, mentor-delivery and `experience` fields when rolling
+    back a final result;
+  - writes `application_step_back` event;
+  - writes one durable trainee `booking_stage_changed` notification row in the
+    same transaction;
+  - uses `status='pending'` when a Telegram target exists;
+  - uses explicit `status='skipped'` + `telegram_chat_missing` when the trainee
+    has no Telegram target;
+  - uses stable idempotency keys and `ON CONFLICT (idempotency_key) DO NOTHING`;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -159,16 +179,15 @@
 
 ## Очередь Writable Команд
 
-1. `step_back_application`
-2. `mark_experienced`
-3. `return_to_queue`
-4. `update_comment`
-5. `upsert_trainee_application`
-6. `cancel_application`
-7. `toggle_shift`
-8. `clear_state`
-9. `reset_demo_state`
-10. `mentor_report_result` через `/api/report`
+1. `mark_experienced`
+2. `return_to_queue`
+3. `update_comment`
+4. `upsert_trainee_application`
+5. `cancel_application`
+6. `toggle_shift`
+7. `clear_state`
+8. `reset_demo_state`
+9. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -206,4 +225,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `step_back_application`, then `mark_experienced`.
+slice is `mark_experienced`, then `return_to_queue`.

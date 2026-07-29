@@ -67,6 +67,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-cancel-internship-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-cancel-shift-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-step-back-application-write-smoke.js
 
 if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${SOURCE_PATH}" \

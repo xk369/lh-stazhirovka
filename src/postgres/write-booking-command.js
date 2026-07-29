@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   BOOKING_STATUSES,
+  BOOKING_STEP_BACK_STATUSES,
   BOOKING_STATUS_LABELS,
   SEAT_HOLDING_STATUSES,
   SHIFT_CANCELLATION_APPLICATION_STATUSES,
@@ -252,6 +253,13 @@ function normalizeCancelShiftInput(command) {
   };
 }
 
+function normalizeStepBackApplicationInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeUpdateShiftCapacityInput(command) {
   return {
     shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
@@ -357,6 +365,24 @@ function composeShiftCancellationNotificationText({ shiftDate }) {
   ].join('\n');
 }
 
+function composeBookingStageChangedNotificationText({ currentStatus, previousStatus }) {
+  const currentLabel = BOOKING_STATUS_LABELS[currentStatus] || currentStatus;
+  const previousLabel = BOOKING_STATUS_LABELS[previousStatus] || previousStatus;
+  const nextStepText = currentStatus === 'feedback'
+    ? 'Сейчас ожидается новый отчёт наставника по вашей стажировке.'
+    : 'Вы снова на этапе приглашения. Следите за сообщениями рекрута и информацией в рабочей группе.';
+  return [
+    '↩️ <b>Этап стажировки изменён</b>',
+    '',
+    `Рекрут вернул вашу заявку с этапа «${escapeTelegramHtml(previousLabel)}» на один шаг назад.`,
+    '',
+    `<b>Текущий статус:</b> ${escapeTelegramHtml(currentLabel)}.`,
+    nextStepText,
+    '',
+    'Актуальный этап всегда можно посмотреть в мини-приложении.'
+  ].join('\n');
+}
+
 function stableNotificationKey(parts) {
   const digest = createHash('sha256')
     .update(JSON.stringify(parts))
@@ -451,6 +477,35 @@ function cancelShiftNotificationRow({ app, shiftLegacyId, shiftDate, nowIso }) {
     chatId: chatId || null,
     chatTarget: 'trainee',
     text: composeShiftCancellationNotificationText({ shiftDate }),
+    parseMode: 'HTML',
+    status,
+    error: status === 'skipped' ? 'telegram_chat_missing' : null,
+    idempotencyKey: notificationKey,
+    nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
+function stepBackNotificationRow({ app, previousStatus, nextStatus, nowIso }) {
+  const chatId = String(app.trainee_telegram_chat_id || app.trainee_telegram_user_id || '').trim();
+  const notificationKey = stableNotificationKey({
+    action: 'step_back_application',
+    applicationLegacyId: Number(app.legacy_id),
+    previousStatus,
+    nextStatus
+  });
+  const status = chatId ? 'pending' : 'skipped';
+  return {
+    id: randomUUID(),
+    applicationId: app.id,
+    type: 'booking_stage_changed',
+    chatId: chatId || null,
+    chatTarget: 'trainee',
+    text: composeBookingStageChangedNotificationText({
+      currentStatus: nextStatus,
+      previousStatus
+    }),
     parseMode: 'HTML',
     status,
     error: status === 'skipped' ? 'telegram_chat_missing' : null,
@@ -562,6 +617,141 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso
+    };
+  });
+}
+
+export async function stepBackApplicationInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, baseVersion } = normalizeStepBackApplicationInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.name
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    const previousStatus = String(app.status || '');
+    const nextStatus = BOOKING_STEP_BACK_STATUSES[previousStatus];
+    if (!nextStatus) {
+      throw new PostgresCommandValidationError(
+        'Кандидата нельзя вернуть на предыдущий этап из текущего статуса.'
+      );
+    }
+
+    const shouldResetMentorReport = previousStatus === 'passed' || previousStatus === 'failed';
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+
+    if (shouldResetMentorReport) {
+      await client.query(
+        `UPDATE mentor_reports
+            SET voided_at = $1
+          WHERE application_id = $2
+            AND voided_at IS NULL`,
+        [nowIso, app.id]
+      );
+      await client.query(
+        `UPDATE applications
+            SET status = $1,
+                mentor_report_received = false,
+                mentor_report_at = NULL,
+                mentor_reporter_telegram_user_id = NULL,
+                mentor_decision = '',
+                mentor_report_venue_id = '',
+                mentor_report_venue = '',
+                mentor_report_loft = '',
+                mentor_report_hall = '',
+                mentor_comment_for_trainee = '',
+                mentor_comment_sent_at = NULL,
+                mentor_comment_delivery_status = NULL,
+                mentor_comment_delivery_error = '',
+                experience = NULL,
+                updated_at = $2,
+                row_version = row_version + 1
+          WHERE id = $3`,
+        [nextStatus, nowIso, app.id]
+      );
+    } else {
+      await client.query(
+        `UPDATE applications
+            SET status = $1,
+                updated_at = $2,
+                row_version = row_version + 1
+          WHERE id = $3`,
+        [nextStatus, nowIso, app.id]
+      );
+    }
+
+    const shiftLegacyId = app.shift_legacy_id ? Number(app.shift_legacy_id) : null;
+    await insertApplicationEvents(client, [{
+      eventType: 'application_step_back',
+      applicationId: applicationLegacyId,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'step_back_application',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus,
+        nextStatus,
+        previousShiftId: shiftLegacyId,
+        nextShiftId: shiftLegacyId,
+        mentorReportVoided: shouldResetMentorReport
+      },
+      createdAt: nowIso
+    }]);
+
+    const notificationRows = [stepBackNotificationRow({
+      app,
+      previousStatus,
+      nextStatus,
+      nowIso
+    })];
+    const notificationResult = await insertNotifications(client, notificationRows);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      nextStatus,
+      shiftLegacyId,
+      mentorReportVoided: shouldResetMentorReport,
+      notifications: {
+        total: notificationRows.length,
+        pending: notificationRows.filter(row => row.status === 'pending').length,
+        skipped: notificationRows.filter(row => row.status === 'skipped').length,
+        inserted: notificationResult.inserted
+      },
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
     };
   });
 }
