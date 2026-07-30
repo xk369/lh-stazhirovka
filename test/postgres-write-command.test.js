@@ -14,6 +14,7 @@ import {
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  toggleShiftInPostgres,
   updateCommentInPostgres,
   updateShiftCapacityInPostgres,
   upsertTraineeApplicationInPostgres
@@ -564,6 +565,20 @@ function fakePool({
         const target = findShiftByUuid(shiftUuid);
         if (target) {
           target.seats = seatsValue;
+          target.updated_at = params[1];
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE shifts\s+SET open = \$1,\s+canceled = CASE WHEN \$1 THEN false ELSE canceled END/is.test(sql)) {
+        const nextOpen = Boolean(params[0]);
+        const shiftUuid = String(params[2]);
+        const target = findShiftByUuid(shiftUuid);
+        if (target) {
+          target.open = nextOpen;
+          if (nextOpen) {
+            target.canceled = false;
+            target.canceled_at = null;
+          }
           target.updated_at = params[1];
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -1518,6 +1533,164 @@ test('createShiftInPostgres releases the client even if ROLLBACK also fails', as
     }),
     err => err instanceof PostgresCommandConflictError
   );
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
+
+test('toggleShiftInPostgres closes and reopens a shift with audit events', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 4,
+      open: true,
+      canceled: false,
+      canceled_at: null
+    }]
+  });
+  const closeNow = new Date('2026-07-29T12:00:00.000Z');
+
+  const closeResult = await toggleShiftInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'toggle_shift', baseVersion: 10, shiftId: 88, open: false },
+    now: closeNow
+  });
+
+  assert.equal(closeResult.changed, true);
+  assert.equal(closeResult.previousOpen, true);
+  assert.equal(closeResult.open, false);
+  assert.equal(closeResult.version, 11);
+  assert.equal(pool.getShifts()[0].open, false);
+  assert.equal(pool.getShifts()[0].canceled, false);
+
+  const openNow = new Date('2026-07-29T12:05:00.000Z');
+  const openResult = await toggleShiftInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'toggle_shift', baseVersion: 11, shiftId: 88 },
+    now: openNow
+  });
+
+  assert.equal(openResult.changed, true);
+  assert.equal(openResult.previousOpen, false);
+  assert.equal(openResult.open, true);
+  assert.equal(openResult.canceled, false);
+  assert.equal(openResult.version, 12);
+  assert.equal(pool.getShifts()[0].open, true);
+  assert.equal(pool.getShifts()[0].canceled, false);
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['shift_closed', 'shift_opened']);
+});
+
+test('toggleShiftInPostgres is a no-op when requested open state is unchanged', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 4,
+      open: true,
+      canceled: false
+    }]
+  });
+
+  const result = await toggleShiftInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'toggle_shift', baseVersion: 10, shiftId: 88, open: true },
+    now: new Date('2026-07-29T12:00:00.000Z')
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.version, 10);
+  assert.equal(pool.getVersion(), 10);
+  assert.equal(pool.calls.some(call => /UPDATE shifts\s+SET open/.test(call.sql)), false);
+  assert.equal(pool.calls.some(call => /INSERT INTO application_events/.test(call.sql)), false);
+});
+
+test('toggleShiftInPostgres rolls back on stale version and unknown shift', async () => {
+  const stalePool = fakePool({
+    currentVersion: 11,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 4,
+      open: true
+    }]
+  });
+  await assert.rejects(
+    () => toggleShiftInPostgres({
+      pool: stalePool,
+      actor: recruiter,
+      command: { action: 'toggle_shift', baseVersion: 10, shiftId: 88, open: false }
+    }),
+    PostgresCommandConflictError
+  );
+  assert.equal(stalePool.getShifts()[0].open, true);
+
+  const unknownPool = fakePool({ currentVersion: 10 });
+  await assert.rejects(
+    () => toggleShiftInPostgres({
+      pool: unknownPool,
+      actor: recruiter,
+      command: { action: 'toggle_shift', baseVersion: 10, shiftId: 999, open: false }
+    }),
+    /shift not found/
+  );
+  assert.ok(unknownPool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+});
+
+test('toggleShiftInPostgres rejects invalid input and non-recruiters before opening a transaction', async () => {
+  await assert.rejects(
+    () => toggleShiftInPostgres({
+      pool: fakePool(),
+      actor: trainee,
+      command: { action: 'toggle_shift', baseVersion: 10, shiftId: 88, open: false }
+    }),
+    PostgresCommandAuthorizationError
+  );
+
+  const invalidPool = fakePool();
+  await assert.rejects(
+    () => toggleShiftInPostgres({
+      pool: invalidPool,
+      actor: recruiter,
+      command: { action: 'toggle_shift', baseVersion: 10, shiftId: 'bad', open: false }
+    }),
+    PostgresCommandValidationError
+  );
+  assert.equal(invalidPool.calls.length, 0);
+});
+
+test('toggleShiftInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    eventInsertThrows: true,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 4,
+      open: true,
+      canceled: false
+    }]
+  });
+
+  await assert.rejects(
+    () => toggleShiftInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'toggle_shift', baseVersion: 10, shiftId: 88, open: false }
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
   assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
 });
 

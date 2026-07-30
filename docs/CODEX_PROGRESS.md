@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 80%.
+- Current migration progress: 82%.
 
 ## Migration Staging
 
@@ -52,6 +52,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Verified import/parity/runtime smoke before exposing staging.
 - Added a Postgres write adapter seam and transactional `create_shift` path.
 - Added live PostgreSQL write smoke for `create_shift` inside `npm run test:postgres`.
+- Added a transactional `toggle_shift` Postgres write path for opening and
+  closing internship dates, with no-op protection, `shift_opened`/`shift_closed`
+  audit events and live PostgreSQL smoke inside `npm run test:postgres`.
 - Added a transactional `update_shift_capacity` Postgres write path with live
   PostgreSQL smoke inside `npm run test:postgres`; later closed its durable
   trainee notification/outbox gap for upcoming statuses.
@@ -105,6 +108,13 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Current Checks
 
+- 2026-07-30: targeted `node --test test/postgres-write-command.test.js
+  test/booking-storage-adapter.test.js` passed after adding transactional
+  PostgreSQL `toggle_shift`, adapter routing and unit coverage.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
+  transactional PostgreSQL `toggle_shift`.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `toggle_shift` PostgreSQL write smoke.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -191,6 +201,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: added transactional PostgreSQL `toggle_shift` on
+  `migration/postgres-foundation`: recruiter-only, `booking_state_meta` and
+  target `shifts` row locks, optimistic `baseVersion`, explicit open/close and
+  implicit toggle, no-op when the requested open state is unchanged,
+  `shift_opened`/`shift_closed` audit events, adapter routing and live
+  PostgreSQL smoke. Production runtime wiring, `main` and Telegram live
+  delivery remain untouched. Migration progress is now 82%; next slices are
+  `clear_state`, `reset_demo_state` and `mentor_report_result`.
 - 2026-07-29: audited existing Markdown instructions and found stale migration
   staging commit references plus an old README backup path. Added this progress
   log, linked it from `AGENTS.md`, updated staging commit references to
@@ -451,8 +469,8 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `toggle_shift`,
-   `clear_state`, `reset_demo_state` and `mentor_report_result`.
+   iteration; the next high-value backend commands are `clear_state`,
+   `reset_demo_state` and `mentor_report_result`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 80%.
+- Общий прогресс: 82%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -76,6 +76,20 @@
   - `shifts` insert;
   - `shift_created` event;
   - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
+- `toggle_shift` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `shifts` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - supports explicit `open=true/false` and implicit toggle when `open` is not
+    supplied;
+  - closes a date without marking it canceled;
+  - reopens a date and clears `canceled/canceled_at`, matching JSON runtime
+    behavior;
+  - writes `shift_closed` or `shift_opened` audit events;
+  - returns an idempotent no-op when requested `open` state is already current;
+  - version bump only when `open` actually changes;
   - live PostgreSQL smoke inside `npm run test:postgres`.
 - `update_shift_capacity` writable PostgreSQL command:
   - recruiter-only;
@@ -280,10 +294,9 @@
 
 ## Очередь Writable Команд
 
-1. `toggle_shift`
-2. `clear_state`
-3. `reset_demo_state`
-4. `mentor_report_result` через `/api/report`
+1. `clear_state`
+2. `reset_demo_state`
+3. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -322,4 +335,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `toggle_shift`, then destructive admin commands.
+slice is `clear_state`, then `reset_demo_state`, then `mentor_report_result`.

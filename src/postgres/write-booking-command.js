@@ -338,6 +338,14 @@ function normalizeCreateShiftInput(command) {
   };
 }
 
+function normalizeToggleShiftInput(command) {
+  return {
+    shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
+    requestedOpen: typeof command?.open === 'boolean' ? command.open : null,
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
 function normalizeAssignShiftInput(command) {
   return {
     applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
@@ -1283,6 +1291,93 @@ export async function createShiftInPostgres({ pool, actor, command, now = new Da
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso
+    };
+  });
+}
+
+export async function toggleShiftInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { shiftLegacyId, requestedOpen, baseVersion } = normalizeToggleShiftInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const shiftResult = await client.query(
+      `SELECT id, legacy_id, date::text AS date, open, canceled, canceled_at
+         FROM shifts
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [shiftLegacyId]
+    );
+    if (shiftResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('shift not found.');
+    }
+    const shift = shiftResult.rows[0];
+    const previousOpen = Boolean(shift.open);
+    const nextOpen = requestedOpen === null ? !previousOpen : requestedOpen;
+    const date = shiftDateAsString(shift.date);
+    const nowIso = now.toISOString();
+
+    if (previousOpen === nextOpen) {
+      return {
+        shiftLegacyId,
+        previousOpen,
+        open: nextOpen,
+        canceled: Boolean(shift.canceled),
+        date,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const nextVersion = meta.version + 1;
+    await client.query(
+      `UPDATE shifts
+          SET open = $1,
+              canceled = CASE WHEN $1 THEN false ELSE canceled END,
+              canceled_at = CASE WHEN $1 THEN NULL ELSE canceled_at END,
+              updated_at = $2,
+              row_version = row_version + 1
+        WHERE id = $3`,
+      [nextOpen, nowIso, shift.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: nextOpen ? 'shift_opened' : 'shift_closed',
+      applicationId: null,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'toggle_shift',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        date,
+        previousOpen,
+        nextOpen
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      shiftLegacyId,
+      previousOpen,
+      open: nextOpen,
+      canceled: nextOpen ? false : Boolean(shift.canceled),
+      date,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
     };
   });
 }

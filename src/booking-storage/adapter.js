@@ -11,6 +11,7 @@ import {
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  toggleShiftInPostgres,
   updateCommentInPostgres,
   updateShiftCapacityInPostgres,
   upsertTraineeApplicationInPostgres
@@ -67,6 +68,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async create_shift(command, actor) {
       const result = await createShiftInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async toggle_shift(command, actor) {
+      const result = await toggleShiftInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },
