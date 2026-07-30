@@ -31,6 +31,9 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   `notifications` outbox. It must be combined with
   `TELEGRAM_DELIVERY_MODE=dry_run` until production cutover is explicitly
   planned.
+- Current migration-staging Compose forces `BOOKING_STORAGE_MODE=postgres`,
+  `TELEGRAM_DELIVERY_MODE=dry_run`, `TELEGRAM_POLLING=no` and
+  `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
 - Last local verification: `npm test -- --test-reporter=dot`,
   `npm run test:postgres` and `git diff --check` passed on 2026-07-30 after
   wiring `BOOKING_STORAGE_MODE=postgres` runtime smoke. The sandboxed

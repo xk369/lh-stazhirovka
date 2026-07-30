@@ -33,11 +33,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - App container: `loft-internship-app-migration-staging`
 - PostgreSQL container: `loft-internship-postgres-migration-staging`
 - Host port: `127.0.0.1:3502 -> 3000`
-- Storage mode: `BOOKING_STORAGE_MODE=postgres_readonly`
+- Storage mode target: `BOOKING_STORAGE_MODE=postgres`
 - Telegram mode: `TELEGRAM_DELIVERY_MODE=dry_run`
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
-- Safety result: staging can validate requests but cannot write booking state
-  and cannot send real Telegram messages.
+- Safety result: staging can validate and write booking state only to its
+  dedicated PostgreSQL database, and cannot send real Telegram messages.
 
 ## Completed In This Migration Branch
 

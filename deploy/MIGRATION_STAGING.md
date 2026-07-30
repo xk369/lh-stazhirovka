@@ -22,11 +22,11 @@ database.
 - no host PostgreSQL port;
 - application port is bound only to `127.0.0.1:3502`;
 - `TELEGRAM_DELIVERY_MODE=dry_run` is forced by Compose;
-- `BOOKING_STORAGE_MODE=postgres_readonly` is forced by Compose;
-- every operation that would change booking state returns
-  `503 BOOKING_STORAGE_READ_ONLY`;
-- report and notification requests can still run through validation in
-  `dry_run`, but cannot deliver anything to Telegram;
+- `BOOKING_STORAGE_MODE=postgres` is forced by Compose;
+- booking-state operations write only to the dedicated migration-staging
+  PostgreSQL database;
+- report and notification requests can run through validation and outbox
+  creation in `dry_run`, but cannot deliver anything to Telegram;
 - no automatic fallback from PostgreSQL to JSON.
 
 ## First deployment
@@ -80,8 +80,8 @@ Expected health fields:
 ```json
 {
   "telegramDeliveryMode": "dry_run",
-  "bookingStorageMode": "postgres_readonly",
-  "bookingStorageWritable": false
+  "bookingStorageMode": "postgres",
+  "bookingStorageWritable": true
 }
 ```
 
