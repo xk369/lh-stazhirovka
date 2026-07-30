@@ -24,7 +24,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 93% overall / 99% implementation.
+- Current migration progress: 95% overall / 100% no-prod backend
+  implementation.
 
 ## Migration Staging
 
@@ -38,7 +39,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
-- Current staging commit: `fe321f0`.
+- Current staging commit before final `/api/telegram/link` deploy:
+  `9f304d0`.
 - Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
   16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
   25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
@@ -147,6 +149,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   shift through `/api/state`, queues a trainee report through `/api/report` and
   verifies that no raw report text or bot token leaks into server output.
 - Added migration PR safety check and command contracts for future write commands.
+- Added a transactional `link_telegram_application` Postgres write path for
+  `/api/telegram/link`: verified Telegram actor, application row lock, owner
+  mismatch protection, idempotent no-op for already-linked applications,
+  `telegram_application_linked` audit event and fresh state through the adapter.
 - Published the branch and opened draft PR #3.
 
 ## Current Checks
@@ -233,6 +239,21 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - 2026-07-30: staging notification worker processed accumulated QA outbox rows
   in dry-run mode: 6 claimed, 0 sent, 6 skipped, 0 failed, 0 retry. No real
   Telegram messages were sent.
+- 2026-07-30: `node --check` passed for `src/server.js`,
+  `src/postgres/write-booking-command.js`,
+  `scripts/postgres-link-telegram-application-write-smoke.js` and
+  `scripts/postgres-staging-role-qa.js` after adding
+  `link_telegram_application`.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
+  transactional PostgreSQL `link_telegram_application`, adapter routing and
+  command-contract coverage.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `link_telegram_application` PostgreSQL write smoke. A sandboxed run
+  failed first because local PostgreSQL could not create shared memory
+  (`shmget Operation not permitted`), then the same command passed with
+  escalation.
+- 2026-07-30: `git diff --check` passed after adding
+  `link_telegram_application`.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -319,6 +340,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: closed the last known no-prod writable PostgreSQL routing gap for
+  `/api/telegram/link`. The endpoint now uses the PostgreSQL command adapter in
+  `BOOKING_STORAGE_MODE=postgres`, while JSON production behavior stays on the
+  legacy path. Added unit, adapter, command-contract and real PostgreSQL smoke
+  coverage plus staging role QA coverage for a synthetic unlinked application.
+  Production, `main` and live Telegram remain untouched. Current progress is
+  95% overall / 100% no-prod backend implementation; the remaining 5% is the
+  explicit production cutover/rehearsal decision.
 - 2026-07-30: enabled writable PostgreSQL migration staging from commit
   `fe321f0` after refreshing it with a current production JSON snapshot.
   Parity passed on 16 shifts, 83 applications, 37 invite groups, 39

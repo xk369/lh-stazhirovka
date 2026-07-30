@@ -62,6 +62,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-cancel-application-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-link-telegram-application-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-shift-capacity-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-comment-write-smoke.js

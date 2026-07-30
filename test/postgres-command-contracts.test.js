@@ -49,6 +49,18 @@ test('mentor report finalization contract protects against duplicate submits', (
   assert.ok(reportContract.eventTypes.includes('application_failed'));
 });
 
+test('telegram link contract is outside /api/state but still audited', () => {
+  const command = bookingWriteCommandContract('link_telegram_application');
+
+  assert.ok(command);
+  assert.equal(command.source, COMMAND_SOURCES.API_TELEGRAM_LINK);
+  assert.equal(command.requiresBaseVersion, false);
+  assert.deepEqual(command.actorRoles, ['trainee', 'recruiter']);
+  assert.ok(command.writes.includes(WRITE_TABLES.APPLICATIONS));
+  assert.ok(command.writes.includes(WRITE_TABLES.APPLICATION_EVENTS));
+  assert.deepEqual(command.eventTypes, ['telegram_application_linked']);
+});
+
 test('commands that notify trainees declare outbox writes and idempotency', () => {
   const notifyingActions = [
     'step_back_application',

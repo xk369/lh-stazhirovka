@@ -75,6 +75,7 @@ const recruiterInitData = telegramInitData({
 });
 const traineeUserId = Number(process.env.STAGING_QA_TRAINEE_ID || 990_000_901);
 const mentorUserId = Number(process.env.STAGING_QA_MENTOR_ID || 990_000_902);
+const linkTraineeUserId = Number(process.env.STAGING_QA_LINK_TRAINEE_ID || 990_000_903);
 const traineeInitData = telegramInitData({
   id: traineeUserId,
   first_name: 'QA',
@@ -86,6 +87,12 @@ const mentorInitData = telegramInitData({
   first_name: 'QA',
   last_name: 'Mentor',
   username: 'qa_migration_mentor'
+});
+const linkTraineeInitData = telegramInitData({
+  id: linkTraineeUserId,
+  first_name: 'QA',
+  last_name: 'Link',
+  username: 'qa_migration_link'
 });
 
 const health = await jsonRequest('/api/health');
@@ -210,6 +217,56 @@ assert.equal(finalApplication.mentorReport, true);
 
 const pool = createPostgresPool();
 try {
+  const linkIdResult = await pool.query(
+    'SELECT COALESCE(MAX(legacy_id), 0) + 200000 AS next_legacy_id FROM applications'
+  );
+  const linkApplicationId = Number(linkIdResult.rows[0].next_legacy_id);
+  const linkApplicationUuid = crypto.randomUUID();
+  await pool.query(
+    `
+      INSERT INTO applications (
+        id, legacy_id, name, phone, training, training_date, attempt, limits,
+        status, telegram_code, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'passed', $5, 'first', $6, 'queue', $7, now(), now())
+    `,
+    [
+      linkApplicationUuid,
+      linkApplicationId,
+      `QA Link ${linkApplicationId}`,
+      '+7 999 000-00-03',
+      '2026-07-20',
+      'telegram link QA',
+      'qa_migration_link'
+    ]
+  );
+
+  const linkResult = await jsonRequest('/api/telegram/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      initData: linkTraineeInitData,
+      applicationId: linkApplicationId
+    })
+  });
+  assert.equal(linkResult.role, 'trainee');
+  assert.equal(linkResult.application.telegramUserId, String(linkTraineeUserId));
+  assert.equal(linkResult.application.telegramChatId, String(linkTraineeUserId));
+  assert.equal(linkResult.application.telegramUsername, 'qa_migration_link');
+
+  const linkRows = await pool.query(
+    `
+      SELECT trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username
+        FROM applications
+       WHERE id = $1
+    `,
+    [linkApplicationUuid]
+  );
+  assert.equal(linkRows.rowCount, 1);
+  assert.equal(linkRows.rows[0].trainee_telegram_user_id, String(linkTraineeUserId));
+  assert.equal(linkRows.rows[0].trainee_telegram_chat_id, String(linkTraineeUserId));
+  assert.equal(linkRows.rows[0].telegram_username, 'qa_migration_link');
+
   const notificationRows = await pool.query(
     `
       SELECT type, chat_target, status, COUNT(*)::int AS count
@@ -253,12 +310,24 @@ try {
     assert.ok(eventTypes.includes(expectedEvent), `missing ${expectedEvent}`);
   }
 
+  const linkEventRows = await pool.query(
+    `
+      SELECT event_type
+        FROM application_events
+       WHERE application_id = $1
+         AND event_type = 'telegram_application_linked'
+    `,
+    [linkApplicationUuid]
+  );
+  assert.equal(linkEventRows.rowCount, 1);
+
   console.log(JSON.stringify({
     ok: true,
     baseUrl,
     date: qaDate,
     shiftId: shift.id,
     applicationId,
+    linkApplicationId,
     finalStatus: finalApplication.status,
     notificationSummary,
     checkedEvents: eventTypes.length

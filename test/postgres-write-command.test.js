@@ -10,6 +10,7 @@ import {
   cancelShiftInPostgres,
   clearStateInPostgres,
   createShiftInPostgres,
+  linkTelegramApplicationInPostgres,
   markExperiencedInPostgres,
   mentorReportResultInPostgres,
   returnToQueueInPostgres,
@@ -137,6 +138,16 @@ function fakePool({
           open: row.open,
           canceled: row.canceled,
           date: row.date
+        }] : [] };
+      }
+      if (/SELECT id,\s+legacy_id,\s+trainee_telegram_user_id,\s+trainee_telegram_chat_id,\s+telegram_username\s+FROM applications\s+WHERE legacy_id = \$1\s+FOR UPDATE/is.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
+          trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
+          telegram_username: row.telegram_username ?? ''
         }] : [] };
       }
       if (/FROM applications\s+LEFT JOIN invite_groups ON invite_groups\.id = applications\.invite_group_id/is.test(sql)) {
@@ -734,6 +745,22 @@ function fakePool({
         if (target) {
           target.open = false;
           target.updated_at = params[0];
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET trainee_telegram_user_id = \$1,\s+trainee_telegram_chat_id = \$2,\s+telegram_username = \$3/is.test(sql)) {
+        const telegramUserId = params[0];
+        const telegramChatId = params[1];
+        const telegramUsername = params[2];
+        const nowIso = params[3];
+        const appUuid = String(params[4]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.trainee_telegram_user_id = telegramUserId;
+          target.trainee_telegram_chat_id = telegramChatId;
+          target.telegram_username = telegramUsername;
+          target.updated_at = nowIso;
+          target.row_version = Number(target.row_version || 1) + 1;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
@@ -1531,6 +1558,116 @@ test('cancelApplicationInPostgres rolls back and releases when event insert fail
   );
   assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
   assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
+
+test('linkTelegramApplicationInPostgres links unowned application and writes audit event', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '',
+      trainee_telegram_chat_id: '',
+      telegram_username: '',
+      name: 'Иван Иванов'
+    }]
+  });
+  const now = new Date('2026-07-29T12:38:00.000Z');
+
+  const result = await linkTelegramApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: { action: 'link_telegram_application', applicationId: 501 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.version, 11);
+  assert.equal(result.previousVersion, 10);
+  assert.equal(result.applicationLegacyId, 501);
+  assert.equal(result.telegramUserId, '222');
+  assert.equal(result.telegramChatId, '222');
+  assert.equal(result.telegramUsername, 'trainee_user');
+  const [app] = pool.getApplications();
+  assert.equal(app.trainee_telegram_user_id, '222');
+  assert.equal(app.trainee_telegram_chat_id, '222');
+  assert.equal(app.telegram_username, 'trainee_user');
+  assert.equal(app.updated_at, now.toISOString());
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'telegram_application_linked');
+  assert.equal(eventInsert.params[4], 'trainee');
+  assert.match(eventInsert.params[6], /"action":"link_telegram_application"/);
+  assert.ok(pool.calls.some(call => /^COMMIT$/i.test(call.sql)));
+});
+
+test('linkTelegramApplicationInPostgres rejects owner mismatch and missing application', async () => {
+  await assert.rejects(
+    () => linkTelegramApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: { action: 'link_telegram_application', applicationId: 501 }
+    }),
+    /application_not_found/
+  );
+
+  const pool = fakePool({
+    currentVersion: 10,
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '333',
+      trainee_telegram_chat_id: '333',
+      telegram_username: 'other_user'
+    }]
+  });
+
+  await assert.rejects(
+    () => linkTelegramApplicationInPostgres({
+      pool,
+      actor: trainee,
+      command: { action: 'link_telegram_application', applicationId: 501 }
+    }),
+    PostgresCommandAuthorizationError
+  );
+
+  assert.equal(pool.getApplications()[0].trainee_telegram_user_id, '333');
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.equal(pool.calls.some(call => /INSERT INTO application_events/.test(call.sql)), false);
+});
+
+test('linkTelegramApplicationInPostgres is idempotent for an already linked application', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    metaUpdatedAt: '2026-07-20T09:00:00.000Z',
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '222',
+      trainee_telegram_chat_id: '222',
+      telegram_username: 'trainee_user'
+    }]
+  });
+
+  const result = await linkTelegramApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: { action: 'link_telegram_application', applicationId: 501 },
+    now: new Date('2026-07-29T12:39:00.000Z')
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.version, 10);
+  assert.equal(result.updatedAt, '2026-07-20T09:00:00.000Z');
+  assert.equal(pool.calls.some(call => /UPDATE applications\s+SET trainee_telegram_user_id/.test(call.sql)), false);
+  assert.equal(pool.calls.some(call => /INSERT INTO application_events/.test(call.sql)), false);
+  assert.equal(pool.calls.some(call => /UPDATE booking_state_meta/.test(call.sql)), false);
+  assert.ok(pool.calls.some(call => /^COMMIT$/i.test(call.sql)));
 });
 
 test('clearStateInPostgres deletes booking rows, notifications and writes audit event', async () => {

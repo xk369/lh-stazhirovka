@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **93%**.
+Текущий общий прогресс: **95%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -44,7 +44,7 @@ production работает на PostgreSQL, цепочка проверена, 
 | 4. Полный event log | 15% | готово, core staging QA пройден | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
 | 5. Writable Postgres command layer | 20% | готово, core staging QA пройден | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
 | 6. Notifications/outbox | 15% | готово, worker dry-run проверен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
-| 7. Full staging QA и rehearsal | 10% | в процессе | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
+| 7. Full staging QA и rehearsal | 10% | финальный no-prod прогон | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
 
 ## Детальный Порядок
@@ -242,14 +242,14 @@ Rollback:
 
 ## Текущее Следующее Действие
 
-Следующий технический шаг: не расширять command layer, а проверять уже
-собранный writable runtime на migration staging. В `migration/postgres-foundation`
-реализованы все текущие PostgreSQL write-команды для `/api/state` и
-`/api/report`, включая заявки стажеров, очередь, даты, места, отправку рабочих
-групп, отмены, откаты, отчеты наставников, отчеты стажеров, реестр/статусы и
-outbox-уведомления. `BOOKING_STORAGE_MODE=postgres` локально стартует реальный
-server runtime, пишет через PostgreSQL adapter и проверяется внутри
-`npm run test:postgres`.
+Следующий технический шаг: финальный no-prod прогон на migration staging. В
+`migration/postgres-foundation` реализованы все текущие PostgreSQL
+write-команды для `/api/state`, `/api/report` и `/api/telegram/link`, включая
+заявки стажеров, очередь, даты, места, отправку рабочих групп, отмены, откаты,
+отчеты наставников, отчеты стажеров, привязку Telegram к старым/непривязанным
+заявкам, реестр/статусы и outbox-уведомления. `BOOKING_STORAGE_MODE=postgres`
+локально стартует реальный server runtime, пишет через PostgreSQL adapter и
+проверяется внутри `npm run test:postgres`.
 
 Перед любым production cutover нужно:
 
@@ -258,8 +258,7 @@ server runtime, пишет через PostgreSQL adapter и проверяетс
    `TELEGRAM_DELIVERY_MODE=dry_run`;
 3. обновить staging свежей копией prod `data/db.json`;
 4. пройти full role QA из раздела 6;
-5. отдельно подтвердить, что UI не зависит от legacy `/api/telegram/link` в
-   writable Postgres mode или добавить для него явную PostgreSQL-команду.
+5. повторить staging role QA после `/api/telegram/link` PostgreSQL-команды.
 
 Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
 действие `Вернуть в новые заявки`: текущий JSON путь делает это через

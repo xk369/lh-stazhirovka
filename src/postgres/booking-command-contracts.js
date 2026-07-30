@@ -1,6 +1,7 @@
 const COMMAND_SOURCES = Object.freeze({
   API_STATE: 'api_state',
-  API_REPORT: 'api_report'
+  API_REPORT: 'api_report',
+  API_TELEGRAM_LINK: 'api_telegram_link'
 });
 
 const WRITE_TABLES = Object.freeze({
@@ -77,6 +78,16 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
     writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
     locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION],
     eventTypes: ['application_cancelled']
+  }),
+
+  link_telegram_application: contract({
+    action: 'link_telegram_application',
+    source: COMMAND_SOURCES.API_TELEGRAM_LINK,
+    actorRoles: ['trainee', 'recruiter'],
+    writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
+    locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION],
+    eventTypes: ['telegram_application_linked'],
+    requiresBaseVersion: false
   }),
 
   set_application_status: contract({

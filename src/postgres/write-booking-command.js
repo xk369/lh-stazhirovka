@@ -41,6 +41,15 @@ export class PostgresCommandConflictError extends Error {
   }
 }
 
+export class PostgresCommandNotFoundError extends Error {
+  constructor(message = 'Запись не найдена.') {
+    super(message);
+    this.name = 'PostgresCommandNotFoundError';
+    this.code = 'POSTGRES_COMMAND_NOT_FOUND';
+    this.status = 404;
+  }
+}
+
 const SEAT_HOLDING_STATUS_VALUES = Object.freeze([...SEAT_HOLDING_STATUSES]);
 const RETURN_TO_QUEUE_STATUSES = new Set(['queue', 'pending', 'confirmed', 'invited']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
@@ -74,6 +83,12 @@ function requireRecruiter(actor) {
 function requireTrainee(actor) {
   if (!actor || actor.role !== 'trainee') {
     throw new PostgresCommandAuthorizationError('Недостаточно прав для записи стажёра.');
+  }
+}
+
+function requireTelegramApplicationLinkActor(actor) {
+  if (!actor || !['trainee', 'recruiter'].includes(String(actor.role || ''))) {
+    throw new PostgresCommandAuthorizationError('Недостаточно прав для привязки Telegram.');
   }
 }
 
@@ -765,6 +780,12 @@ function normalizeCancelApplicationInput(command) {
   return {
     applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
     baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeLinkTelegramInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId)
   };
 }
 
@@ -1666,6 +1687,109 @@ export async function cancelApplicationInPostgres({ pool, actor, command, now = 
       previousVersion: meta.version,
       updatedAt: nowIso,
       changed: true
+    };
+  });
+}
+
+export async function linkTelegramApplicationInPostgres({ pool, actor, command, now = new Date() }) {
+  requireTelegramApplicationLinkActor(actor);
+  const { applicationLegacyId } = normalizeLinkTelegramInput(command);
+  const telegramUserId = actorTelegramUserId(actor);
+  if (!telegramUserId) {
+    throw new PostgresCommandAuthorizationError('Не удалось определить Telegram ID.');
+  }
+  const telegramUsername = normalizeUsername(actorTelegramUsername(actor));
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    const appResult = await client.query(
+      `SELECT id,
+              legacy_id,
+              trainee_telegram_user_id,
+              trainee_telegram_chat_id,
+              telegram_username
+         FROM applications
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandNotFoundError('application_not_found');
+    }
+
+    const app = appResult.rows[0];
+    const existingOwner = String(app.trainee_telegram_user_id || app.trainee_telegram_chat_id || '').trim();
+    if (existingOwner && existingOwner !== telegramUserId) {
+      throw new PostgresCommandAuthorizationError('application_owner_mismatch');
+    }
+
+    const previousTelegramUserId = String(app.trainee_telegram_user_id || '').trim();
+    const previousTelegramChatId = String(app.trainee_telegram_chat_id || '').trim();
+    const previousTelegramUsername = String(app.telegram_username || '').trim();
+    const changed = (
+      previousTelegramUserId !== telegramUserId
+      || previousTelegramChatId !== telegramUserId
+      || previousTelegramUsername !== telegramUsername
+    );
+
+    if (!changed) {
+      return {
+        applicationLegacyId,
+        changed: false,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        telegramUserId,
+        telegramChatId: telegramUserId,
+        telegramUsername
+      };
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+
+    await client.query(
+      `UPDATE applications
+          SET trainee_telegram_user_id = $1,
+              trainee_telegram_chat_id = $2,
+              telegram_username = $3,
+              updated_at = $4,
+              row_version = row_version + 1
+        WHERE id = $5`,
+      [telegramUserId, telegramUserId, telegramUsername, nowIso, app.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: 'telegram_application_linked',
+      applicationId: applicationLegacyId,
+      shiftId: null,
+      actorType: actor.role === 'recruiter' ? 'recruiter' : 'trainee',
+      actorTelegramUserId: telegramUserId,
+      payload: {
+        action: 'link_telegram_application',
+        previousVersion: meta.version,
+        nextVersion,
+        hadPreviousOwner: Boolean(existingOwner),
+        previousTelegramUsername,
+        nextTelegramUsername: telegramUsername
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      changed: true,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      telegramUserId,
+      telegramChatId: telegramUserId,
+      telegramUsername
     };
   });
 }

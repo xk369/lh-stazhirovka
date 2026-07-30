@@ -28,16 +28,20 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   writes with `503 BOOKING_STORAGE_READ_ONLY`.
 - `postgres` is now implemented for migration staging only: `/api/state` and
   `/api/report` route through the PostgreSQL command adapter and the
-  `notifications` outbox. It must be combined with
+  `notifications` outbox; `/api/telegram/link` also routes through the
+  PostgreSQL command adapter in writable Postgres mode for old/unlinked
+  application identity binding. It must be combined with
   `TELEGRAM_DELIVERY_MODE=dry_run` until production cutover is explicitly
   planned.
 - Current migration-staging Compose forces `BOOKING_STORAGE_MODE=postgres`,
   `TELEGRAM_DELIVERY_MODE=dry_run`, `TELEGRAM_POLLING=no` and
   `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
-- Last local verification: `npm test -- --test-reporter=dot`,
-  `npm run test:postgres`, `node --check scripts/postgres-staging-role-qa.js`
-  and `git diff --check` passed on 2026-07-30 after wiring
-  `BOOKING_STORAGE_MODE=postgres` runtime smoke and staging role QA.
+- Last local verification: `node --check src/server.js
+  src/postgres/write-booking-command.js
+  scripts/postgres-link-telegram-application-write-smoke.js
+  scripts/postgres-staging-role-qa.js`, `npm test -- --test-reporter=dot`,
+  `npm run test:postgres` and `git diff --check` passed on 2026-07-30 after
+  adding the PostgreSQL `/api/telegram/link` command route.
   The sandboxed `test:postgres` run fails on local PostgreSQL shared memory
   (`shmget Operation not permitted`); the same command passes outside the
   sandbox.
@@ -45,8 +49,9 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   16 shifts, 83 applications, 37 invite groups, 39 memberships and
   25 mentor reports. Field-level parity passed before writable staging QA.
 - Migration staging is deployed at
-  `https://stazhirovka-migration.151.244.243.164.sslip.io` from commit
-  `fe321f0`, server path `/opt/loft-hall-internship-migration-staging`.
+  `https://stazhirovka-migration.151.244.243.164.sslip.io`; before the final
+  `/api/telegram/link` deploy it was at commit `9f304d0`, server path
+  `/opt/loft-hall-internship-migration-staging`.
 - Its app is bound to `127.0.0.1:3502`; containers are
   `loft-internship-app-migration-staging` and
   `loft-internship-postgres-migration-staging`; PostgreSQL uses the dedicated
@@ -57,12 +62,17 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - Live staging role QA passed through HTTP runtime: synthetic trainee
   application, recruiter confirmation, invite creation, attendance to
   `feedback`, mentor report finalization, final status `passed`, and durable
-  outbox rows for `send_invites`, `mentor_report` and `mentor_result`.
+  outbox rows for `send_invites`, `mentor_report` and `mentor_result`. The
+  next staging QA run also checks `/api/telegram/link` against a synthetic
+  unlinked application.
 - Staging notification worker dry-run processed accumulated QA outbox rows
   without real Telegram delivery: 6 claimed, 0 sent, 6 skipped, 0 failed.
 - Branch `migration/postgres-foundation` is published in draft PR #3. Do not
   merge it into `main` until writable staging QA, cutover rehearsal and rollback
   plan are approved.
+- Current migration progress is 95% overall. The remaining 5% is intentionally
+  reserved for explicit production cutover and observation; do not claim 100%
+  while production still runs JSON.
 
 ## Report Routing
 
@@ -118,7 +128,7 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `src/booking-storage/adapter.js` - JSON/read-only/writable PostgreSQL storage
   adapter seam used by server runtime.
 - `src/postgres/write-booking-command.js` - transactional PostgreSQL command
-  layer for `/api/state` and `/api/report`.
+  layer for `/api/state`, `/api/report` and `/api/telegram/link`.
 - `src/postgres/notification-worker.js` - PostgreSQL outbox processor for
   `notifications`.
 - `src/booking-state-events.js` - plans application audit events from current/next booking state.

@@ -7,6 +7,7 @@ import {
   cancelShiftInPostgres,
   clearStateInPostgres,
   createShiftInPostgres,
+  linkTelegramApplicationInPostgres,
   markExperiencedInPostgres,
   mentorReportResultInPostgres,
   returnToQueueInPostgres,
@@ -83,6 +84,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async create_shift(command, actor) {
       const result = await createShiftInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async link_telegram_application(command, actor) {
+      const result = await linkTelegramApplicationInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },

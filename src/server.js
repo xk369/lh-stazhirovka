@@ -2195,6 +2195,7 @@ app.post('/api/notify', async (request, response, next) => {
 });
 
 app.post('/api/telegram/link', async (request, response, next) => {
+  let actor = null;
   try {
     const { applicationId, initData } = request.body || {};
     if (!initData) {
@@ -2219,11 +2220,36 @@ app.post('/api/telegram/link', async (request, response, next) => {
 
     let linkedApplication = null;
     let forbidden = false;
-    const actor = {
+    actor = {
       telegram,
       userId: String(telegram.user.id),
       role: bookingRoleForTelegramUser(telegram.user)
     };
+
+    if (isPostgresWriteBookingStorageMode()) {
+      const outcome = await applyPostgresBookingCommand({
+        action: 'link_telegram_application',
+        applicationId
+      }, actor);
+      const state = outcome.state || await readBookingState();
+      const linkedApplication = state.applications.find(application =>
+        String(application.id) === String(applicationId)
+      );
+      if (!linkedApplication) {
+        response.status(404).json({ ok: false, error: 'application_not_found' });
+        return;
+      }
+
+      response.json({
+        ok: true,
+        role: actor.role,
+        application: linkedApplication,
+        state: bookingStateForActor(state, actor),
+        result: outcome.result
+      });
+      return;
+    }
+
     const cleanState = await withBookingMutation(async () => {
       const state = await readBookingState();
       state.applications = state.applications.map(application => {
@@ -2262,6 +2288,8 @@ app.post('/api/telegram/link', async (request, response, next) => {
       state: bookingStateForActor(cleanState, actor)
     });
   } catch (error) {
+    if (handleBookingAuthError(response, error)) return;
+    if (await handleBookingCommandLayerError(response, error, actor)) return;
     next(error);
   }
 });
