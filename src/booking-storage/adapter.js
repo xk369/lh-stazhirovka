@@ -137,7 +137,13 @@ export function createPostgresWriteBookingStorageAdapter({
       return { state, result };
     },
     async mentor_report_result(command, actor) {
-      const result = await mentorReportResultInPostgres({ pool, actor, command, now: now() });
+      const result = await mentorReportResultInPostgres({
+        pool,
+        actor,
+        command,
+        reportChatId: reportChatIds.mentor,
+        now: now()
+      });
       const state = await readFreshState();
       return { state, result };
     },

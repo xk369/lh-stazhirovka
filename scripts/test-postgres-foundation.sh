@@ -89,6 +89,9 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-notification-worker-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-admin-state-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  PG_WRITABLE_TEST_PORT="$((PG_TEST_PORT + 2))" \
+  node scripts/postgres-writable-runtime-smoke.js
 
 if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${SOURCE_PATH}" \

@@ -3096,6 +3096,7 @@ test('mentorReportResultInPostgres stores report, queues trainee result and auto
     pool,
     actor: mentor,
     command: mentorReportCommand(),
+    reportChatId: '-100mentor-report-group',
     now
   });
 
@@ -3134,22 +3135,31 @@ test('mentorReportResultInPostgres stores report, queues trainee result and auto
   assert.equal(topics[0].topic_order, 16);
 
   const notifications = pool.getNotifications();
-  assert.equal(notifications.length, 1);
-  assert.equal(notifications[0].mentor_report_id, reports[0].id);
-  assert.equal(notifications[0].type, 'mentor_result');
-  assert.equal(notifications[0].status, 'pending');
-  assert.equal(notifications[0].chat_id, '999222');
-  assert.equal(notifications[0].chat_target, 'trainee');
-  assert.equal(notifications[0].parse_mode, 'HTML');
-  assert.ok(notifications[0].text.includes('Темы для повторения'));
-  assert.ok(notifications[0].idempotency_key.startsWith('mentor_report_result:501:'));
-  assert.deepEqual(result.notifications, { total: 1, pending: 1, skipped: 0, inserted: 1 });
+  assert.equal(notifications.length, 2);
+  const traineeNotification = notifications.find(row => row.type === 'mentor_result');
+  const reportGroupNotification = notifications.find(row => row.type === 'mentor_report');
+  assert.equal(traineeNotification.mentor_report_id, reports[0].id);
+  assert.equal(traineeNotification.status, 'pending');
+  assert.equal(traineeNotification.chat_id, '999222');
+  assert.equal(traineeNotification.chat_target, 'trainee');
+  assert.equal(traineeNotification.parse_mode, 'HTML');
+  assert.ok(traineeNotification.text.includes('Темы для повторения'));
+  assert.ok(traineeNotification.idempotency_key.startsWith('mentor_report_result:501:'));
+  assert.equal(reportGroupNotification.mentor_report_id, reports[0].id);
+  assert.equal(reportGroupNotification.status, 'pending');
+  assert.equal(reportGroupNotification.chat_id, '-100mentor-report-group');
+  assert.equal(reportGroupNotification.chat_target, 'mentor_report_group');
+  assert.equal(reportGroupNotification.parse_mode, null);
+  assert.equal(reportGroupNotification.text, 'Полный отчёт наставника для группы.');
+  assert.ok(reportGroupNotification.idempotency_key.startsWith('mentor_report_group:501:'));
+  assert.deepEqual(result.notifications, { total: 2, pending: 2, skipped: 0, inserted: 2 });
 
   const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
   assert.deepEqual(eventInserts.map(call => call.params[3]), [
     'mentor_report_received',
     'application_passed',
     'mentor_result_notification_queued',
+    'mentor_report_group_notification_queued',
     'shift_auto_closed'
   ]);
   const reportPayload = JSON.parse(eventInserts[0].params[6]);
@@ -3180,24 +3190,30 @@ test('mentorReportResultInPostgres records failed result and skipped trainee not
         decision: 'Требуется повторная стажировка'
       }
     }),
+    reportChatId: '-100mentor-report-group',
     now: new Date('2026-07-30T12:00:00.000Z')
   });
 
   assert.equal(result.nextStatus, 'failed');
   assert.equal(result.mentorCommentDeliveryStatus, 'skipped');
   assert.equal(result.mentorCommentDeliveryError, 'telegram_chat_missing');
-  assert.deepEqual(result.notifications, { total: 1, pending: 0, skipped: 1, inserted: 1 });
+  assert.deepEqual(result.notifications, { total: 2, pending: 1, skipped: 1, inserted: 2 });
   assert.equal(pool.getApplications()[0].status, 'failed');
   assert.equal(pool.getApplications()[0].mentor_comment_delivery_status, 'skipped');
   assert.equal(pool.getApplications()[0].mentor_comment_delivery_error, 'telegram_chat_missing');
-  assert.equal(pool.getNotifications()[0].status, 'skipped');
-  assert.equal(pool.getNotifications()[0].chat_id, null);
+  const traineeNotification = pool.getNotifications().find(row => row.type === 'mentor_result');
+  const reportGroupNotification = pool.getNotifications().find(row => row.type === 'mentor_report');
+  assert.equal(traineeNotification.status, 'skipped');
+  assert.equal(traineeNotification.chat_id, null);
+  assert.equal(reportGroupNotification.status, 'pending');
+  assert.equal(reportGroupNotification.chat_id, '-100mentor-report-group');
 
   const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
   assert.deepEqual(eventInserts.map(call => call.params[3]), [
     'mentor_report_received',
     'application_failed',
     'mentor_result_notification_skipped',
+    'mentor_report_group_notification_queued',
     'shift_auto_closed'
   ]);
 });

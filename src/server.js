@@ -42,8 +42,11 @@ import {
   BookingStorageReadOnlyError,
   bookingStorageMode
 } from './booking-storage-mode.js';
+import {
+  createPostgresReadOnlyBookingStorageAdapter,
+  createPostgresWriteBookingStorageAdapter
+} from './booking-storage/adapter.js';
 import { createPostgresPool } from './postgres/connection.js';
-import { readBookingStateFromPostgres } from './postgres/read-booking-state.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +76,7 @@ const telegramDelivery = createTelegramDelivery({ mode: config.telegramDeliveryM
 
 const dbPath = path.join(config.dataDir, 'db.json');
 let postgresBookingPool = null;
+let postgresBookingStorage = null;
 let telegramOffset = 0;
 
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
@@ -168,10 +172,13 @@ function assertConfig() {
     throw new Error('HOST must not be empty.');
   }
   if (
-    config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+    (
+      config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+      || config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES
+    )
     && !String(process.env.DATABASE_URL || '').trim()
   ) {
-    throw new Error('DATABASE_URL is required for postgres_readonly booking storage.');
+    throw new Error('DATABASE_URL is required for PostgreSQL booking storage.');
   }
 }
 
@@ -246,6 +253,22 @@ function handleBookingAuthError(response, error) {
     return true;
   }
   return false;
+}
+
+async function handleBookingCommandLayerError(response, error, actor = null) {
+  if (!error || !Number.isInteger(error.status) || !error.code) return false;
+  const payload = {
+    ok: false,
+    error: error.message,
+    code: error.code
+  };
+  if (error.status === 409 && actor) {
+    const state = await readBookingState();
+    payload.role = actor.role;
+    payload.state = bookingStateForActor(state, actor);
+  }
+  response.status(error.status).json(payload);
+  return true;
 }
 
 function nextDate(daysFromNow) {
@@ -1698,6 +1721,38 @@ function bookingPostgresPool() {
   return postgresBookingPool;
 }
 
+function postgresBookingStorageAdapter() {
+  if (postgresBookingStorage) return postgresBookingStorage;
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
+    postgresBookingStorage = createPostgresReadOnlyBookingStorageAdapter({
+      pool: bookingPostgresPool()
+    });
+    return postgresBookingStorage;
+  }
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES) {
+    postgresBookingStorage = createPostgresWriteBookingStorageAdapter({
+      pool: bookingPostgresPool(),
+      reportChatIds: {
+        mentor: config.mentorChatId,
+        trainee: config.traineeChatId
+      }
+    });
+    return postgresBookingStorage;
+  }
+  throw new Error(`PostgreSQL booking storage is not enabled for mode "${config.bookingStorageMode}".`);
+}
+
+function isPostgresBookingStorageMode() {
+  return (
+    config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+    || config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES
+  );
+}
+
+function isPostgresWriteBookingStorageMode() {
+  return config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES;
+}
+
 async function ensureJsonDb() {
   await fs.mkdir(config.dataDir, { recursive: true });
   try {
@@ -1739,21 +1794,25 @@ async function ensureBookingStorage() {
     await ensureJsonDb();
     return;
   }
-  await readBookingStateFromPostgres(bookingPostgresPool());
+  await postgresBookingStorageAdapter().readState();
 }
 
 async function readBookingState() {
-  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
-    return readBookingStateFromPostgres(bookingPostgresPool());
+  if (isPostgresBookingStorageMode()) {
+    return postgresBookingStorageAdapter().readState();
   }
   return readJsonBookingState();
 }
 
 async function writeBookingState(state) {
-  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
+  if (isPostgresBookingStorageMode()) {
     throw new BookingStorageReadOnlyError();
   }
   return writeJsonBookingState(state);
+}
+
+async function applyPostgresBookingCommand(command, actor) {
+  return postgresBookingStorageAdapter().applyCommand(command, actor);
 }
 
 function injectBookingState(html, state) {
@@ -1875,7 +1934,10 @@ app.get('/api/health', (_request, response) => {
     service: 'loft-hall-internship-unified',
     telegramDeliveryMode: config.telegramDeliveryMode,
     bookingStorageMode: config.bookingStorageMode,
-    bookingStorageWritable: config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON
+    bookingStorageWritable: (
+      config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON
+      || isPostgresWriteBookingStorageMode()
+    )
   });
 });
 
@@ -1898,6 +1960,29 @@ app.post('/api/state', async (request, response, next) => {
   let capacityChange = null;
   try {
     actor = bookingActorFromRequest(request);
+    if (isPostgresWriteBookingStorageMode()) {
+      const outcome = await applyPostgresBookingCommand(request.body || {}, actor);
+      const state = outcome.state || await readBookingState();
+      if (actor.role === 'recruiter' && request.body?.action === 'clear_state') {
+        console.info(
+          JSON.stringify({
+            event: 'booking_state_cleared',
+            telegramUserId: actor.telegram.user.id,
+            username: actor.telegram.user.username || '',
+            storageMode: config.bookingStorageMode,
+            timestamp: new Date().toISOString()
+          })
+        );
+      }
+      response.json({
+        ok: true,
+        role: actor.role,
+        state: bookingStateForActor(state, actor),
+        result: outcome.result
+      });
+      return;
+    }
+
     const cleanState = await withBookingMutation(async () => {
       const currentState = await readBookingState();
       const previousApplication = request.body?.action === 'step_back_application'
@@ -2034,6 +2119,7 @@ app.post('/api/state', async (request, response, next) => {
     });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
+    if (await handleBookingCommandLayerError(response, error, actor)) return;
     if (error instanceof BookingConflictError && actor) {
       const state = await readBookingState();
       response.status(409).json({
@@ -2272,6 +2358,59 @@ app.post('/api/report', async (request, response) => {
       : null;
     let mentorApplication = null;
 
+    if (isPostgresWriteBookingStorageMode()) {
+      const reportActor = {
+        telegram,
+        userId: String(telegram.user.id),
+        role
+      };
+      const command = role === 'mentor'
+        ? {
+            action: 'mentor_report_result',
+            applicationId,
+            mentorTraineeName,
+            mentorDecision,
+            mentorCommentForTrainee,
+            mentorTraineeResult,
+            reportText
+          }
+        : {
+            action: 'trainee_report_submission',
+            reportText
+          };
+      const outcome = await applyPostgresBookingCommand(command, reportActor);
+      const traineeMessage = role === 'mentor'
+        ? {
+            status: outcome.result?.mentorCommentDeliveryStatus || 'pending',
+            queued: true
+          }
+        : null;
+
+      console.info(
+        JSON.stringify({
+          event: 'internship_report_queued',
+          telegramUserId: telegram.user.id,
+          role,
+          applicationId: role === 'mentor' ? applicationId : undefined,
+          chatTarget: role === 'mentor' ? 'MENTOR_CHAT_ID' : 'TRAINEE_CHAT_ID',
+          telegramDeliveryMode: config.telegramDeliveryMode,
+          notifications: outcome.result?.notifications,
+          traineeMessageStatus: traineeMessage?.status,
+          timestamp: new Date().toISOString()
+        })
+      );
+
+      response.json({
+        ok: true,
+        messageId: null,
+        telegramDeliveryMode: config.telegramDeliveryMode,
+        queued: true,
+        result: outcome.result,
+        traineeMessage
+      });
+      return;
+    }
+
     if (role === 'mentor') {
       const state = await readBookingState();
       mentorApplication = requireMentorReportApplication(state, applicationId);
@@ -2375,6 +2514,8 @@ app.post('/api/report', async (request, response) => {
       response.status(409).json({ ok: false, error: error.message, code: error.code });
       return;
     }
+
+    if (await handleBookingCommandLayerError(response, error)) return;
 
     const knownClientError = [
       'Неизвестная роль отчёта.',

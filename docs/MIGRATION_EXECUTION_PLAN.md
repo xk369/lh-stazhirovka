@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **64%**.
+Текущий общий прогресс: **88%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -41,10 +41,10 @@ production работает на PostgreSQL, цепочка проверена, 
 | 1. Safety baseline и документы | 5% | готово | Зафиксированы правила: прод не трогать, staging отдельно, Telegram dry-run. |
 | 2. Postgres schema/import/read-only parity | 20% | готово | JSON импортируется в Postgres, обратное чтение совпадает с JSON, read-only staging поднят. |
 | 3. Синхронизация с актуальным `main` | 10% | готово | Миграционная ветка содержит все свежие prod-фиксы, тесты проходят. |
-| 4. Полный event log | 15% | в работе | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
-| 5. Writable Postgres command layer | 20% | в работе | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
-| 6. Notifications/outbox | 15% | в работе | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
-| 7. Full staging QA и rehearsal | 10% | не начато | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
+| 4. Полный event log | 15% | готово в коде, ждет staging QA | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
+| 5. Writable Postgres command layer | 20% | готово в коде, ждет staging QA | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
+| 6. Notifications/outbox | 15% | готово в коде, live worker не включен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
+| 7. Full staging QA и rehearsal | 10% | следующий этап | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
 
 ## Детальный Порядок
@@ -242,21 +242,24 @@ Rollback:
 
 ## Текущее Следующее Действие
 
-Следующий технический шаг: расширять writable Postgres command layer по одной
-команде за итерацию. Интегрированные slices:
-`create_shift`, `update_shift_capacity`, forward-переходы
-`set_application_status`, назначение из предварительной очереди
-`assign_shift` и отправка рабочих групп `send_invites`
-выполняются транзакционно в PostgreSQL, пишут
-`application_events`, увеличивают `booking_state_meta.version` при реальном
-изменении и проверяются live smoke внутри `npm run test:postgres`.
+Следующий технический шаг: не расширять command layer, а проверять уже
+собранный writable runtime на migration staging. В `migration/postgres-foundation`
+реализованы все текущие PostgreSQL write-команды для `/api/state` и
+`/api/report`, включая заявки стажеров, очередь, даты, места, отправку рабочих
+групп, отмены, откаты, отчеты наставников, отчеты стажеров, реестр/статусы и
+outbox-уведомления. `BOOKING_STORAGE_MODE=postgres` локально стартует реальный
+server runtime, пишет через PostgreSQL adapter и проверяется внутри
+`npm run test:postgres`.
 
-Для `send_invites` дополнительно закрыт notification/outbox-gap: команда в той
-же транзакции пишет `notifications` rows для выбранных стажеров. Если Telegram
-target есть, создается `status='pending'`; если target отсутствует, создается
-явный `status='skipped'` с причиной `telegram_chat_missing`. Runtime все еще не
-переключен на Postgres: live worker доставки pending notifications и остальные
-write-команды остаются следующими шагами.
+Перед любым production cutover нужно:
+
+1. закоммитить и запушить текущий staging-only writable runtime слой;
+2. развернуть его только на migration staging с
+   `TELEGRAM_DELIVERY_MODE=dry_run`;
+3. обновить staging свежей копией prod `data/db.json`;
+4. пройти full role QA из раздела 6;
+5. отдельно подтвердить, что UI не зависит от legacy `/api/telegram/link` в
+   writable Postgres mode или добавить для него явную PostgreSQL-команду.
 
 Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
 действие `Вернуть в новые заявки`: текущий JSON путь делает это через

@@ -143,6 +143,7 @@ try {
         ]
       }
     },
+    reportChatId: '-1000000000002',
     now
   });
 
@@ -152,10 +153,10 @@ try {
   assert.equal(result.shiftLegacyId, SHIFT_LEGACY_ID);
   assert.equal(result.shiftAutoClosed, true);
   assert.deepEqual(result.notifications, {
-    total: 1,
-    pending: 1,
+    total: 2,
+    pending: 2,
     skipped: 0,
-    inserted: 1
+    inserted: 2
   });
   assert.equal(result.previousVersion, seededState.version);
   assert.equal(result.version, seededState.version + 1);
@@ -204,18 +205,26 @@ try {
 
   const notificationRows = await pool.query(
     `
-      SELECT mentor_report_id, type, status, chat_target, idempotency_key
+      SELECT mentor_report_id, type, status, chat_id, chat_target, idempotency_key, text
         FROM notifications
        WHERE application_id = $1
-         AND type = 'mentor_result'
+       ORDER BY type
     `,
     [seeded.appUuid]
   );
-  assert.equal(notificationRows.rowCount, 1);
-  assert.equal(notificationRows.rows[0].mentor_report_id, reportRows.rows[0].id);
-  assert.equal(notificationRows.rows[0].status, 'pending');
-  assert.equal(notificationRows.rows[0].chat_target, 'trainee');
-  assert.match(notificationRows.rows[0].idempotency_key, /^mentor_report_result:950001:/);
+  assert.equal(notificationRows.rowCount, 2);
+  const reportGroupNotification = notificationRows.rows.find(row => row.type === 'mentor_report');
+  const traineeNotification = notificationRows.rows.find(row => row.type === 'mentor_result');
+  assert.equal(reportGroupNotification.mentor_report_id, reportRows.rows[0].id);
+  assert.equal(reportGroupNotification.status, 'pending');
+  assert.equal(reportGroupNotification.chat_id, '-1000000000002');
+  assert.equal(reportGroupNotification.chat_target, 'mentor_report_group');
+  assert.equal(reportGroupNotification.text, 'Полный текст отчёта наставника.');
+  assert.match(reportGroupNotification.idempotency_key, /^mentor_report_group:950001:/);
+  assert.equal(traineeNotification.mentor_report_id, reportRows.rows[0].id);
+  assert.equal(traineeNotification.status, 'pending');
+  assert.equal(traineeNotification.chat_target, 'trainee');
+  assert.match(traineeNotification.idempotency_key, /^mentor_report_result:950001:/);
 
   const eventRows = await pool.query(
     `
@@ -231,6 +240,7 @@ try {
     [
       'application_passed',
       'mentor_report_received',
+      'mentor_report_group_notification_queued',
       'mentor_result_notification_queued'
     ].sort()
   );

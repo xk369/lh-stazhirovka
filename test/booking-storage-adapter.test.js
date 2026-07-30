@@ -1116,7 +1116,8 @@ test('Postgres write adapter routes mentor_report_result through the transaction
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { return fakeClient(); } },
     now: () => new Date('2026-07-29T20:20:00.000Z'),
-    readFreshState: async () => fakeState
+    readFreshState: async () => fakeState,
+    reportChatIds: { mentor: '-100mentor-report-group' }
   });
 
   function fakeClient() {
@@ -1206,10 +1207,10 @@ test('Postgres write adapter routes mentor_report_result through the transaction
   assert.equal(outcome.result.nextStatus, 'passed');
   assert.equal(outcome.result.version, 132);
   assert.deepEqual(outcome.result.notifications, {
-    total: 1,
-    pending: 1,
+    total: 2,
+    pending: 2,
     skipped: 0,
-    inserted: 1
+    inserted: 2
   });
   assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));

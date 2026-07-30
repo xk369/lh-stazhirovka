@@ -462,12 +462,14 @@ Event log нужен, чтобы расследовать жалобы без р
 
 ### Этап D: запись в Postgres на staging
 
-- Все команды `/api/state` переписать на транзакции Postgres.
+- [x] Все команды `/api/state` переписать на транзакции Postgres.
 - [x] Добавить фундамент `application_events`: планировщик событий
-  `currentState -> nextState` и writer в PostgreSQL. Runtime-запись еще не
-  подключена.
-- Добавить `notifications`.
-- Добавить outbox worker.
+  `currentState -> nextState` и writer в PostgreSQL.
+- [x] Добавить `notifications`.
+- [x] Добавить outbox worker.
+- [x] Добавить staging-only runtime `BOOKING_STORAGE_MODE=postgres`, который
+  маршрутизирует `/api/state` и `/api/report` через PostgreSQL command adapter
+  и outbox, без прямой JSON-записи и без live Telegram в dry-run режиме.
 - Прогнать полный QA.
 
 ### Этап E: production migration

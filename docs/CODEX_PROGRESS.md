@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 95%.
+- Current migration progress: 88% overall / 98% implementation.
 
 ## Migration Staging
 
@@ -46,7 +46,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added read-only PostgreSQL booking-state reconstruction.
 - Added strict import guard against unknown JSON fields and non-empty target DB.
 - Added centralized Telegram delivery gateway with `live` and `dry_run` modes.
-- Added explicit booking storage modes: `json` default and `postgres_readonly`.
+- Added explicit booking storage modes: `json` default, `postgres_readonly`
+  and staging-only writable `postgres`.
 - Added isolated Docker Compose contour for migration staging.
 - Deployed read-only migration staging with a copied production snapshot.
 - Verified import/parity/runtime smoke before exposing staging.
@@ -124,6 +125,19 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   outbox rows, recording `sent`/`failed`/`skipped` delivery state, retrying
   transient errors and smoke-testing dry-run processing inside
   `npm run test:postgres`.
+- Closed the PostgreSQL mentor-report delivery parity gap: `mentor_report_result`
+  now writes both the trainee-facing `mentor_result` outbox row and the full
+  mentor report `mentor_report` outbox row for `MENTOR_CHAT_ID` in the same
+  transaction.
+- Wired staging-only writable runtime mode `BOOKING_STORAGE_MODE=postgres`:
+  `/api/state` routes commands through the PostgreSQL command adapter,
+  `/api/report` queues trainee/mentor report notifications through PostgreSQL
+  outbox, `/api/health` exposes `bookingStorageWritable=true`, and legacy direct
+  JSON writes stay blocked in PostgreSQL modes.
+- Added a writable runtime smoke that starts the real server in
+  `BOOKING_STORAGE_MODE=postgres` + `TELEGRAM_DELIVERY_MODE=dry_run`, creates a
+  shift through `/api/state`, queues a trainee report through `/api/report` and
+  verifies that no raw report text or bot token leaks into server output.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -184,6 +198,19 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   Operation not permitted`), then the same command passed with escalation.
 - 2026-07-30: `git diff --check` passed after adding the PostgreSQL
   notification worker/dry-run runner.
+- 2026-07-30: targeted `node --test --test-reporter=dot
+  test/booking-storage-mode.test.js test/postgres-write-command.test.js
+  test/booking-storage-adapter.test.js test/notification-worker.test.js`
+  passed after wiring writable PostgreSQL runtime mode and closing the
+  mentor-report group outbox gap.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after wiring writable
+  PostgreSQL runtime mode.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  the writable runtime smoke. A sandboxed run failed first because local
+  PostgreSQL could not create shared memory (`shmget Operation not permitted`),
+  then the same command passed with escalation.
+- 2026-07-30: `git diff --check` passed after wiring writable PostgreSQL
+  runtime mode.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -270,6 +297,15 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: wired staging-only writable PostgreSQL runtime directly in
+  `migration/postgres-foundation`. In `BOOKING_STORAGE_MODE=postgres`,
+  `/api/state` now applies commands through the PostgreSQL adapter and
+  `/api/report` queues report side effects into the `notifications` outbox.
+  Mentor reports now queue both the full mentor report for `MENTOR_CHAT_ID` and
+  the trainee-facing result message when possible. Added a real-server writable
+  runtime smoke to `npm run test:postgres`. Production, `main` and live
+  Telegram remain untouched. Current progress is 88% overall / 98%
+  implementation.
 - 2026-07-30: added the PostgreSQL notification worker/dry-run runner directly
   in `migration/postgres-foundation`. The worker claims due pending
   `notifications` rows with `FOR UPDATE SKIP LOCKED`, marks them `sending`,
@@ -578,15 +614,16 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Prepare controlled writable-runtime wiring for migration staging only:
+2. Deploy the already-tested writable runtime to migration staging only:
    `BOOKING_STORAGE_MODE=postgres`, `TELEGRAM_DELIVERY_MODE=dry_run`, no
    production deploy and no live Telegram.
-3. Review command mapping against `/api/state` + `/api/report` before enabling
-   staging writes, especially `return_to_queue` versus legacy
+3. Review command mapping against `/api/state` + `/api/report` during staging
+   QA, especially `return_to_queue` versus legacy
    back-to-`pending` behavior.
 4. Run local tests again after any doc/code changes:
-   `npm test` and `git diff --check`.
-5. Run `npm run test:postgres` after every Postgres write command.
+   `npm test -- --test-reporter=dot`, `npm run test:postgres` and
+   `git diff --check`.
+5. Run the migration PR safety check before pushing any staging-runtime commit.
 6. Do full role QA on migration staging:
    trainee view, recruiter view, mentor report validation, registry, groups,
    archive, bad links, duplicate clicks and version conflicts.
@@ -607,9 +644,10 @@ Known doc rule:
 - PostgreSQL `trainee_report_submission` is report-only: it writes a group
   delivery outbox row and an audit event, but intentionally does not bump
   booking-state version or change candidate/application status.
+- PostgreSQL writable runtime mode exists and is covered by unit +
+  PostgreSQL smoke, but it has not been deployed to migration staging yet.
 - PostgreSQL notification worker exists and is covered by unit + dry-run
-  PostgreSQL smoke, but production runtime is still not wired to writable
-  Postgres and no live worker is enabled.
+  PostgreSQL smoke, but no live worker is enabled anywhere.
 
 ## Do Not Forget
 

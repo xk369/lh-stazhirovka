@@ -16,20 +16,26 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 
 ## Current Migration Work
 
-- Local worktree: `Helper_bot/loft_hall_internship_unified_hall_sync`
+- Local worktree:
+  `Helper_bot/loft_hall_internship_unified_migration_integrate`
 - Branch: `migration/postgres-foundation`
 - This branch is not deployed to production.
 - Production still reads and writes only `data/db.json`.
-- PostgreSQL schema/import tools are isolated and require an explicit `DATABASE_URL`.
+- PostgreSQL schema/import/runtime tools are isolated and require an explicit
+  `DATABASE_URL`.
 - `BOOKING_STORAGE_MODE=json` is the production-safe default.
-  `postgres_readonly` is allowed only in migration staging and rejects writes
-  with `503 BOOKING_STORAGE_READ_ONLY`.
-- Last local verification: `npm test` passed 100 tests; `npm run test:postgres`
-  applied the schema, imported a fixture, reconstructed booking state from
-  PostgreSQL, verified field-level parity, started the real server in
-  `postgres_readonly + dry_run`, proved reads and dry-run report paths, rejected
-  a write with `503`, and rejected a repeated import against a temporary
-  PostgreSQL 14 database.
+  `postgres_readonly` is allowed for read-only migration staging and rejects
+  writes with `503 BOOKING_STORAGE_READ_ONLY`.
+- `postgres` is now implemented for migration staging only: `/api/state` and
+  `/api/report` route through the PostgreSQL command adapter and the
+  `notifications` outbox. It must be combined with
+  `TELEGRAM_DELIVERY_MODE=dry_run` until production cutover is explicitly
+  planned.
+- Last local verification: `npm test -- --test-reporter=dot`,
+  `npm run test:postgres` and `git diff --check` passed on 2026-07-30 after
+  wiring `BOOKING_STORAGE_MODE=postgres` runtime smoke. The sandboxed
+  `test:postgres` run fails on local PostgreSQL shared memory (`shmget
+  Operation not permitted`); the same command passes outside the sandbox.
 - On 2026-07-27 migration staging imported a fresh production snapshot at
   state version 912: 15 shifts, 79 applications, 35 invite groups,
   37 memberships and 20 mentor reports. Field-level parity passed before the
@@ -47,8 +53,8 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   `messageId: null`, personal notifications are skipped as
   `telegram_delivery_dry_run`, and state remains version 912.
 - Branch `migration/postgres-foundation` is published in draft PR #3. Do not
-  merge it into `main` until staging QA and the writable Postgres design are
-  approved.
+  merge it into `main` until writable staging QA, cutover rehearsal and rollback
+  plan are approved.
 
 ## Report Routing
 
@@ -96,7 +102,15 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `scripts/import-booking-json.js` - импортирует копию JSON в пустую PostgreSQL-БД транзакционно.
 - `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
 - `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
-- `src/booking-storage-mode.js` - явный выбор `json`/`postgres_readonly` и стабильная ошибка запрета записи.
+- `src/booking-storage-mode.js` - явный выбор
+  `json`/`postgres_readonly`/`postgres` и стабильная ошибка запрета legacy
+  direct-write in PostgreSQL modes.
+- `src/booking-storage/adapter.js` - JSON/read-only/writable PostgreSQL storage
+  adapter seam used by server runtime.
+- `src/postgres/write-booking-command.js` - transactional PostgreSQL command
+  layer for `/api/state` and `/api/report`.
+- `src/postgres/notification-worker.js` - PostgreSQL outbox processor for
+  `notifications`.
 - `src/booking-state-events.js` - plans application audit events from current/next booking state.
 - `src/postgres/write-application-events.js` - writes planned audit events into PostgreSQL `application_events`.
 - `deploy/docker-compose.migration-staging.yml` - отдельные app/PostgreSQL-контейнеры для read-only migration staging.

@@ -6,11 +6,12 @@
 
 ## Current Progress
 
-- Общий прогресс: 95%.
+- Общий прогресс по полному migration plan: 88%.
+- Готовность backend implementation в `migration/postgres-foundation`: 98%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: notification worker complete; staging-only writable runtime
-  wiring and QA next.
+- Текущий stage: staging-only writable runtime wiring complete locally; full
+  migration staging QA next.
 
 ## Что Уже Интегрировано В Base
 
@@ -349,6 +350,19 @@
     rows and retry/fail behavior;
   - includes a dry-run PostgreSQL smoke inside `npm run test:postgres`;
   - is not wired into production runtime.
+- Staging-only writable runtime wiring:
+  - `BOOKING_STORAGE_MODE=postgres` is now a valid runtime-wired mode;
+  - `/api/state` applies PostgreSQL command adapter mutations and returns fresh
+    role-filtered state;
+  - `/api/report` queues trainee and mentor report side effects into the
+    PostgreSQL `notifications` outbox instead of calling Telegram directly;
+  - mentor reports queue both the full mentor report for `MENTOR_CHAT_ID` and
+    the trainee-facing result message when available;
+  - `/api/health` exposes `bookingStorageWritable=true` in writable Postgres
+    mode;
+  - legacy direct state writes remain blocked in PostgreSQL modes;
+  - covered by a real-server writable runtime smoke inside
+    `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -370,8 +384,8 @@
 
 Все текущие контракты write-команд для `/api/state` и `/api/report`
 реализованы в PostgreSQL write layer. Notification worker/dry-run processing
-тоже реализован. Следующая работа: staging-only writable runtime wiring and
-full role QA.
+и staging-only writable runtime wiring тоже реализованы. Следующая работа:
+deploy только на migration staging и full role QA.
 
 ## Runtime-Wiring Blockers
 
@@ -386,8 +400,13 @@ full role QA.
   shifts. If UI/API needs to move an already assigned, confirmed or invited
   application, add a separate command that explicitly handles old shift,
   invite-group, venue and archive links before runtime cutover.
+- `/api/telegram/link` still uses the legacy direct state-write helper in
+  `src/server.js`. The primary trainee application flow stores Telegram
+  identity through `upsert_trainee_application`, but staging QA must confirm the
+  frontend does not depend on `/api/telegram/link` in writable Postgres mode or
+  add an explicit PostgreSQL command for that edge path.
 - PostgreSQL notification worker exists and is tested in dry-run, but
-  production must remain disabled. Staging writable runtime can be wired only
+  production must remain disabled. Staging writable runtime can be deployed only
   with `TELEGRAM_DELIVERY_MODE=dry_run` and explicit QA.
 
 ## Two-Agent Rules
@@ -408,5 +427,6 @@ Claude: paused/exhausted. If Claude is reintroduced, give it only a scoped
 staging-QA or docs-verification task, not production runtime work.
 
 Codex: continue from `migration/postgres-foundation`; next recommended slice is
-controlled staging-only writable runtime wiring, followed by full role QA and a
+commit/push the staging-only writable runtime wiring, deploy it only to
+migration staging with dry-run Telegram, run full role QA and keep a
 plan-vs-implementation audit before any production cutover discussion.

@@ -1164,6 +1164,32 @@ function mentorResultNotificationRow({ app, mentorReportId, result, nextStatus, 
   };
 }
 
+function mentorReportGroupNotificationRow({ app, mentorReportId, reportText, reportChatId, nowIso }) {
+  const chatId = String(reportChatId || '').trim();
+  const notificationKey = stableNotificationKey({
+    action: 'mentor_report_group',
+    applicationLegacyId: Number(app.legacy_id),
+    mentorReportId
+  });
+  const status = chatId ? 'pending' : 'skipped';
+  return {
+    id: randomUUID(),
+    applicationId: app.id,
+    mentorReportId,
+    type: 'mentor_report',
+    chatId: chatId || null,
+    chatTarget: 'mentor_report_group',
+    text: reportText,
+    parseMode: null,
+    status,
+    error: status === 'skipped' ? 'mentor_report_chat_missing' : null,
+    idempotencyKey: notificationKey,
+    nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
 function traineeReportChecksum(reportText) {
   return createHash('sha256')
     .update(reportText)
@@ -2778,7 +2804,13 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
   });
 }
 
-export async function mentorReportResultInPostgres({ pool, actor, command, now = new Date() }) {
+export async function mentorReportResultInPostgres({
+  pool,
+  actor,
+  command,
+  reportChatId = '',
+  now = new Date()
+}) {
   requireMentor(actor);
   const {
     applicationLegacyId,
@@ -2890,18 +2922,26 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
       );
     }
 
-    const notificationRow = mentorResultNotificationRow({
+    const traineeNotificationRow = mentorResultNotificationRow({
       app,
       mentorReportId,
       result: mentorTraineeResult,
       nextStatus,
       nowIso
     });
-    const mentorCommentDeliveryStatus = MENTOR_COMMENT_DELIVERY_STATUSES.has(notificationRow.status)
-      ? notificationRow.status
+    const reportGroupNotificationRow = mentorReportGroupNotificationRow({
+      app,
+      mentorReportId,
+      reportText,
+      reportChatId,
+      nowIso
+    });
+    const notificationRows = [traineeNotificationRow, reportGroupNotificationRow];
+    const mentorCommentDeliveryStatus = MENTOR_COMMENT_DELIVERY_STATUSES.has(traineeNotificationRow.status)
+      ? traineeNotificationRow.status
       : null;
-    const mentorCommentDeliveryError = notificationRow.status === 'skipped'
-      ? notificationRow.error || ''
+    const mentorCommentDeliveryError = traineeNotificationRow.status === 'skipped'
+      ? traineeNotificationRow.error || ''
       : '';
 
     await client.query(
@@ -2938,7 +2978,7 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
       ]
     );
 
-    const notificationResult = await insertNotifications(client, [notificationRow]);
+    const notificationResult = await insertNotifications(client, notificationRows);
 
     let shiftAutoClosed = false;
     let shiftDateText = app.shift_date || '';
@@ -3017,7 +3057,7 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
         createdAt: nowIso
       }
     ];
-    if (notificationRow.status === 'pending') {
+    if (traineeNotificationRow.status === 'pending') {
       events.push({
         eventType: 'mentor_result_notification_queued',
         applicationId: applicationLegacyId,
@@ -3029,12 +3069,12 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
           previousVersion: meta.version,
           nextVersion,
           mentorReportId,
-          idempotencyKey: notificationRow.idempotencyKey
+          idempotencyKey: traineeNotificationRow.idempotencyKey
         },
         createdAt: nowIso
       });
     }
-    if (notificationRow.status === 'skipped') {
+    if (traineeNotificationRow.status === 'skipped') {
       events.push({
         eventType: 'mentor_result_notification_skipped',
         applicationId: applicationLegacyId,
@@ -3046,7 +3086,41 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
           previousVersion: meta.version,
           nextVersion,
           mentorReportId,
-          reason: notificationRow.error || 'telegram_chat_missing'
+          reason: traineeNotificationRow.error || 'telegram_chat_missing'
+        },
+        createdAt: nowIso
+      });
+    }
+    if (reportGroupNotificationRow.status === 'pending') {
+      events.push({
+        eventType: 'mentor_report_group_notification_queued',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'system',
+        actorTelegramUserId: null,
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          mentorReportId,
+          idempotencyKey: reportGroupNotificationRow.idempotencyKey
+        },
+        createdAt: nowIso
+      });
+    }
+    if (reportGroupNotificationRow.status === 'skipped') {
+      events.push({
+        eventType: 'mentor_report_group_notification_skipped',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'system',
+        actorTelegramUserId: null,
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          mentorReportId,
+          reason: reportGroupNotificationRow.error || 'mentor_report_chat_missing'
         },
         createdAt: nowIso
       });
@@ -3086,9 +3160,9 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
       mentorCommentDeliveryStatus: mentorCommentDeliveryStatus || '',
       mentorCommentDeliveryError,
       notifications: {
-        total: 1,
-        pending: notificationRow.status === 'pending' ? 1 : 0,
-        skipped: notificationRow.status === 'skipped' ? 1 : 0,
+        total: notificationRows.length,
+        pending: notificationRows.filter(row => row.status === 'pending').length,
+        skipped: notificationRows.filter(row => row.status === 'skipped').length,
         inserted: notificationResult.inserted
       },
       version: nextVersion,
