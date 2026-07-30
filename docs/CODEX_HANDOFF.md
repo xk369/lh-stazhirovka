@@ -49,9 +49,8 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   16 shifts, 83 applications, 37 invite groups, 39 memberships and
   25 mentor reports. Field-level parity passed before writable staging QA.
 - Migration staging is deployed at
-  `https://stazhirovka-migration.151.244.243.164.sslip.io`; before the final
-  `/api/telegram/link` deploy it was at commit `9f304d0`, server path
-  `/opt/loft-hall-internship-migration-staging`.
+  `https://stazhirovka-migration.151.244.243.164.sslip.io` from commit
+  `bae4e07`, server path `/opt/loft-hall-internship-migration-staging`.
 - Its app is bound to `127.0.0.1:3502`; containers are
   `loft-internship-app-migration-staging` and
   `loft-internship-postgres-migration-staging`; PostgreSQL uses the dedicated
@@ -63,10 +62,11 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   application, recruiter confirmation, invite creation, attendance to
   `feedback`, mentor report finalization, final status `passed`, and durable
   outbox rows for `send_invites`, `mentor_report` and `mentor_result`. The
-  next staging QA run also checks `/api/telegram/link` against a synthetic
-  unlinked application.
+  latest run also checked `/api/telegram/link` against a synthetic unlinked
+  application.
 - Staging notification worker dry-run processed accumulated QA outbox rows
-  without real Telegram delivery: 6 claimed, 0 sent, 6 skipped, 0 failed.
+  without real Telegram delivery. Latest run after `bae4e07`: 3 claimed,
+  0 sent, 3 skipped, 0 failed.
 - Branch `migration/postgres-foundation` is published in draft PR #3. Do not
   merge it into `main` until writable staging QA, cutover rehearsal and rollback
   plan are approved.

@@ -39,8 +39,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
-- Current staging commit before final `/api/telegram/link` deploy:
-  `9f304d0`.
+- Current staging commit: `bae4e07`.
 - Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
   16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
   25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
@@ -239,6 +238,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - 2026-07-30: staging notification worker processed accumulated QA outbox rows
   in dry-run mode: 6 claimed, 0 sent, 6 skipped, 0 failed, 0 retry. No real
   Telegram messages were sent.
+- 2026-07-30: migration staging was fast-forwarded to `bae4e07`, rebuilt and
+  restarted only for `app-migration-staging`. `/api/health` returned
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true` and
+  `TELEGRAM_DELIVERY_MODE=dry_run`. Staging role QA passed again through HTTP
+  runtime and now also covers `/api/telegram/link` with a synthetic unlinked
+  application. Notification worker dry-run then processed the new QA outbox
+  rows: 3 claimed, 0 sent, 3 skipped, 0 failed, 0 retry. Production was not
+  touched.
 - 2026-07-30: `node --check` passed for `src/server.js`,
   `src/postgres/write-booking-command.js`,
   `scripts/postgres-link-telegram-application-write-smoke.js` and
@@ -345,9 +352,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `BOOKING_STORAGE_MODE=postgres`, while JSON production behavior stays on the
   legacy path. Added unit, adapter, command-contract and real PostgreSQL smoke
   coverage plus staging role QA coverage for a synthetic unlinked application.
-  Production, `main` and live Telegram remain untouched. Current progress is
-  95% overall / 100% no-prod backend implementation; the remaining 5% is the
-  explicit production cutover/rehearsal decision.
+  Deployed only to migration staging at `bae4e07` and reran HTTP role QA plus
+  notification worker dry-run. Production, `main` and live Telegram remain
+  untouched. Current progress is 95% overall / 100% no-prod backend
+  implementation; the remaining 5% is the explicit production cutover/rehearsal
+  decision.
 - 2026-07-30: enabled writable PostgreSQL migration staging from commit
   `fe321f0` after refreshing it with a current production JSON snapshot.
   Parity passed on 16 shifts, 83 applications, 37 invite groups, 39

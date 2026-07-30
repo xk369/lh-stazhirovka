@@ -11,8 +11,9 @@
   для no-prod/staging cutover rehearsal.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: staging-only writable runtime enabled; core live migration
-  staging QA passed; final rehearsal and production cutover plan next.
+- Текущий stage: staging-only writable runtime enabled at `bae4e07`; core live
+  migration staging QA passed including `/api/telegram/link`; final production
+  cutover plan next.
 
 ## Что Уже Интегрировано В Base
 

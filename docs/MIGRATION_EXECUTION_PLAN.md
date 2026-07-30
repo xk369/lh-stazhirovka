@@ -44,7 +44,7 @@ production работает на PostgreSQL, цепочка проверена, 
 | 4. Полный event log | 15% | готово, core staging QA пройден | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
 | 5. Writable Postgres command layer | 20% | готово, core staging QA пройден | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
 | 6. Notifications/outbox | 15% | готово, worker dry-run проверен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
-| 7. Full staging QA и rehearsal | 10% | финальный no-prod прогон | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
+| 7. Full staging QA и rehearsal | 10% | core no-prod QA пройден | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
 
 ## Детальный Порядок
@@ -258,7 +258,8 @@ write-команды для `/api/state`, `/api/report` и `/api/telegram/link`,
    `TELEGRAM_DELIVERY_MODE=dry_run`;
 3. обновить staging свежей копией prod `data/db.json`;
 4. пройти full role QA из раздела 6;
-5. повторить staging role QA после `/api/telegram/link` PostgreSQL-команды.
+5. перед production cutover повторить staging role QA на финальном кандидате и
+   отдельно утвердить rollback окно.
 
 Перед runtime-включением Postgres-записи отдельно закрыть корректирующее
 действие `Вернуть в новые заявки`: текущий JSON путь делает это через
