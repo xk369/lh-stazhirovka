@@ -62,7 +62,13 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
     actorRoles: ['trainee'],
     writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
     locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.SHIFT, LOCK_SCOPES.APPLICATION],
-    eventTypes: ['application_created', 'application_updated']
+    eventTypes: [
+      'application_created',
+      'application_updated',
+      'application_status_changed',
+      'application_assigned_to_shift',
+      'application_returned_to_queue'
+    ]
   }),
 
   cancel_application: contract({

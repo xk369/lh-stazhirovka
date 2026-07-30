@@ -5,6 +5,7 @@ import {
   BOOKING_STATUS_LABELS,
   SEAT_HOLDING_STATUSES,
   SHIFT_CANCELLATION_APPLICATION_STATUSES,
+  TRAINEE_WRITE_STATUSES,
   canRecruiterSetApplicationStatus
 } from '../booking-state-machine.js';
 import { runInPostgresTransaction } from './transaction.js';
@@ -39,6 +40,21 @@ export class PostgresCommandConflictError extends Error {
 
 const SEAT_HOLDING_STATUS_VALUES = Object.freeze([...SEAT_HOLDING_STATUSES]);
 const RETURN_TO_QUEUE_STATUSES = new Set(['queue', 'pending', 'confirmed', 'invited']);
+const TRAINING_VALUES = new Set(['passed', 'not_passed']);
+const ATTEMPT_VALUES = new Set(['first', 'repeat']);
+const TRAINEE_MUTABLE_STATUSES = new Set(['pending', 'queue']);
+const TRAINEE_PROFILE_FIELDS = Object.freeze([
+  'name',
+  'phone',
+  'training',
+  'trainingDate',
+  'attempt',
+  'limits',
+  'telegramCode',
+  'telegramChatId',
+  'telegramUserId',
+  'telegramUsername'
+]);
 
 function requireRecruiter(actor) {
   if (!actor || actor.role !== 'recruiter') {
@@ -46,8 +62,18 @@ function requireRecruiter(actor) {
   }
 }
 
+function requireTrainee(actor) {
+  if (!actor || actor.role !== 'trainee') {
+    throw new PostgresCommandAuthorizationError('Недостаточно прав для записи стажёра.');
+  }
+}
+
 function actorTelegramUserId(actor) {
   return String(actor?.telegram?.user?.id || actor?.userId || '').trim() || null;
+}
+
+function actorTelegramUsername(actor) {
+  return String(actor?.telegram?.user?.username || '').trim();
 }
 
 function normalizeBaseVersion(command) {
@@ -74,10 +100,32 @@ function normalizeOptionalText(value, field, maxLength) {
   return text;
 }
 
+function normalizeRequiredText(value, field, maxLength) {
+  const text = normalizeOptionalText(value, field, maxLength);
+  if (!text) throw new PostgresCommandValidationError(`${field} is required.`);
+  return text;
+}
+
 function normalizeIsoDate(value) {
   const date = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new PostgresCommandValidationError('shift.date must be YYYY-MM-DD.');
+  }
+  const parsed = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new PostgresCommandValidationError('shift.date is invalid.');
+  }
+  return date;
+}
+
+function normalizeApplicationDate(value, field) {
+  const date = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new PostgresCommandValidationError(`${field} must be YYYY-MM-DD.`);
+  }
+  const parsed = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new PostgresCommandValidationError(`${field} is invalid.`);
   }
   return date;
 }
@@ -96,6 +144,126 @@ function normalizeApplicationLegacyId(value) {
     throw new PostgresCommandValidationError('applicationId must be a positive integer.');
   }
   return id;
+}
+
+function normalizeTraineeApplicationLegacyId(value) {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new PostgresCommandValidationError('application.id must be a positive integer.');
+  }
+  return id;
+}
+
+function normalizeNullableShiftLegacyId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeShiftLegacyId(value);
+}
+
+function normalizePhone(value) {
+  const text = normalizeRequiredText(value, 'application.phone', 40);
+  const digits = text.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 20) {
+    throw new PostgresCommandValidationError('Проверьте номер телефона: должно быть от 7 до 20 цифр.');
+  }
+  return text;
+}
+
+function normalizeTelegramUserId(value, field) {
+  const text = normalizeOptionalText(value, field, 32);
+  if (text && !/^\d{3,32}$/.test(text)) {
+    throw new PostgresCommandValidationError(`${field} is invalid.`);
+  }
+  return text;
+}
+
+function normalizeUsername(value) {
+  const text = normalizeOptionalText(value, 'telegramUsername', 32).replace(/^@/, '');
+  if (text && !/^[A-Za-z0-9_]{3,32}$/.test(text)) {
+    throw new PostgresCommandValidationError('telegramUsername is invalid.');
+  }
+  return text;
+}
+
+function normalizeTrainingDate(value, training) {
+  const text = normalizeOptionalText(value, 'application.trainingDate', 10);
+  if (training !== 'passed') return '';
+  if (!text) throw new PostgresCommandValidationError('Укажите дату прохождения обучения.');
+  return normalizeApplicationDate(text, 'application.trainingDate');
+}
+
+function normalizeTraineeApplicationInput(command, actor) {
+  const app = command?.application || {};
+  const status = String(app.status || '').trim();
+  if (!TRAINEE_WRITE_STATUSES.has(status)) {
+    throw new PostgresCommandValidationError('trainee cannot set this application status.');
+  }
+
+  const shiftLegacyId = normalizeNullableShiftLegacyId(app.shiftId);
+  if (status === 'queue' && shiftLegacyId !== null) {
+    throw new PostgresCommandValidationError('queue application must not have shiftId.');
+  }
+  if (status === 'pending' && shiftLegacyId === null) {
+    throw new PostgresCommandValidationError('pending application must have shiftId.');
+  }
+
+  const training = String(app.training || 'passed').trim();
+  if (!TRAINING_VALUES.has(training)) {
+    throw new PostgresCommandValidationError('application.training is invalid.');
+  }
+  const attempt = String(app.attempt || 'first').trim();
+  if (!ATTEMPT_VALUES.has(attempt)) {
+    throw new PostgresCommandValidationError('application.attempt is invalid.');
+  }
+
+  const userId = actorTelegramUserId(actor);
+  if (!userId) {
+    throw new PostgresCommandAuthorizationError('Не удалось определить Telegram ID стажёра.');
+  }
+
+  return {
+    applicationLegacyId: normalizeTraineeApplicationLegacyId(app.id),
+    shiftLegacyId,
+    name: normalizeRequiredText(app.name, 'application.name', 120),
+    phone: normalizePhone(app.phone),
+    training,
+    trainingDate: normalizeTrainingDate(app.trainingDate, training),
+    attempt,
+    limits: normalizeOptionalText(app.limits, 'application.limits', 600),
+    status,
+    comment: normalizeOptionalText(app.comment ?? app.recruiterComment, 'application.comment', 1200),
+    telegramCode: normalizeOptionalText(app.telegramCode, 'application.telegramCode', 100),
+    telegramUserId: normalizeTelegramUserId(userId, 'application.telegramUserId'),
+    telegramChatId: normalizeTelegramUserId(userId, 'application.telegramChatId'),
+    telegramUsername: normalizeUsername(actorTelegramUsername(actor)),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function applicationRowBelongsToTrainee(row, actor) {
+  const userId = actorTelegramUserId(actor);
+  return Boolean(userId) && (
+    String(row.trainee_telegram_user_id || '') === userId
+    || String(row.trainee_telegram_chat_id || '') === userId
+  );
+}
+
+function compactApplicationPayload(application) {
+  return {
+    status: application.status,
+    shiftId: application.shiftLegacyId ?? null,
+    inviteGroupId: null,
+    venueId: '',
+    telegramUserId: application.telegramUserId || '',
+    telegramUsername: application.telegramUsername || ''
+  };
+}
+
+function changedTraineeProfileFields(previous, next) {
+  return TRAINEE_PROFILE_FIELDS.filter(field => {
+    const before = previous?.[field] ?? '';
+    const after = next?.[field] ?? '';
+    return String(before) !== String(after);
+  });
 }
 
 const RECRUITER_BACK_TO_PENDING_SOURCES = new Set(['confirmed', 'invited', 'feedback']);
@@ -623,6 +791,320 @@ async function insertNotifications(client, rows) {
     inserted += result.rowCount || 0;
   }
   return { inserted };
+}
+
+export async function upsertTraineeApplicationInPostgres({
+  pool,
+  actor,
+  command,
+  now = new Date()
+}) {
+  requireTrainee(actor);
+  const application = normalizeTraineeApplicationInput(command, actor);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (application.baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    let shift = null;
+    if (application.shiftLegacyId !== null) {
+      const shiftResult = await client.query(
+        `SELECT id, legacy_id, seats, open, canceled, date::text AS date
+           FROM shifts
+          WHERE legacy_id = $1
+          FOR UPDATE`,
+        [application.shiftLegacyId]
+      );
+      if (shiftResult.rowCount !== 1) {
+        throw new PostgresCommandValidationError('application.shiftId references an unknown shift.');
+      }
+      shift = shiftResult.rows[0];
+      if (shift.canceled) {
+        throw new PostgresCommandValidationError('trainee cannot book a canceled shift.');
+      }
+      if (!shift.open) {
+        throw new PostgresCommandValidationError('trainee cannot book a closed shift.');
+      }
+
+      const usageResult = await client.query(
+        `SELECT COUNT(*)::int AS used
+           FROM applications
+          WHERE shift_id = $1
+            AND status = ANY($2::text[])
+            AND legacy_id <> $3`,
+        [shift.id, SEAT_HOLDING_STATUS_VALUES, application.applicationLegacyId]
+      );
+      const usedSeats = Number(usageResult.rows[0]?.used || 0);
+      const seats = Number(shift.seats) || 0;
+      if (usedSeats >= seats) {
+        throw new PostgresCommandValidationError('На выбранную дату больше нет свободных мест.');
+      }
+    }
+
+    const existingResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.telegram_code,
+              applications.name,
+              applications.phone,
+              applications.training,
+              applications.training_date::text AS training_date,
+              applications.attempt,
+              applications.limits,
+              applications.recruiter_comment
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [application.applicationLegacyId]
+    );
+
+    const existing = existingResult.rowCount === 1 ? existingResult.rows[0] : null;
+    if (existing) {
+      if (!applicationRowBelongsToTrainee(existing, actor)) {
+        throw new PostgresCommandAuthorizationError('Нельзя изменить чужую заявку.');
+      }
+      if (!TRAINEE_MUTABLE_STATUSES.has(String(existing.status || ''))) {
+        throw new PostgresCommandValidationError('application cannot be changed in current status.');
+      }
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const shiftUuid = shift?.id ?? null;
+    const trainingDate = application.trainingDate || null;
+    const eventRows = [];
+
+    if (!existing) {
+      const applicationId = randomUUID();
+      await client.query(
+        `INSERT INTO applications (
+            id, legacy_id, shift_id, invite_group_id,
+            trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
+            name, phone, training, training_date, attempt, limits, status, recruiter_comment,
+            venue_id, group_link, candidate_report, experience,
+            mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
+            mentor_decision, mentor_report_venue_id, mentor_report_venue,
+            mentor_report_loft, mentor_report_hall, mentor_comment_for_trainee,
+            mentor_comment_sent_at, mentor_comment_delivery_status, mentor_comment_delivery_error,
+            created_at, updated_at
+          )
+          VALUES (
+            $1, $2, $3, NULL,
+            $4, $5, $6, $7,
+            $8, $9, $10, $11::date, $12, $13, $14, $15,
+            NULL, '', false, NULL,
+            false, NULL, NULL,
+            '', '', '',
+            '', '', '',
+            NULL, NULL, '',
+            $16, $16
+          )`,
+        [
+          applicationId,
+          application.applicationLegacyId,
+          shiftUuid,
+          application.telegramUserId,
+          application.telegramChatId,
+          application.telegramUsername,
+          application.telegramCode,
+          application.name,
+          application.phone,
+          application.training,
+          trainingDate,
+          application.attempt,
+          application.limits,
+          application.status,
+          application.comment,
+          nowIso
+        ]
+      );
+
+      eventRows.push({
+        eventType: 'application_created',
+        applicationId: application.applicationLegacyId,
+        shiftId: application.shiftLegacyId,
+        actorType: 'trainee',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'upsert_trainee_application',
+          baseVersion: application.baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          application: compactApplicationPayload(application)
+        },
+        createdAt: nowIso
+      });
+    } else {
+      const previous = {
+        name: existing.name ?? '',
+        phone: existing.phone ?? '',
+        training: existing.training ?? '',
+        trainingDate: shiftDateAsString(existing.training_date),
+        attempt: existing.attempt ?? '',
+        limits: existing.limits ?? '',
+        telegramCode: existing.telegram_code ?? '',
+        telegramChatId: existing.trainee_telegram_chat_id ?? '',
+        telegramUserId: existing.trainee_telegram_user_id ?? '',
+        telegramUsername: existing.telegram_username ?? ''
+      };
+      const next = {
+        name: application.name,
+        phone: application.phone,
+        training: application.training,
+        trainingDate: application.trainingDate,
+        attempt: application.attempt,
+        limits: application.limits,
+        telegramCode: application.telegramCode,
+        telegramChatId: application.telegramChatId,
+        telegramUserId: application.telegramUserId,
+        telegramUsername: application.telegramUsername
+      };
+      const previousStatus = String(existing.status || '');
+      const previousShiftLegacyId = existing.shift_legacy_id ? Number(existing.shift_legacy_id) : null;
+
+      await client.query(
+        `UPDATE applications
+            SET shift_id = $1,
+                invite_group_id = NULL,
+                trainee_telegram_user_id = $2,
+                trainee_telegram_chat_id = $3,
+                telegram_username = $4,
+                telegram_code = $5,
+                name = $6,
+                phone = $7,
+                training = $8,
+                training_date = $9::date,
+                attempt = $10,
+                limits = $11,
+                status = $12,
+                recruiter_comment = $13,
+                venue_id = NULL,
+                group_link = '',
+                candidate_report = false,
+                experience = NULL,
+                mentor_report_received = false,
+                mentor_report_at = NULL,
+                mentor_reporter_telegram_user_id = NULL,
+                mentor_decision = '',
+                mentor_report_venue_id = '',
+                mentor_report_venue = '',
+                mentor_report_loft = '',
+                mentor_report_hall = '',
+                mentor_comment_for_trainee = '',
+                mentor_comment_sent_at = NULL,
+                mentor_comment_delivery_status = NULL,
+                mentor_comment_delivery_error = '',
+                updated_at = $14,
+                row_version = row_version + 1
+          WHERE id = $15`,
+        [
+          shiftUuid,
+          application.telegramUserId,
+          application.telegramChatId,
+          application.telegramUsername,
+          application.telegramCode,
+          application.name,
+          application.phone,
+          application.training,
+          trainingDate,
+          application.attempt,
+          application.limits,
+          application.status,
+          application.comment,
+          nowIso,
+          existing.id
+        ]
+      );
+
+      if (previousStatus !== application.status) {
+        eventRows.push({
+          eventType: application.status === 'queue' ? 'application_returned_to_queue' : 'application_status_changed',
+          applicationId: application.applicationLegacyId,
+          shiftId: application.shiftLegacyId,
+          actorType: 'trainee',
+          actorTelegramUserId: actorTelegramUserId(actor),
+          payload: {
+            action: 'upsert_trainee_application',
+            baseVersion: application.baseVersion,
+            previousVersion: meta.version,
+            nextVersion,
+            previousStatus,
+            nextStatus: application.status,
+            previousShiftId: previousShiftLegacyId,
+            nextShiftId: application.shiftLegacyId
+          },
+          createdAt: nowIso
+        });
+      }
+
+      const changedFields = changedTraineeProfileFields(previous, next);
+      if (changedFields.length) {
+        eventRows.push({
+          eventType: 'application_updated',
+          applicationId: application.applicationLegacyId,
+          shiftId: application.shiftLegacyId,
+          actorType: 'trainee',
+          actorTelegramUserId: actorTelegramUserId(actor),
+          payload: {
+            action: 'upsert_trainee_application',
+            baseVersion: application.baseVersion,
+            previousVersion: meta.version,
+            nextVersion,
+            changedFields
+          },
+          createdAt: nowIso
+        });
+      }
+
+      if (previousShiftLegacyId !== application.shiftLegacyId && application.shiftLegacyId !== null) {
+        eventRows.push({
+          eventType: 'application_assigned_to_shift',
+          applicationId: application.applicationLegacyId,
+          shiftId: application.shiftLegacyId,
+          actorType: 'trainee',
+          actorTelegramUserId: actorTelegramUserId(actor),
+          payload: {
+            action: 'upsert_trainee_application',
+            baseVersion: application.baseVersion,
+            previousVersion: meta.version,
+            nextVersion,
+            previousShiftId: previousShiftLegacyId,
+            nextShiftId: application.shiftLegacyId,
+            date: shift?.date ?? null
+          },
+          createdAt: nowIso
+        });
+      }
+    }
+
+    await insertApplicationEvents(client, eventRows);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId: application.applicationLegacyId,
+      previousStatus: existing ? String(existing.status || '') : null,
+      nextStatus: application.status,
+      previousShiftId: existing?.shift_legacy_id ? Number(existing.shift_legacy_id) : null,
+      shiftLegacyId: application.shiftLegacyId,
+      created: !existing,
+      updated: Boolean(existing),
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
 }
 
 export async function createShiftInPostgres({ pool, actor, command, now = new Date() }) {

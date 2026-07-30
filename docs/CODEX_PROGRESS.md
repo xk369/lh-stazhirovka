@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 76%.
+- Current migration progress: 78%.
 
 ## Migration Staging
 
@@ -90,6 +90,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   invite-group membership and related application assignment fields.
 - Added a transactional `update_comment` Postgres write path for recruiter
   comments, with PII-safe audit payloads that store only comment lengths.
+- Added a transactional `upsert_trainee_application` Postgres write path for
+  trainee-created applications and preliminary queue entries. It attaches
+  Telegram identity from the verified actor, validates required trainee fields,
+  enforces queue-without-shift and pending-with-open-shift invariants, protects
+  seat capacity, rejects чужие and already progressed applications, writes
+  PII-safe audit events and returns fresh state through the Postgres adapter.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -380,6 +386,23 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   performed. Added unit coverage for pending/skipped rows and rollback on
   notification insert failure, plus live PostgreSQL smoke assertions. Raised
   migration progress to 76%.
+- 2026-07-30: added transactional PostgreSQL
+  `upsert_trainee_application` directly in `migration/postgres-foundation`.
+  The command is trainee-only, locks `booking_state_meta`, optionally locks the
+  target shift, locks the existing application when present, rejects stale
+  `baseVersion`, invalid required fields, closed/canceled/full shifts, чужие
+  applications and applications already beyond `pending`/`queue`. It inserts or
+  updates `applications`, always takes Telegram user/chat/username from the
+  verified actor rather than client payload, writes PII-safe
+  `application_created`, `application_updated`, `application_status_changed`,
+  `application_assigned_to_shift` or `application_returned_to_queue` events as
+  needed, and adds live PostgreSQL smoke coverage. No `src/server.js` runtime
+  wiring, no live Telegram worker and no deploy. Raised migration progress to
+  78%.
+- 2026-07-30: `npm test` passed, 241/241 tests after integrating
+  `upsert_trainee_application` into `migration/postgres-foundation`.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `upsert_trainee_application` PostgreSQL write smoke.
 
 ## Documentation Audit
 
@@ -415,9 +438,9 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are
-   `upsert_trainee_application`, `cancel_application`, `toggle_shift`,
-   `clear_state`, `reset_demo_state` and `mentor_report_result`.
+   iteration; the next high-value backend commands are `cancel_application`,
+   `toggle_shift`, `clear_state`, `reset_demo_state` and
+   `mentor_report_result`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

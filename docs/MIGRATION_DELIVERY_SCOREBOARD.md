@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 76%.
+- Общий прогресс: 78%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -19,6 +19,35 @@
 - `application_events` planning/writer foundation.
 - Storage adapter seam.
 - Transaction helper.
+- `upsert_trainee_application` writable PostgreSQL command:
+  - trainee-only;
+  - `booking_state_meta FOR UPDATE`;
+  - optional target `shifts` row `FOR UPDATE` for date bookings;
+  - existing `applications` row `FOR UPDATE` when updating a previous trainee
+    application;
+  - optimistic `baseVersion` check;
+  - validates required trainee profile fields, phone, training date for
+    passed training, attempt and trainee-writable statuses;
+  - attaches Telegram user/chat/username from the verified actor, never from
+    client-supplied payload;
+  - enforces `queue` applications without `shift_id` and `pending`
+    applications with an open, non-canceled shift;
+  - refuses to book closed/canceled/full shifts;
+  - rejects updates to another trainee's application;
+  - rejects updates once the application has progressed beyond `pending` or
+    `queue`; repeat application after `failed`/`noshow` should use the existing
+    frontend behavior of creating a new application id, preserving old reports
+    and history;
+  - inserts or updates `applications`;
+  - clears stale invite/mentor/result fields on update so a preliminary
+    trainee-side edit cannot carry old workflow state forward;
+  - writes PII-safe `application_created`, `application_updated`,
+    `application_status_changed`, `application_assigned_to_shift` and
+    `application_returned_to_queue` events as needed;
+  - no trainee notification/outbox write, because this is a trainee-owned form
+    submission/update rather than a recruiter/mentor stage message;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - `create_shift` writable PostgreSQL command:
   - recruiter-only;
   - `booking_state_meta FOR UPDATE`;
@@ -232,12 +261,11 @@
 
 ## Очередь Writable Команд
 
-1. `upsert_trainee_application`
-2. `cancel_application`
-3. `toggle_shift`
-4. `clear_state`
-5. `reset_demo_state`
-6. `mentor_report_result` через `/api/report`
+1. `cancel_application`
+2. `toggle_shift`
+3. `clear_state`
+4. `reset_demo_state`
+5. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -276,4 +304,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `upsert_trainee_application`, then `cancel_application`.
+slice is `cancel_application`, then `toggle_shift`.

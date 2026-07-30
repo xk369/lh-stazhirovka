@@ -11,7 +11,8 @@ import {
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
   updateCommentInPostgres,
-  updateShiftCapacityInPostgres
+  updateShiftCapacityInPostgres,
+  upsertTraineeApplicationInPostgres
 } from '../postgres/write-booking-command.js';
 
 export class BookingCommandNotImplementedError extends Error {
@@ -53,6 +54,11 @@ export function createPostgresWriteBookingStorageAdapter({
   if (!pool) throw new TypeError('postgres write adapter requires a pg pool.');
 
   const commandHandlers = {
+    async upsert_trainee_application(command, actor) {
+      const result = await upsertTraineeApplicationInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
     async create_shift(command, actor) {
       const result = await createShiftInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();

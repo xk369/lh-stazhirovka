@@ -9,6 +9,7 @@ import {
 import { BOOKING_STORAGE_MODES, BookingStorageReadOnlyError } from '../src/booking-storage-mode.js';
 
 const recruiter = { role: 'recruiter', telegram: { user: { id: '111' } } };
+const trainee = { role: 'trainee', userId: '222', telegram: { user: { id: '222', username: 'trainee_user' } } };
 
 test('JSON adapter delegates readState and applyCommand to injected functions', async () => {
   const readState = async () => ({ version: 3 });
@@ -47,6 +48,87 @@ test('Postgres read-only adapter reads from Postgres and refuses writes', async 
   const state = await adapter.readState();
   assert.equal(state.version, 7);
   assert.throws(() => adapter.applyCommand({ action: 'create_shift' }), BookingStorageReadOnlyError);
+});
+
+test('Postgres write adapter routes upsert_trainee_application and returns fresh state', async () => {
+  const fakeState = {
+    version: 11,
+    updatedAt: '2026-07-29T12:00:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T12:00:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql, params = []) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase(), params });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 10 }] };
+        }
+        if (/SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'shift-uuid-88',
+              legacy_id: 88,
+              seats: 4,
+              open: true,
+              canceled: false,
+              date: '2026-08-01'
+            }]
+          };
+        }
+        if (/SELECT COUNT\(\*\)::int AS used/i.test(sql)) {
+          return { rowCount: 1, rows: [{ used: 0 }] };
+        }
+        if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+          return { rowCount: 0, rows: [] };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501, id: 'app-uuid-501' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 88, id: 'shift-uuid-88' }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 10,
+      application: {
+        id: 501,
+        shiftId: 88,
+        name: 'Иван Иванов',
+        phone: '+7 999 123-45-67',
+        training: 'passed',
+        trainingDate: '2026-07-20',
+        attempt: 'first',
+        limits: '',
+        telegramCode: '',
+        status: 'pending',
+        comment: ''
+      }
+    },
+    trainee
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.version, 11);
+  assert.equal(outcome.result.applicationLegacyId, 501);
+  assert.equal(outcome.result.created, true);
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
 test('Postgres write adapter routes create_shift through the transactional writer and returns fresh state', async () => {

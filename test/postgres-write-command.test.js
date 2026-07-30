@@ -14,7 +14,8 @@ import {
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
   updateCommentInPostgres,
-  updateShiftCapacityInPostgres
+  updateShiftCapacityInPostgres,
+  upsertTraineeApplicationInPostgres
 } from '../src/postgres/write-booking-command.js';
 
 const DEFAULT_META_UPDATED_AT = '2026-07-01T00:00:00.000Z';
@@ -160,7 +161,13 @@ function fakePool({
           trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
           trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
           telegram_username: row.telegram_username ?? '',
+          telegram_code: row.telegram_code ?? '',
           name: row.name ?? '',
+          phone: row.phone ?? '',
+          training: row.training ?? 'passed',
+          training_date: row.training_date ?? null,
+          attempt: row.attempt ?? 'first',
+          limits: row.limits ?? '',
           recruiter_comment: row.recruiter_comment ?? '',
           experience: row.experience ?? null
         }] : [] };
@@ -293,10 +300,53 @@ function fakePool({
       if (/SELECT COUNT\(\*\)::int AS used\s+FROM applications/i.test(sql)) {
         const shiftUuid = String(params[0]);
         const allowedStatuses = new Set((params[1] || []).map(String));
+        const excludedLegacyId = params.length > 2 ? String(params[2]) : null;
         const used = apps.filter(app => (
-          String(app.shift_id) === shiftUuid && allowedStatuses.has(String(app.status))
+          String(app.shift_id) === shiftUuid
+          && allowedStatuses.has(String(app.status))
+          && (excludedLegacyId === null || String(app.legacy_id) !== excludedLegacyId)
         )).length;
         return { rowCount: 1, rows: [{ used }] };
+      }
+      if (/INSERT INTO applications/i.test(sql)) {
+        apps.push({
+          id: params[0],
+          legacy_id: params[1],
+          shift_id: params[2],
+          invite_group_id: null,
+          trainee_telegram_user_id: params[3],
+          trainee_telegram_chat_id: params[4],
+          telegram_username: params[5],
+          telegram_code: params[6],
+          name: params[7],
+          phone: params[8],
+          training: params[9],
+          training_date: params[10],
+          attempt: params[11],
+          limits: params[12],
+          status: params[13],
+          recruiter_comment: params[14],
+          venue_id: null,
+          group_link: '',
+          candidate_report: false,
+          experience: null,
+          mentor_report_received: false,
+          mentor_report_at: null,
+          mentor_reporter_telegram_user_id: null,
+          mentor_decision: '',
+          mentor_report_venue_id: '',
+          mentor_report_venue: '',
+          mentor_report_loft: '',
+          mentor_report_hall: '',
+          mentor_comment_for_trainee: '',
+          mentor_comment_sent_at: null,
+          mentor_comment_delivery_status: null,
+          mentor_comment_delivery_error: '',
+          created_at: params[15],
+          updated_at: params[15],
+          row_version: 1
+        });
+        return { rowCount: 1, rows: [] };
       }
       if (/INSERT INTO shifts/.test(sql)) {
         shifts.push({
@@ -398,6 +448,44 @@ function fakePool({
           }
         }
         return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE applications\s+SET shift_id = \$1,\s+invite_group_id = NULL/is.test(sql)) {
+        const target = apps.find(app => String(app.id) === String(params[14]));
+        if (target) {
+          target.shift_id = params[0];
+          target.invite_group_id = null;
+          target.trainee_telegram_user_id = params[1];
+          target.trainee_telegram_chat_id = params[2];
+          target.telegram_username = params[3];
+          target.telegram_code = params[4];
+          target.name = params[5];
+          target.phone = params[6];
+          target.training = params[7];
+          target.training_date = params[8];
+          target.attempt = params[9];
+          target.limits = params[10];
+          target.status = params[11];
+          target.recruiter_comment = params[12];
+          target.venue_id = null;
+          target.group_link = '';
+          target.candidate_report = false;
+          target.experience = null;
+          target.mentor_report_received = false;
+          target.mentor_report_at = null;
+          target.mentor_reporter_telegram_user_id = null;
+          target.mentor_decision = '';
+          target.mentor_report_venue_id = '';
+          target.mentor_report_venue = '';
+          target.mentor_report_loft = '';
+          target.mentor_report_hall = '';
+          target.mentor_comment_for_trainee = '';
+          target.mentor_comment_sent_at = null;
+          target.mentor_comment_delivery_status = null;
+          target.mentor_comment_delivery_error = '';
+          target.updated_at = params[13];
+          target.row_version = Number(target.row_version || 1) + 1;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
       }
       if (/UPDATE applications\s+SET shift_id = NULL/i.test(sql)) {
         const nowIso = params[0];
@@ -616,6 +704,395 @@ function fakePool({
 }
 
 const recruiter = { role: 'recruiter', telegram: { user: { id: '111' } } };
+const trainee = { role: 'trainee', userId: '222', telegram: { user: { id: '222', username: 'trainee_user' } } };
+
+function traineeApplication(overrides = {}) {
+  return {
+    id: 501,
+    shiftId: 88,
+    name: 'Иван Иванов',
+    phone: '+7 999 123-45-67',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'first',
+    limits: 'Нет',
+    telegramCode: '@manual_note',
+    status: 'pending',
+    comment: '',
+    ...overrides
+  };
+}
+
+test('upsertTraineeApplicationInPostgres creates pending application, event and version bump', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 2,
+      open: true,
+      canceled: false
+    }]
+  });
+  const now = new Date('2026-07-29T12:00:00.000Z');
+
+  const result = await upsertTraineeApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'upsert_trainee_application',
+      baseVersion: 10,
+      application: traineeApplication()
+    },
+    now
+  });
+
+  assert.equal(result.version, 11);
+  assert.equal(result.previousVersion, 10);
+  assert.equal(result.applicationLegacyId, 501);
+  assert.equal(result.nextStatus, 'pending');
+  assert.equal(result.shiftLegacyId, 88);
+  assert.equal(result.created, true);
+  assert.equal(result.updated, false);
+  const [app] = pool.getApplications();
+  assert.equal(app.legacy_id, 501);
+  assert.equal(app.shift_id, 'shift-uuid-88');
+  assert.equal(app.trainee_telegram_user_id, '222');
+  assert.equal(app.trainee_telegram_chat_id, '222');
+  assert.equal(app.telegram_username, 'trainee_user');
+  assert.equal(app.phone, '+7 999 123-45-67');
+  assert.equal(app.training_date, '2026-07-20');
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInserts.length, 1);
+  assert.equal(eventInserts[0].params[3], 'application_created');
+  assert.match(eventInserts[0].params[6], /"action":"upsert_trainee_application"/);
+  assert.ok(pool.calls.some(call => /^COMMIT$/i.test(call.sql)));
+});
+
+test('upsertTraineeApplicationInPostgres creates queue application without locking a shift', async () => {
+  const pool = fakePool({ currentVersion: 10 });
+  const result = await upsertTraineeApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'upsert_trainee_application',
+      baseVersion: 10,
+      application: traineeApplication({ id: 502, shiftId: null, status: 'queue' })
+    },
+    now: new Date('2026-07-29T12:00:00.000Z')
+  });
+
+  assert.equal(result.version, 11);
+  assert.equal(result.shiftLegacyId, null);
+  assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(
+    pool.calls.some(call => /FROM shifts\s+WHERE legacy_id = \$1\s+FOR UPDATE/is.test(call.sql)),
+    false
+  );
+});
+
+test('upsertTraineeApplicationInPostgres updates own queue app into pending and audits transition', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 2,
+      open: true,
+      canceled: false
+    }],
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '222',
+      trainee_telegram_chat_id: '222',
+      telegram_username: 'old_name',
+      telegram_code: '',
+      name: 'Иван Иванов',
+      phone: '+7 999 123-45-67',
+      training: 'not_passed',
+      training_date: null,
+      attempt: 'repeat',
+      limits: 'Было',
+      recruiter_comment: ''
+    }]
+  });
+
+  const result = await upsertTraineeApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'upsert_trainee_application',
+      baseVersion: 10,
+      application: traineeApplication({ limits: 'Можно после 17:00' })
+    },
+    now: new Date('2026-07-29T12:00:00.000Z')
+  });
+
+  assert.equal(result.created, false);
+  assert.equal(result.updated, true);
+  assert.equal(result.previousStatus, 'queue');
+  assert.equal(result.nextStatus, 'pending');
+  assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-88');
+  assert.equal(pool.getApplications()[0].status, 'pending');
+  assert.equal(pool.getApplications()[0].telegram_username, 'trainee_user');
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, [
+    'application_status_changed',
+    'application_updated',
+    'application_assigned_to_shift'
+  ]);
+});
+
+test('upsertTraineeApplicationInPostgres updates own pending app back to queue', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 2,
+      open: true,
+      canceled: false
+    }],
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: 'shift-uuid-88',
+      status: 'pending',
+      trainee_telegram_user_id: '222',
+      trainee_telegram_chat_id: '222',
+      telegram_username: 'trainee_user',
+      telegram_code: '@manual_note',
+      name: 'Иван Иванов',
+      phone: '+7 999 123-45-67',
+      training: 'passed',
+      training_date: '2026-07-20',
+      attempt: 'first',
+      limits: 'Нет',
+      recruiter_comment: ''
+    }]
+  });
+
+  await upsertTraineeApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'upsert_trainee_application',
+      baseVersion: 10,
+      application: traineeApplication({ shiftId: null, status: 'queue' })
+    },
+    now: new Date('2026-07-29T12:00:00.000Z')
+  });
+
+  assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(pool.getApplications()[0].status, 'queue');
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['application_returned_to_queue']);
+});
+
+test('upsertTraineeApplicationInPostgres rejects stale version before data writes', async () => {
+  const pool = fakePool({ currentVersion: 11 });
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool,
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ shiftId: null, status: 'queue' })
+      }
+    }),
+    PostgresCommandConflictError
+  );
+  assert.equal(pool.getApplications().length, 0);
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+});
+
+test('upsertTraineeApplicationInPostgres rejects unknown, closed, canceled and full shifts', async () => {
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
+    }),
+    /unknown shift/
+  );
+
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 2, open: false, canceled: false }]
+      }),
+      actor: trainee,
+      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
+    }),
+    /closed shift/
+  );
+
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 2, open: true, canceled: true }]
+      }),
+      actor: trainee,
+      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
+    }),
+    /canceled shift/
+  );
+
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 1, open: true, canceled: false }],
+        existingApplications: [{ id: 'other-app', legacy_id: 999, shift_id: 'shift-uuid-88', status: 'pending' }]
+      }),
+      actor: trainee,
+      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
+    }),
+    /нет свободных мест/
+  );
+});
+
+test('upsertTraineeApplicationInPostgres rejects invalid trainee payloads', async () => {
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ phone: '' })
+      }
+    }),
+    /application.phone is required/
+  );
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ trainingDate: '' })
+      }
+    }),
+    /дату прохождения обучения/
+  );
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ status: 'confirmed' })
+      }
+    }),
+    /trainee cannot set this application status/
+  );
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ shiftId: 88, status: 'queue' })
+      }
+    }),
+    /queue application must not have shiftId/
+  );
+});
+
+test('upsertTraineeApplicationInPostgres rejects another trainee app and immutable statuses', async () => {
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'queue',
+          trainee_telegram_user_id: '333',
+          trainee_telegram_chat_id: '333'
+        }]
+      }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ shiftId: null, status: 'queue' })
+      }
+    }),
+    PostgresCommandAuthorizationError
+  );
+
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'failed',
+          trainee_telegram_user_id: '222',
+          trainee_telegram_chat_id: '222'
+        }]
+      }),
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ shiftId: null, status: 'queue' })
+      }
+    }),
+    /current status/
+  );
+});
+
+test('upsertTraineeApplicationInPostgres rolls back and releases on event insert failure', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    eventInsertThrows: true,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 2,
+      open: true,
+      canceled: false
+    }]
+  });
+
+  await assert.rejects(
+    () => upsertTraineeApplicationInPostgres({
+      pool,
+      actor: trainee,
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication()
+      }
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
 
 test('createShiftInPostgres commits shift + event + version bump for a fresh future date', async () => {
   const pool = fakePool({ currentVersion: 10 });

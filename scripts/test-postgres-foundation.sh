@@ -56,6 +56,8 @@ fi
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-create-shift-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-upsert-trainee-application-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-shift-capacity-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-comment-write-smoke.js
