@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 82%.
+- Общий прогресс: 86%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -275,6 +275,27 @@
     avoiding raw recruiter-comment PII in event payloads;
   - returns an idempotent no-op when the trimmed comment is unchanged;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `clear_state` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - deletes booking rows, invite group links, mentor report rows/topics and
+    pending notification rows so a destructive reset cannot leave stale side
+    effects behind;
+  - preserves `application_events` audit history;
+  - writes `booking_state_cleared` with removed row counts;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
+- `reset_demo_state` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - performs the same safe cleanup as `clear_state`;
+  - seeds a normalized three-shift/three-application demo state through the
+    existing JSON import planner rather than hand-building invalid rows;
+  - writes `booking_state_reset` with removed and inserted row counts;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -294,9 +315,7 @@
 
 ## Очередь Writable Команд
 
-1. `clear_state`
-2. `reset_demo_state`
-3. `mentor_report_result` через `/api/report`
+1. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -335,4 +354,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `clear_state`, then `reset_demo_state`, then `mentor_report_result`.
+slice is `mentor_report_result`.

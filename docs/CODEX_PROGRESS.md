@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 82%.
+- Current migration progress: 86%.
 
 ## Migration Staging
 
@@ -55,6 +55,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added a transactional `toggle_shift` Postgres write path for opening and
   closing internship dates, with no-op protection, `shift_opened`/`shift_closed`
   audit events and live PostgreSQL smoke inside `npm run test:postgres`.
+- Added transactional PostgreSQL admin write paths for `clear_state` and
+  `reset_demo_state`: recruiter-only, `booking_state_meta FOR UPDATE`,
+  optimistic `baseVersion`, full booking/report/notification row cleanup,
+  `booking_state_cleared`/`booking_state_reset` audit events, demo-state seed
+  import through the existing normalized importer and live PostgreSQL smoke
+  inside `npm run test:postgres`.
 - Added a transactional `update_shift_capacity` Postgres write path with live
   PostgreSQL smoke inside `npm run test:postgres`; later closed its durable
   trainee notification/outbox gap for upcoming statuses.
@@ -115,6 +121,17 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   transactional PostgreSQL `toggle_shift`.
 - 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
   live `toggle_shift` PostgreSQL write smoke.
+- 2026-07-30: targeted `node --test test/postgres-write-command.test.js
+  test/booking-storage-adapter.test.js test/postgres-command-contracts.test.js`
+  passed, 144/144 tests after adding transactional PostgreSQL `clear_state`
+  and `reset_demo_state`.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
+  transactional PostgreSQL `clear_state` and `reset_demo_state`.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `clear_state/reset_demo_state` PostgreSQL write smoke. A sandboxed run
+  failed first because local PostgreSQL could not create shared memory
+  (`shmget Operation not permitted`), then the same command passed with
+  escalation.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -209,6 +226,18 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   PostgreSQL smoke. Production runtime wiring, `main` and Telegram live
   delivery remain untouched. Migration progress is now 82%; next slices are
   `clear_state`, `reset_demo_state` and `mentor_report_result`.
+- 2026-07-30: added transactional PostgreSQL `clear_state` and
+  `reset_demo_state` directly in `migration/postgres-foundation`. Both commands
+  are recruiter-only, lock `booking_state_meta`, reject stale `baseVersion` and
+  write destructive audit events before bumping state version. `clear_state`
+  removes booking rows, invite groups, active mentor-report data and pending
+  notifications while preserving `application_events` audit history.
+  `reset_demo_state` performs the same cleanup and then seeds a small normalized
+  demo state through the existing JSON import planner so demo rows obey the
+  PostgreSQL schema and status rules. Added adapter routing, command-contract
+  scope, unit coverage and live PostgreSQL smoke. No `src/server.js` runtime
+  wiring, no live Telegram worker and no deploy. Raised migration progress to
+  86%.
 - 2026-07-29: audited existing Markdown instructions and found stale migration
   staging commit references plus an old README backup path. Added this progress
   log, linked it from `AGENTS.md`, updated staging commit references to
@@ -469,8 +498,7 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `clear_state`,
-   `reset_demo_state` and `mentor_report_result`.
+   iteration; the next high-value backend command is `mentor_report_result`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

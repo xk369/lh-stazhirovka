@@ -8,9 +8,11 @@ import {
   cancelApplicationInPostgres,
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
+  clearStateInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
   returnToQueueInPostgres,
+  resetDemoStateInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
@@ -66,6 +68,19 @@ function fakePool({
       }
       if (/SELECT version.*FROM booking_state_meta/is.test(sql)) {
         return { rowCount: 1, rows: [{ version, updated_at: updatedAt }] };
+      }
+      if (/SELECT\s+\(SELECT count\(\*\)::int FROM shifts\) AS shifts/is.test(sql)) {
+        return {
+          rowCount: 1,
+          rows: [{
+            shifts: shifts.length,
+            applications: apps.length,
+            invite_groups: inviteGroups.length,
+            invite_group_members: inviteGroupMembers.length,
+            active_mentor_reports: mentorReports.filter(row => !row.voided_at).length,
+            notifications: notifications.length
+          }]
+        };
       }
       if (/SELECT 1 FROM shifts WHERE date/.test(sql)) {
         const hit = shifts.find(row => row.date === params[0]);
@@ -312,43 +327,83 @@ function fakePool({
         return { rowCount: 1, rows: [{ used }] };
       }
       if (/INSERT INTO applications/i.test(sql)) {
-        apps.push({
-          id: params[0],
-          legacy_id: params[1],
-          shift_id: params[2],
-          invite_group_id: null,
-          trainee_telegram_user_id: params[3],
-          trainee_telegram_chat_id: params[4],
-          telegram_username: params[5],
-          telegram_code: params[6],
-          name: params[7],
-          phone: params[8],
-          training: params[9],
-          training_date: params[10],
-          attempt: params[11],
-          limits: params[12],
-          status: params[13],
-          recruiter_comment: params[14],
-          venue_id: null,
-          group_link: '',
-          candidate_report: false,
-          experience: null,
-          mentor_report_received: false,
-          mentor_report_at: null,
-          mentor_reporter_telegram_user_id: null,
-          mentor_decision: '',
-          mentor_report_venue_id: '',
-          mentor_report_venue: '',
-          mentor_report_loft: '',
-          mentor_report_hall: '',
-          mentor_comment_for_trainee: '',
-          mentor_comment_sent_at: null,
-          mentor_comment_delivery_status: null,
-          mentor_comment_delivery_error: '',
-          created_at: params[15],
-          updated_at: params[15],
-          row_version: 1
-        });
+        if (params.length >= 34) {
+          apps.push({
+            id: params[0],
+            legacy_id: params[1],
+            shift_id: params[2],
+            invite_group_id: params[3],
+            trainee_telegram_user_id: params[4],
+            trainee_telegram_chat_id: params[5],
+            telegram_username: params[6],
+            telegram_code: params[7],
+            name: params[8],
+            phone: params[9],
+            training: params[10],
+            training_date: params[11],
+            attempt: params[12],
+            limits: params[13],
+            status: params[14],
+            recruiter_comment: params[15],
+            venue_id: params[16],
+            group_link: params[17],
+            candidate_report: params[18],
+            experience: params[19],
+            mentor_report_received: params[20],
+            mentor_report_at: params[21],
+            mentor_reporter_telegram_user_id: params[22],
+            mentor_decision: params[23],
+            mentor_report_venue_id: params[24],
+            mentor_report_venue: params[25],
+            mentor_report_loft: params[26],
+            mentor_report_hall: params[27],
+            mentor_comment_for_trainee: params[28],
+            mentor_comment_sent_at: params[29],
+            mentor_comment_delivery_status: params[30],
+            mentor_comment_delivery_error: params[31],
+            created_at: params[32],
+            updated_at: params[33],
+            row_version: 1
+          });
+        } else {
+          apps.push({
+            id: params[0],
+            legacy_id: params[1],
+            shift_id: params[2],
+            invite_group_id: null,
+            trainee_telegram_user_id: params[3],
+            trainee_telegram_chat_id: params[4],
+            telegram_username: params[5],
+            telegram_code: params[6],
+            name: params[7],
+            phone: params[8],
+            training: params[9],
+            training_date: params[10],
+            attempt: params[11],
+            limits: params[12],
+            status: params[13],
+            recruiter_comment: params[14],
+            venue_id: null,
+            group_link: '',
+            candidate_report: false,
+            experience: null,
+            mentor_report_received: false,
+            mentor_report_at: null,
+            mentor_reporter_telegram_user_id: null,
+            mentor_decision: '',
+            mentor_report_venue_id: '',
+            mentor_report_venue: '',
+            mentor_report_loft: '',
+            mentor_report_hall: '',
+            mentor_comment_for_trainee: '',
+            mentor_comment_sent_at: null,
+            mentor_comment_delivery_status: null,
+            mentor_comment_delivery_error: '',
+            created_at: params[15],
+            updated_at: params[15],
+            row_version: 1
+          });
+        }
         return { rowCount: 1, rows: [] };
       }
       if (/INSERT INTO shifts/.test(sql)) {
@@ -519,6 +574,39 @@ function fakePool({
           target.updated_at = nowIso;
           count += 1;
         }
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM notifications$/i.test(sql.trim())) {
+        const count = notifications.length;
+        notifications.length = 0;
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM mentor_report_topics$/i.test(sql.trim())) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (/DELETE FROM mentor_reports$/i.test(sql.trim())) {
+        const count = mentorReports.length;
+        mentorReports.length = 0;
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM invite_group_members$/i.test(sql.trim())) {
+        const count = inviteGroupMembers.length;
+        inviteGroupMembers.length = 0;
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM invite_groups$/i.test(sql.trim())) {
+        const count = inviteGroups.length;
+        inviteGroups.length = 0;
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM applications$/i.test(sql.trim())) {
+        const count = apps.length;
+        apps.length = 0;
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM shifts$/i.test(sql.trim())) {
+        const count = shifts.length;
+        shifts.length = 0;
         return { rowCount: count, rows: [] };
       }
       if (/DELETE FROM invite_group_members\s+WHERE application_id = ANY/i.test(sql)) {
@@ -1332,6 +1420,155 @@ test('cancelApplicationInPostgres rolls back and releases when event insert fail
       pool,
       actor: trainee,
       command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
+
+test('clearStateInPostgres deletes booking rows, notifications and writes audit event', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 4, open: true }],
+    existingApplications: [{ id: 'app-uuid-501', legacy_id: 501, shift_id: 'shift-uuid-88', status: 'pending' }],
+    existingInviteGroups: [{ id: 'group-uuid-1', legacy_id: 301, shift_id: 'shift-uuid-88', venue_id: 'loft1', link: 'https://t.me/+group' }],
+    existingInviteGroupMembers: [{ invite_group_id: 'group-uuid-1', application_id: 'app-uuid-501' }],
+    existingMentorReports: [{ id: 'report-uuid-1', application_id: 'app-uuid-501' }],
+    existingNotifications: [{ id: 'notification-uuid-1', application_id: 'app-uuid-501', status: 'pending' }]
+  });
+  const now = new Date('2026-07-29T12:40:00.000Z');
+
+  const result = await clearStateInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'clear_state', baseVersion: 10 },
+    now
+  });
+
+  assert.equal(result.previousVersion, 10);
+  assert.equal(result.version, 11);
+  assert.deepEqual(result.removed, {
+    shifts: 1,
+    applications: 1,
+    inviteGroups: 1,
+    inviteGroupMembers: 1,
+    activeMentorReports: 1,
+    notifications: 1
+  });
+  assert.equal(pool.getShifts().length, 0);
+  assert.equal(pool.getApplications().length, 0);
+  assert.equal(pool.getInviteGroups().length, 0);
+  assert.equal(pool.getInviteGroupMembers().length, 0);
+  assert.equal(pool.getMentorReports().length, 0);
+  assert.equal(pool.getNotifications().length, 0);
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'booking_state_cleared');
+  assert.match(eventInsert.params[6], /"removed"/);
+  assert.ok(pool.calls.some(call => /^COMMIT$/i.test(call.sql)));
+});
+
+test('resetDemoStateInPostgres replaces state with normalized demo rows', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{ id: 'old-shift', legacy_id: 88, date: '2026-08-01', seats: 4, open: true }],
+    existingApplications: [{ id: 'old-app', legacy_id: 501, shift_id: 'old-shift', status: 'pending' }],
+    existingNotifications: [{ id: 'notification-uuid-1', application_id: 'old-app', status: 'pending' }]
+  });
+  const now = new Date('2026-07-29T12:45:00.000Z');
+
+  const result = await resetDemoStateInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'reset_demo_state', baseVersion: 10 },
+    now
+  });
+
+  assert.equal(result.previousVersion, 10);
+  assert.equal(result.version, 11);
+  assert.deepEqual(result.inserted, { shifts: 3, applications: 3, inviteGroups: 0 });
+  assert.equal(pool.getShifts().length, 3);
+  assert.equal(pool.getApplications().length, 3);
+  assert.deepEqual(pool.getShifts().map(shift => Number(shift.legacy_id)), [1, 2, 3]);
+  assert.deepEqual(pool.getApplications().map(app => Number(app.legacy_id)), [101, 102, 103]);
+  assert.deepEqual(pool.getApplications().map(app => app.status), ['pending', 'confirmed', 'queue']);
+  assert.equal(pool.getNotifications().length, 0);
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'booking_state_reset');
+  assert.match(eventInsert.params[6], /"inserted":\{"shifts":3,"applications":3,"inviteGroups":0\}/);
+});
+
+test('clearStateInPostgres and resetDemoStateInPostgres reject stale version and non-recruiters', async () => {
+  await assert.rejects(
+    () => clearStateInPostgres({
+      pool: fakePool({ currentVersion: 11 }),
+      actor: recruiter,
+      command: { action: 'clear_state', baseVersion: 10 }
+    }),
+    PostgresCommandConflictError
+  );
+
+  await assert.rejects(
+    () => resetDemoStateInPostgres({
+      pool: fakePool({ currentVersion: 11 }),
+      actor: recruiter,
+      command: { action: 'reset_demo_state', baseVersion: 10 }
+    }),
+    PostgresCommandConflictError
+  );
+
+  const invalidPool = fakePool();
+  await assert.rejects(
+    () => clearStateInPostgres({
+      pool: invalidPool,
+      actor: trainee,
+      command: { action: 'clear_state', baseVersion: 10 }
+    }),
+    PostgresCommandAuthorizationError
+  );
+  await assert.rejects(
+    () => resetDemoStateInPostgres({
+      pool: invalidPool,
+      actor: recruiter,
+      command: { action: 'reset_demo_state', baseVersion: 0 }
+    }),
+    PostgresCommandValidationError
+  );
+  assert.equal(invalidPool.calls.length, 0);
+});
+
+test('clearStateInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    eventInsertThrows: true,
+    existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 4, open: true }]
+  });
+
+  await assert.rejects(
+    () => clearStateInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'clear_state', baseVersion: 10 }
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
+
+test('resetDemoStateInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    eventInsertThrows: true,
+    existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 4, open: true }]
+  });
+
+  await assert.rejects(
+    () => resetDemoStateInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'reset_demo_state', baseVersion: 10 },
+      now: new Date('2026-07-29T12:50:00.000Z')
     }),
     /event insert failed/
   );

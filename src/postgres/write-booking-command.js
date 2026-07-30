@@ -8,6 +8,7 @@ import {
   TRAINEE_WRITE_STATUSES,
   canRecruiterSetApplicationStatus
 } from '../booking-state-machine.js';
+import { buildBookingImportPlan } from './import-booking-state.js';
 import { runInPostgresTransaction } from './transaction.js';
 import { insertApplicationEvents } from './write-application-events.js';
 
@@ -312,6 +313,72 @@ function todayDateValueInMoscow(now) {
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
 
+function dateValueFromNow(now, daysFromNow) {
+  const date = new Date(now);
+  date.setDate(date.getDate() + daysFromNow);
+  return date.toISOString().slice(0, 10);
+}
+
+function seedPostgresDemoBookingState(now) {
+  const nowIso = now.toISOString();
+  return {
+    version: 1,
+    updatedAt: nowIso,
+    shifts: [
+      { id: 1, date: dateValueFromNow(now, 2), seats: 3, open: true, canceled: false },
+      { id: 2, date: dateValueFromNow(now, 4), seats: 4, open: true, canceled: false },
+      { id: 3, date: dateValueFromNow(now, 6), seats: 2, open: true, canceled: false }
+    ],
+    applications: [
+      {
+        id: 101,
+        shiftId: 2,
+        name: 'Петрова Алина',
+        phone: '+7 999 111-22-33',
+        training: 'passed',
+        trainingDate: dateValueFromNow(now, -8),
+        attempt: 'first',
+        limits: 'Могу после 14:00, центр подходит.',
+        status: 'pending',
+        comment: '',
+        candidateReport: false,
+        mentorReport: false,
+        createdAt: dateValueFromNow(now, -1)
+      },
+      {
+        id: 102,
+        shiftId: 1,
+        name: 'Смирнов Никита',
+        phone: '+7 999 222-33-44',
+        training: 'not_passed',
+        attempt: 'repeat',
+        limits: 'Без ограничений.',
+        status: 'confirmed',
+        comment: 'Подтвержден.',
+        candidateReport: true,
+        mentorReport: false,
+        createdAt: dateValueFromNow(now, -1)
+      },
+      {
+        id: 103,
+        shiftId: null,
+        name: 'Козлова Мария',
+        phone: '+7 999 333-44-55',
+        training: 'passed',
+        trainingDate: dateValueFromNow(now, -7),
+        attempt: 'first',
+        limits: 'Ограничений нет, готова на ближайшую дату.',
+        status: 'queue',
+        comment: '',
+        candidateReport: false,
+        mentorReport: false,
+        createdAt: dateValueFromNow(now, -1)
+      }
+    ],
+    inviteGroups: []
+  };
+}
+
 function nextLegacyId(now, maxLegacyId) {
   const base = Number(maxLegacyId) || 0;
   return Math.max(now.getTime(), base + 1);
@@ -328,6 +395,120 @@ async function lockBookingStateMeta(client) {
     version: Number(metaResult.rows[0].version),
     updatedAt: metaResult.rows[0].updated_at
   };
+}
+
+async function countBookingStateRows(client) {
+  const result = await client.query(`
+    SELECT
+      (SELECT count(*)::int FROM shifts) AS shifts,
+      (SELECT count(*)::int FROM applications) AS applications,
+      (SELECT count(*)::int FROM invite_groups) AS invite_groups,
+      (SELECT count(*)::int FROM invite_group_members) AS invite_group_members,
+      (SELECT count(*)::int FROM mentor_reports WHERE voided_at IS NULL) AS active_mentor_reports,
+      (SELECT count(*)::int FROM notifications) AS notifications
+  `);
+  const row = result.rows[0] || {};
+  return {
+    shifts: Number(row.shifts) || 0,
+    applications: Number(row.applications) || 0,
+    inviteGroups: Number(row.invite_groups) || 0,
+    inviteGroupMembers: Number(row.invite_group_members) || 0,
+    activeMentorReports: Number(row.active_mentor_reports) || 0,
+    notifications: Number(row.notifications) || 0
+  };
+}
+
+async function clearBookingStateRows(client) {
+  const counts = await countBookingStateRows(client);
+  await client.query('DELETE FROM notifications');
+  await client.query('DELETE FROM mentor_report_topics');
+  await client.query('DELETE FROM mentor_reports');
+  await client.query('DELETE FROM invite_group_members');
+  await client.query('DELETE FROM invite_groups');
+  await client.query('DELETE FROM applications');
+  await client.query('DELETE FROM shifts');
+  return counts;
+}
+
+async function insertPlannedDemoRows(client, plan) {
+  for (const row of plan.shifts) {
+    await client.query(`
+      INSERT INTO shifts (
+        id, legacy_id, date, seats, open, canceled, canceled_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      row.id,
+      row.legacyId,
+      row.date,
+      row.seats,
+      row.open,
+      row.canceled,
+      row.canceledAt,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
+
+  for (const row of plan.applications) {
+    await client.query(`
+      INSERT INTO applications (
+        id, legacy_id, shift_id, invite_group_id,
+        trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
+        name, phone, training, training_date, attempt, limits, status, recruiter_comment,
+        venue_id, group_link, candidate_report, experience,
+        mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
+        mentor_decision, mentor_report_venue_id, mentor_report_venue, mentor_report_loft,
+        mentor_report_hall, mentor_comment_for_trainee, mentor_comment_sent_at,
+        mentor_comment_delivery_status, mentor_comment_delivery_error,
+        created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4,
+        $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20,
+        $21, $22, $23,
+        $24, $25, $26, $27,
+        $28, $29, $30,
+        $31, $32,
+        $33, $34
+      )
+    `, [
+      row.id,
+      row.legacyId,
+      row.shiftId,
+      row.inviteGroupId,
+      row.traineeTelegramUserId,
+      row.traineeTelegramChatId,
+      row.telegramUsername,
+      row.telegramCode,
+      row.name,
+      row.phone,
+      row.training,
+      row.trainingDate,
+      row.attempt,
+      row.limits,
+      row.status,
+      row.recruiterComment,
+      row.venueId,
+      row.groupLink,
+      row.candidateReport,
+      row.experience,
+      row.mentorReportReceived,
+      row.mentorReportAt,
+      row.mentorReporterTelegramUserId,
+      row.mentorDecision,
+      row.mentorReportVenueId,
+      row.mentorReportVenue,
+      row.mentorReportLoft,
+      row.mentorReportHall,
+      row.mentorCommentForTrainee,
+      row.mentorCommentSentAt,
+      row.mentorCommentDeliveryStatus,
+      row.mentorCommentDeliveryError,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
 }
 
 function normalizeCreateShiftInput(command) {
@@ -435,6 +616,12 @@ function normalizeCancelInternshipInput(command) {
 function normalizeCancelApplicationInput(command) {
   return {
     applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeStateAdminInput(command) {
+  return {
     baseVersion: normalizeBaseVersion(command)
   };
 }
@@ -1220,6 +1407,101 @@ export async function cancelApplicationInPostgres({ pool, actor, command, now = 
       previousVersion: meta.version,
       updatedAt: nowIso,
       changed: true
+    };
+  });
+}
+
+export async function clearStateInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { baseVersion } = normalizeStateAdminInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const removed = await clearBookingStateRows(client);
+
+    await insertApplicationEvents(client, [{
+      eventType: 'booking_state_cleared',
+      applicationId: null,
+      shiftId: null,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'clear_state',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        removed
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      removed
+    };
+  });
+}
+
+export async function resetDemoStateInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { baseVersion } = normalizeStateAdminInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const removed = await clearBookingStateRows(client);
+    const demoState = seedPostgresDemoBookingState(now);
+    const plan = buildBookingImportPlan(demoState, now);
+    await insertPlannedDemoRows(client, plan);
+
+    const inserted = {
+      shifts: plan.shifts.length,
+      applications: plan.applications.length,
+      inviteGroups: plan.inviteGroups.length
+    };
+
+    await insertApplicationEvents(client, [{
+      eventType: 'booking_state_reset',
+      applicationId: null,
+      shiftId: null,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'reset_demo_state',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        removed,
+        inserted
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      removed,
+      inserted
     };
   });
 }

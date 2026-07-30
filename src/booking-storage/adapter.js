@@ -5,9 +5,11 @@ import {
   cancelApplicationInPostgres,
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
+  clearStateInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
   returnToQueueInPostgres,
+  resetDemoStateInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
@@ -63,6 +65,16 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async cancel_application(command, actor) {
       const result = await cancelApplicationInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async clear_state(command, actor) {
+      const result = await clearStateInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async reset_demo_state(command, actor) {
+      const result = await resetDemoStateInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },

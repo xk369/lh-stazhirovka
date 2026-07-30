@@ -197,6 +197,82 @@ test('Postgres write adapter routes cancel_application and returns fresh state',
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes clear_state and returns fresh state', async () => {
+  const fakeState = { version: 12, updatedAt: '2026-07-29T12:30:00.000Z', shifts: [], applications: [], inviteGroups: [] };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T12:30:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql, params = []) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase(), params });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 11, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/SELECT\s+\(SELECT count\(\*\)::int FROM shifts\) AS shifts/is.test(sql)) {
+          return { rowCount: 1, rows: [{ shifts: 1, applications: 2, invite_groups: 1, invite_group_members: 2, active_mentor_reports: 1, notifications: 1 }] };
+        }
+        if (/FROM applications WHERE legacy_id/i.test(sql)) return { rowCount: 0, rows: [] };
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) return { rowCount: 0, rows: [] };
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'clear_state', baseVersion: 11 },
+    recruiter
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.version, 12);
+  assert.equal(outcome.result.removed.applications, 2);
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
+test('Postgres write adapter routes reset_demo_state and returns fresh state', async () => {
+  const fakeState = { version: 12, updatedAt: '2026-07-29T12:35:00.000Z', shifts: [], applications: [], inviteGroups: [] };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T12:35:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql, params = []) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase(), params });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 11, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/SELECT\s+\(SELECT count\(\*\)::int FROM shifts\) AS shifts/is.test(sql)) {
+          return { rowCount: 1, rows: [{ shifts: 1, applications: 2, invite_groups: 1, invite_group_members: 2, active_mentor_reports: 1, notifications: 1 }] };
+        }
+        if (/FROM applications WHERE legacy_id/i.test(sql)) return { rowCount: 0, rows: [] };
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) return { rowCount: 0, rows: [] };
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'reset_demo_state', baseVersion: 11 },
+    recruiter
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.version, 12);
+  assert.deepEqual(outcome.result.inserted, { shifts: 3, applications: 3, inviteGroups: 0 });
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter routes create_shift through the transactional writer and returns fresh state', async () => {
   const fakeState = { version: 11, updatedAt: '2026-07-29T12:00:00.000Z', shifts: [], applications: [], inviteGroups: [] };
   const workedCommands = [];
@@ -1029,7 +1105,7 @@ test('Postgres write adapter rejects still-unsupported commands with a stable co
     pool: { async connect() { throw new Error('connect must not be called'); } }
   });
   await assert.rejects(
-    () => adapter.applyCommand({ action: 'clear_state' }, recruiter),
+    () => adapter.applyCommand({ action: 'mentor_report_result' }, recruiter),
     err => err instanceof BookingCommandNotImplementedError
       && err.code === 'BOOKING_COMMAND_NOT_IMPLEMENTED_IN_POSTGRES'
   );
