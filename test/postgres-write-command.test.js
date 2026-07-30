@@ -9,9 +9,11 @@ import {
   cancelShiftInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
+  returnToQueueInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  updateCommentInPostgres,
   updateShiftCapacityInPostgres
 } from '../src/postgres/write-booking-command.js';
 
@@ -159,6 +161,7 @@ function fakePool({
           trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
           telegram_username: row.telegram_username ?? '',
           name: row.name ?? '',
+          recruiter_comment: row.recruiter_comment ?? '',
           experience: row.experience ?? null
         }] : [] };
       }
@@ -268,6 +271,25 @@ function fakePool({
           }));
         return { rowCount: rows.length, rows };
       }
+      if (/SELECT id,\s+legacy_id,\s+status,\s+trainee_telegram_user_id/is.test(sql)
+        && /FROM applications/i.test(sql)
+        && /WHERE shift_id = \$1/i.test(sql)) {
+        const shiftUuid = String(params[0]);
+        const allowedStatuses = new Set((params[1] || []).map(String));
+        const rows = apps
+          .filter(app => String(app.shift_id) === shiftUuid && allowedStatuses.has(String(app.status)))
+          .map(app => ({
+            id: app.id,
+            legacy_id: app.legacy_id,
+            status: app.status,
+            trainee_telegram_user_id: app.trainee_telegram_user_id ?? app.telegram_user_id ?? null,
+            trainee_telegram_chat_id: app.trainee_telegram_chat_id ?? app.telegram_chat_id ?? null,
+            telegram_username: app.telegram_username ?? '',
+            name: app.name ?? ''
+          }))
+          .sort((left, right) => Number(left.legacy_id) - Number(right.legacy_id));
+        return { rowCount: rows.length, rows };
+      }
       if (/SELECT COUNT\(\*\)::int AS used\s+FROM applications/i.test(sql)) {
         const shiftUuid = String(params[0]);
         const allowedStatuses = new Set((params[1] || []).map(String));
@@ -353,6 +375,17 @@ function fakePool({
           }
         }
         return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE applications\s+SET recruiter_comment/i.test(sql)) {
+        const comment = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[2]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.recruiter_comment = comment;
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
       }
       if (/UPDATE mentor_reports\s+SET voided_at/i.test(sql)) {
         const nowIso = params[0];
@@ -786,7 +819,36 @@ const shiftFixture = { id: 'shift-uuid-1', legacy_id: 555, date: '2026-08-01', s
 test('updateShiftCapacityInPostgres commits UPDATE shifts + event + version bump when seats change', async () => {
   const pool = fakePool({
     currentVersion: 10,
-    existingShifts: [{ ...shiftFixture }]
+    existingShifts: [{ ...shiftFixture }],
+    existingApplications: [
+      {
+        id: 'capacity-app-1',
+        legacy_id: 811,
+        shift_id: 'shift-uuid-1',
+        status: 'pending',
+        trainee_telegram_user_id: '991111',
+        trainee_telegram_chat_id: '991111',
+        name: 'Capacity Pending'
+      },
+      {
+        id: 'capacity-app-2',
+        legacy_id: 812,
+        shift_id: 'shift-uuid-1',
+        status: 'feedback',
+        trainee_telegram_user_id: '992222',
+        trainee_telegram_chat_id: '992222',
+        name: 'Capacity Feedback'
+      },
+      {
+        id: 'capacity-app-3',
+        legacy_id: 813,
+        shift_id: 'shift-uuid-1',
+        status: 'confirmed',
+        trainee_telegram_user_id: null,
+        trainee_telegram_chat_id: '',
+        name: 'Capacity Missing Chat'
+      }
+    ]
   });
   const now = new Date('2026-07-29T12:00:00.000Z');
   const result = await updateShiftCapacityInPostgres({
@@ -832,6 +894,27 @@ test('updateShiftCapacityInPostgres commits UPDATE shifts + event + version bump
   assert.equal(payload.nextSeats, 6);
   assert.equal(payload.date, '2026-08-01');
   assert.equal(payload.legacyShiftId, 555);
+
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 2);
+  assert.deepEqual(notifications.map(row => row.type), [
+    'shift_capacity_changed',
+    'shift_capacity_changed'
+  ]);
+  assert.deepEqual(notifications.map(row => row.status), ['pending', 'skipped']);
+  assert.deepEqual(notifications.map(row => row.chat_id), ['991111', null]);
+  assert.ok(notifications.every(row => row.chat_target === 'trainee'));
+  assert.ok(notifications.every(row => row.parse_mode === 'HTML'));
+  assert.ok(notifications.every(row => row.text.includes('Изменения по стажировке')));
+  assert.ok(notifications.every(row => row.text.includes('01.08.2026')));
+  assert.match(notifications[0].idempotency_key, /^update_shift_capacity:811:/);
+  assert.match(notifications[1].idempotency_key, /^update_shift_capacity:813:/);
+  assert.deepEqual(result.notifications, {
+    total: 2,
+    pending: 1,
+    skipped: 1,
+    inserted: 2
+  });
 });
 
 test('updateShiftCapacityInPostgres is a no-op when requested seats equal current seats', async () => {
@@ -1009,6 +1092,217 @@ test('updateShiftCapacityInPostgres rejects non-recruiter actors before opening 
       && err.code === 'POSTGRES_COMMAND_FORBIDDEN'
   );
   assert.equal(pool.calls.length, 0);
+});
+
+test('updateShiftCapacityInPostgres rolls back and releases when notification insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{ ...shiftFixture }],
+    existingApplications: [{
+      id: 'capacity-app-rollback',
+      legacy_id: 814,
+      shift_id: 'shift-uuid-1',
+      status: 'pending',
+      trainee_telegram_user_id: '991114',
+      trainee_telegram_chat_id: '991114'
+    }],
+    notificationInsertThrows: true
+  });
+
+  await assert.rejects(
+    () => updateShiftCapacityInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'update_shift_capacity', baseVersion: 10, shiftId: 555, seats: 6 },
+      now: new Date('2026-07-29T12:00:00.000Z')
+    }),
+    /notification insert failed/
+  );
+
+  assert.ok(pool.calls.some(call => call.sql === 'ROLLBACK'));
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+  assert.equal(pool.calls.some(call => call.sql === 'COMMIT'), false);
+  assert.equal(pool.getVersion(), 10);
+});
+
+// -----------------------------------------------------------------------------
+// update_comment
+// -----------------------------------------------------------------------------
+
+const commentShift = {
+  id: 'shift-uuid-comment',
+  legacy_id: 8801,
+  date: '2026-08-02',
+  seats: 4,
+  open: true,
+  canceled: false
+};
+
+const commentApp = {
+  id: 'app-uuid-comment',
+  legacy_id: 8802,
+  shift_id: 'shift-uuid-comment',
+  status: 'confirmed',
+  recruiter_comment: 'old note'
+};
+
+test('updateCommentInPostgres updates recruiter comment, writes event and bumps version', async () => {
+  const pool = fakePool({
+    currentVersion: 15,
+    existingShifts: [{ ...commentShift }],
+    existingApplications: [{ ...commentApp }]
+  });
+  const now = new Date('2026-07-29T12:30:00.000Z');
+  const result = await updateCommentInPostgres({
+    pool,
+    actor: recruiter,
+    command: {
+      action: 'update_comment',
+      baseVersion: 15,
+      applicationId: 8802,
+      comment: '  Новый внутренний комментарий  '
+    },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 8802);
+  assert.equal(result.shiftLegacyId, 8801);
+  assert.equal(result.previousComment, 'old note');
+  assert.equal(result.nextComment, 'Новый внутренний комментарий');
+  assert.equal(result.version, 16);
+  assert.equal(result.previousVersion, 15);
+  assert.equal(result.updatedAt, now.toISOString());
+  assert.equal(pool.getVersion(), 16);
+  assert.equal(pool.getApplications()[0].recruiter_comment, 'Новый внутренний комментарий');
+
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'application_comment_updated');
+  assert.equal(eventInsert.params[4], 'recruiter');
+  assert.equal(eventInsert.params[5], '111');
+  const payload = JSON.parse(eventInsert.params[6]);
+  assert.equal(payload.action, 'update_comment');
+  assert.equal(payload.previousLength, 'old note'.length);
+  assert.equal(payload.nextLength, 'Новый внутренний комментарий'.length);
+  assert.equal(payload.legacyApplicationId, 8802);
+  assert.equal(payload.legacyShiftId, 8801);
+});
+
+test('updateCommentInPostgres is a no-op when the comment is unchanged', async () => {
+  const pool = fakePool({
+    currentVersion: 15,
+    metaUpdatedAt: '2026-07-20T00:00:00.000Z',
+    existingShifts: [{ ...commentShift }],
+    existingApplications: [{ ...commentApp }]
+  });
+  const result = await updateCommentInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'update_comment', baseVersion: 15, applicationId: 8802, comment: 'old note' },
+    now: new Date('2026-07-29T12:30:00.000Z')
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.version, 15);
+  assert.equal(result.updatedAt, '2026-07-20T00:00:00.000Z');
+  assert.equal(pool.getVersion(), 15);
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^COMMIT$/i.test(sql)));
+  assert.equal(sqls.some(sql => /UPDATE applications/i.test(sql)), false);
+  assert.equal(sqls.some(sql => /INSERT INTO application_events/i.test(sql)), false);
+});
+
+test('updateCommentInPostgres rolls back on stale baseVersion and unknown application', async () => {
+  const stalePool = fakePool({
+    currentVersion: 16,
+    existingApplications: [{ ...commentApp }]
+  });
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool: stalePool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 8802, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  assert.equal(stalePool.getApplications()[0].recruiter_comment, 'old note');
+  assert.ok(stalePool.calls.some(call => call.sql === 'ROLLBACK'));
+
+  const missingPool = fakePool({ currentVersion: 15 });
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool: missingPool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 999999, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /application not found/.test(err.message)
+  );
+});
+
+test('updateCommentInPostgres rejects invalid input and non-recruiters before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 15 });
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 0, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 0, applicationId: 8802, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 8802, comment: 'x'.repeat(1201) },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    /application.comment must be at most 1200 characters/
+  );
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '222' } } },
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 8802, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('updateCommentInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 15,
+    existingShifts: [{ ...commentShift }],
+    existingApplications: [{ ...commentApp }],
+    eventInsertThrows: true
+  });
+  await assert.rejects(
+    () => updateCommentInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'update_comment', baseVersion: 15, applicationId: 8802, comment: 'new' },
+      now: new Date('2026-07-29T12:30:00.000Z')
+    }),
+    /event insert failed/
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
 });
 
 // -----------------------------------------------------------------------------
@@ -2538,6 +2832,255 @@ test('cancelInternshipInPostgres rolls back when notification outbox insert fail
   assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
   assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
   assert.equal(pool.getNotifications().length, 0);
+});
+
+// -----------------------------------------------------------------------------
+// return_to_queue
+// -----------------------------------------------------------------------------
+
+test('returnToQueueInPostgres clears date/group links and keeps remaining group members', async () => {
+  const pool = fakePool({
+    currentVersion: 80,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [
+      makeInvitedCancellationApp(),
+      makeInvitedCancellationApp({
+        id: 'app-uuid-cancel-2',
+        legacy_id: 9002,
+        trainee_telegram_user_id: '900200',
+        trainee_telegram_chat_id: '900200'
+      })
+    ],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' },
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-2' }
+    ]
+  });
+  const now = new Date('2026-07-29T17:20:00.000Z');
+  const result = await returnToQueueInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 9001);
+  assert.equal(result.previousStatus, 'invited');
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(result.previousShiftId, 7700);
+  assert.equal(result.previousInviteGroupId, 8800);
+  assert.equal(result.inviteGroupChanged, true);
+  assert.equal(result.inviteGroupRemoved, false);
+  assert.deepEqual(result.remainingMemberLegacyIds, [9002]);
+  assert.equal(result.version, 81);
+  assert.equal(result.previousVersion, 80);
+  assert.equal(result.updatedAt, now.toISOString());
+
+  const returnedApp = pool.getApplications().find(app => Number(app.legacy_id) === 9001);
+  assert.equal(returnedApp.status, 'queue');
+  assert.equal(returnedApp.shift_id, null);
+  assert.equal(returnedApp.invite_group_id, null);
+  assert.equal(returnedApp.venue_id, null);
+  assert.equal(returnedApp.group_link, '');
+  assert.equal(returnedApp.candidate_report, false);
+  assert.equal(returnedApp.mentor_report_received, false);
+  assert.equal(returnedApp.mentor_comment_delivery_status, null);
+
+  assert.equal(pool.getInviteGroups().length, 1);
+  assert.equal(pool.getInviteGroups()[0].updated_at, now.toISOString());
+  assert.deepEqual(
+    pool.getInviteGroupMembers().map(member => member.application_id),
+    ['app-uuid-cancel-2']
+  );
+  assert.equal(pool.getNotifications().length, 0, 'return_to_queue must not notify trainees');
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.deepEqual(
+    eventInserts.map(call => call.params[3]),
+    ['invite_group_updated', 'application_returned_to_queue']
+  );
+  const groupPayload = JSON.parse(eventInserts[0].params[6]);
+  assert.equal(groupPayload.action, 'return_to_queue');
+  assert.equal(groupPayload.inviteGroupId, 8800);
+  assert.deepEqual(groupPayload.removedMemberIds, [9001]);
+  assert.deepEqual(groupPayload.memberIds, [9002]);
+  assert.equal(groupPayload.legacyShiftId, 7700);
+
+  const returnPayload = JSON.parse(eventInserts[1].params[6]);
+  assert.equal(returnPayload.action, 'return_to_queue');
+  assert.equal(returnPayload.previousStatus, 'invited');
+  assert.equal(returnPayload.nextStatus, 'queue');
+  assert.equal(returnPayload.previousShiftId, 7700);
+  assert.equal(returnPayload.nextShiftId, null);
+  assert.equal(returnPayload.previousInviteGroupId, 8800);
+  assert.equal(returnPayload.legacyApplicationId, 9001);
+});
+
+test('returnToQueueInPostgres removes an empty invite group when the last member returns', async () => {
+  const pool = fakePool({
+    currentVersion: 80,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [makeInvitedCancellationApp()],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ]
+  });
+  const result = await returnToQueueInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+    now: new Date('2026-07-29T17:20:00.000Z')
+  });
+
+  assert.equal(result.inviteGroupRemoved, true);
+  assert.deepEqual(result.remainingMemberLegacyIds, []);
+  assert.equal(pool.getInviteGroups().length, 0);
+  assert.equal(pool.getInviteGroupMembers().length, 0);
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['invite_group_removed', 'application_returned_to_queue']);
+});
+
+test('returnToQueueInPostgres is a no-op for an already clean queue application', async () => {
+  const pool = fakePool({
+    currentVersion: 80,
+    metaUpdatedAt: '2026-07-20T00:00:00.000Z',
+    existingApplications: [
+      makeInvitedCancellationApp({
+        status: 'queue',
+        shift_id: null,
+        invite_group_id: null,
+        venue_id: null,
+        group_link: ''
+      })
+    ]
+  });
+  const result = await returnToQueueInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+    now: new Date('2026-07-29T17:20:00.000Z')
+  });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.version, 80);
+  assert.equal(result.updatedAt, '2026-07-20T00:00:00.000Z');
+  assert.equal(pool.getVersion(), 80);
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^COMMIT$/i.test(sql)));
+  assert.equal(sqls.some(sql => /UPDATE applications/i.test(sql)), false);
+  assert.equal(sqls.some(sql => /INSERT INTO application_events/i.test(sql)), false);
+});
+
+test('returnToQueueInPostgres rejects stale version, attended statuses and unknown applications', async () => {
+  const stalePool = fakePool({
+    currentVersion: 81,
+    existingApplications: [makeInvitedCancellationApp()]
+  });
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool: stalePool,
+      actor: recruiter,
+      command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+  );
+  assert.equal(stalePool.getApplications()[0].status, 'invited');
+  assert.ok(stalePool.calls.some(call => call.sql === 'ROLLBACK'));
+
+  for (const status of ['feedback', 'passed', 'failed', 'noshow']) {
+    const pool = fakePool({
+      currentVersion: 80,
+      existingApplications: [makeInvitedCancellationApp({ status })]
+    });
+    await assert.rejects(
+      () => returnToQueueInPostgres({
+        pool,
+        actor: recruiter,
+        command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+        now: new Date('2026-07-29T17:20:00.000Z')
+      }),
+      err => err instanceof PostgresCommandValidationError
+        && /до выхода на стажировку/.test(err.message)
+    );
+    assert.equal(pool.getApplications()[0].status, status);
+    assert.ok(pool.calls.some(call => call.sql === 'ROLLBACK'));
+  }
+
+  const missingPool = fakePool({ currentVersion: 80 });
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool: missingPool,
+      actor: recruiter,
+      command: { action: 'return_to_queue', baseVersion: 80, applicationId: 999999 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /application not found/.test(err.message)
+  );
+});
+
+test('returnToQueueInPostgres rejects invalid input and non-recruiters before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 80 });
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'return_to_queue', baseVersion: 80, applicationId: 0 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    /applicationId must be a positive integer/
+  );
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'return_to_queue', baseVersion: 0, applicationId: 9001 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    /baseVersion is required/
+  );
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: { id: '5' } } },
+      command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    err => err instanceof PostgresCommandAuthorizationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('returnToQueueInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 80,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [makeInvitedCancellationApp()],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' }
+    ],
+    eventInsertThrows: true
+  });
+  await assert.rejects(
+    () => returnToQueueInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'return_to_queue', baseVersion: 80, applicationId: 9001 },
+      now: new Date('2026-07-29T17:20:00.000Z')
+    }),
+    /event insert failed/
+  );
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
 });
 
 // -----------------------------------------------------------------------------

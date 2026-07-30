@@ -58,6 +58,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-update-shift-capacity-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-update-comment-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-set-application-status-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-assign-shift-write-smoke.js
@@ -65,6 +67,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-send-invites-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-cancel-internship-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-return-to-queue-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-cancel-shift-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \

@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 72%.
+- Общий прогресс: 76%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -38,6 +38,14 @@
   - updates `shifts.seats`, `updated_at` and `row_version`;
   - no-op when requested seats equal current seats;
   - `shift_capacity_changed` event;
+  - writes durable `shift_capacity_changed` notification/outbox rows for
+    trainees on that date in upcoming statuses `pending`, `confirmed` and
+    `invited`;
+  - excludes `feedback`/final/no-show trainees from capacity-change
+    notifications because their internship already moved past the date-change
+    stage;
+  - uses explicit `status='skipped'` + `telegram_chat_missing` when the trainee
+    has no Telegram target;
   - version bump only when capacity actually changes;
   - live PostgreSQL smoke inside `npm run test:postgres`.
 - `set_application_status` writable PostgreSQL command:
@@ -173,6 +181,38 @@
     internal experience flag rather than a trainee-facing stage change;
   - version bump only when the flag changes;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `return_to_queue` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - linked `invite_groups` row `FOR UPDATE` when present;
+  - optimistic `baseVersion` check;
+  - accepts only `queue`, `pending`, `confirmed` and `invited` applications;
+  - rejects post-attendance/final statuses so mentor results and history are not
+    silently erased;
+  - returns the application to preliminary queue with `status='queue'`;
+  - clears shift, invite group, venue, group link, candidate-report and mentor
+    result/delivery fields;
+  - removes the application from `invite_group_members`;
+  - updates the previous invite group timestamp or deletes the group when it
+    becomes empty;
+  - writes invite-group cleanup events plus `application_returned_to_queue`;
+  - returns an idempotent no-op for an already clean queue application;
+  - intentionally does not write a trainee notification/outbox row because this
+    is an internal recruiter correction path;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
+- `update_comment` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - trims comments the same way as the server JSON normalizer;
+  - rejects comments over 1200 characters;
+  - updates `applications.recruiter_comment`;
+  - writes `application_comment_updated` with previous/new comment lengths only,
+    avoiding raw recruiter-comment PII in event payloads;
+  - returns an idempotent no-op when the trimmed comment is unchanged;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -192,32 +232,31 @@
 
 ## Очередь Writable Команд
 
-1. `return_to_queue`
-2. `update_comment`
-3. `upsert_trainee_application`
-4. `cancel_application`
-5. `toggle_shift`
-6. `clear_state`
-7. `reset_demo_state`
-8. `mentor_report_result` через `/api/report`
+1. `upsert_trainee_application`
+2. `cancel_application`
+3. `toggle_shift`
+4. `clear_state`
+5. `reset_demo_state`
+6. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
-- The current UI action `Вернуть в новые заявки` still uses
-  `set_application_status -> pending` in JSON runtime. PostgreSQL
-  `set_application_status` intentionally rejects this until a dedicated command
-  decides how to handle the previous invite group, venue and archive links.
-  Do not wire `BOOKING_STORAGE_MODE=postgres` into `src/server.js` until this
-  correction path is implemented or the UI/API is adjusted.
+- PostgreSQL `return_to_queue` now implements the safe cleanup path for moving
+  pre-attendance trainees back to preliminary queue. The current JSON runtime UI
+  action `Вернуть в новые заявки` still uses `set_application_status ->
+  pending`; before writable runtime cutover, the UI/API must either call
+  `return_to_queue` where queue return is intended or define a separate
+  back-to-`pending` command.
 - PostgreSQL `assign_shift` is intentionally stricter than the legacy JSON
   helper: it only moves preliminary queue applications to open, non-canceled
   shifts. If UI/API needs to move an already assigned, confirmed or invited
   application, add a separate command that explicitly handles old shift,
   invite-group, venue and archive links before runtime cutover.
-- PostgreSQL `send_invites` now writes durable `notifications` rows, but there
-  is still no worker that claims pending rows and marks delivery as `sent`,
-  `failed` or `skipped`. Do not wire writable Postgres into runtime until the
-  worker/dry-run policy is implemented and tested.
+- PostgreSQL write commands that need trainee-facing messages now write durable
+  `notifications` rows for their covered paths, but there is still no worker
+  that claims pending rows and marks delivery as `sent`, `failed` or `skipped`.
+  Do not wire writable Postgres into runtime until the worker/dry-run policy is
+  implemented and tested.
 
 ## Two-Agent Rules
 
@@ -237,4 +276,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `return_to_queue`, then `update_comment`.
+slice is `upsert_trainee_application`, then `cancel_application`.

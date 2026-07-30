@@ -114,9 +114,14 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
   return_to_queue: contract({
     action: 'return_to_queue',
     actorRoles: ['recruiter'],
-    writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
-    locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION],
-    eventTypes: ['application_returned_to_queue']
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATIONS,
+      WRITE_TABLES.INVITE_GROUPS,
+      WRITE_TABLES.INVITE_GROUP_MEMBERS
+    ],
+    locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION, LOCK_SCOPES.INVITE_GROUP],
+    eventTypes: ['application_returned_to_queue', 'invite_group_updated', 'invite_group_removed']
   }),
 
   assign_shift: contract({

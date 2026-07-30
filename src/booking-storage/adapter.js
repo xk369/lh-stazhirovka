@@ -6,9 +6,11 @@ import {
   cancelShiftInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
+  returnToQueueInPostgres,
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  updateCommentInPostgres,
   updateShiftCapacityInPostgres
 } from '../postgres/write-booking-command.js';
 
@@ -61,6 +63,11 @@ export function createPostgresWriteBookingStorageAdapter({
       const state = await readFreshState();
       return { state, result };
     },
+    async update_comment(command, actor) {
+      const result = await updateCommentInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
     async set_application_status(command, actor) {
       const result = await setApplicationStatusInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
@@ -93,6 +100,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async mark_experienced(command, actor) {
       const result = await markExperiencedInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async return_to_queue(command, actor) {
+      const result = await returnToQueueInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }

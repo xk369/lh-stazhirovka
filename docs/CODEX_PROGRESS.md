@@ -6,7 +6,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Last Updated
 
-- Date: 2026-07-29
+- Date: 2026-07-30
 - Agent task: continue PostgreSQL migration work without touching production,
   keep handoff docs current, and prepare the next safe QA/implementation steps.
 
@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 72%.
+- Current migration progress: 76%.
 
 ## Migration Staging
 
@@ -53,7 +53,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added a Postgres write adapter seam and transactional `create_shift` path.
 - Added live PostgreSQL write smoke for `create_shift` inside `npm run test:postgres`.
 - Added a transactional `update_shift_capacity` Postgres write path with live
-  PostgreSQL smoke inside `npm run test:postgres`.
+  PostgreSQL smoke inside `npm run test:postgres`; later closed its durable
+  trainee notification/outbox gap for upcoming statuses.
 - Added a transactional `set_application_status` Postgres write path for
   forward recruiter transitions with live PostgreSQL smoke inside
   `npm run test:postgres`.
@@ -84,6 +85,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added a transactional `mark_experienced` Postgres write path for setting the
   recruiter-owned `experience='experienced'` flag only on passed trainees, with
   an `experienced_marked` audit event and no trainee notification.
+- Added a transactional `return_to_queue` Postgres write path for moving
+  pre-attendance applications back to preliminary queue, cleaning previous
+  invite-group membership and related application assignment fields.
+- Added a transactional `update_comment` Postgres write path for recruiter
+  comments, with PII-safe audit payloads that store only comment lengths.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -137,6 +143,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   PostgreSQL `mark_experienced`, adapter routing and unit coverage.
 - 2026-07-29: `npm run test:postgres` passed outside the sandbox after adding
   live `mark_experienced` PostgreSQL write smoke.
+- 2026-07-30: `npm test` passed, 231/231 tests after closing the
+  `update_shift_capacity` outbox gap and adding transactional PostgreSQL
+  `return_to_queue` and `update_comment`, adapter routing and unit coverage.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `update_shift_capacity` notification assertions plus `return_to_queue`
+  and `update_comment` PostgreSQL write smokes. A sandboxed run failed first
+  because local PostgreSQL could not create shared memory (`shmget Operation
+  not permitted`), then the same command passed with escalation.
 - 2026-07-29: `npm test` passed, 135/135 tests after integrating
   `create_shift` writable Postgres slice, safety check and command contracts
   into `migration/postgres-foundation`.
@@ -335,6 +349,37 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   adapter routing, unit coverage and live PostgreSQL smoke. No `src/server.js`
   runtime wiring, no live Telegram worker and no deploy. Raised migration
   progress to 72%.
+- 2026-07-30: added transactional PostgreSQL `return_to_queue` directly in
+  `migration/postgres-foundation`. The command is recruiter-only, locks
+  `booking_state_meta`, the target application and any linked invite group,
+  rejects stale versions and post-attendance/final statuses, moves
+  `queue`/`pending`/`confirmed`/`invited` applications back to preliminary
+  queue, clears previous shift/group/venue/report fields, removes old invite
+  membership, updates or deletes the old invite group, writes audit events and
+  returns an idempotent no-op for an already-clean queue application. No
+  trainee notification is written for this internal correction path. Added
+  adapter routing, command-contract scope, unit coverage and live PostgreSQL
+  smoke. No `src/server.js` runtime wiring, no live Telegram worker and no
+  deploy.
+- 2026-07-30: added transactional PostgreSQL `update_comment` directly in
+  `migration/postgres-foundation`. The command is recruiter-only, locks
+  `booking_state_meta` and the target application, rejects stale versions,
+  missing applications and comments over 1200 characters, trims the comment,
+  writes `applications.recruiter_comment`, records a PII-safe
+  `application_comment_updated` event with previous/new lengths only, and
+  returns an idempotent no-op when the trimmed comment is unchanged. Added
+  adapter routing, unit coverage and live PostgreSQL smoke. No `src/server.js`
+  runtime wiring, no live Telegram worker and no deploy. Raised migration
+  progress to 75%.
+- 2026-07-30: closed the old `update_shift_capacity` notification/outbox gap.
+  The Postgres command now writes durable `shift_capacity_changed`
+  `notifications` rows in the same transaction for trainees on that date in
+  upcoming statuses `pending`, `confirmed` and `invited`, while excluding
+  `feedback`/final/no-show statuses. Missing Telegram targets become explicit
+  `skipped` rows with `telegram_chat_missing`; no live Telegram delivery is
+  performed. Added unit coverage for pending/skipped rows and rollback on
+  notification insert failure, plus live PostgreSQL smoke assertions. Raised
+  migration progress to 76%.
 
 ## Documentation Audit
 
@@ -370,8 +415,9 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `return_to_queue`,
-   `update_comment` and `upsert_trainee_application`.
+   iteration; the next high-value backend commands are
+   `upsert_trainee_application`, `cancel_application`, `toggle_shift`,
+   `clear_state`, `reset_demo_state` and `mentor_report_result`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.
@@ -386,6 +432,16 @@ Known doc rule:
 8. Only after the critical `/api/state` write commands and required outbox
    paths are implemented and smoke-tested should we wire writable Postgres mode
    into `src/server.js`.
+
+## Current Runtime-Wiring Notes
+
+- PostgreSQL `return_to_queue` now defines the safe cleanup path for sending a
+  pre-attendance trainee back to preliminary queue. Before writable runtime
+  cutover, the UI/API path currently labeled `Вернуть в новые заявки` must be
+  mapped to this command where queue return is intended, or a separate
+  back-to-`pending` command must be specified.
+- PostgreSQL `update_comment` is internal and intentionally does not create a
+  trainee notification/outbox row.
 
 ## Do Not Forget
 
