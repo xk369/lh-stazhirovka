@@ -11,6 +11,7 @@ import {
   clearStateInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
+  mentorReportResultInPostgres,
   returnToQueueInPostgres,
   resetDemoStateInPostgres,
   sendInvitesInPostgres,
@@ -32,6 +33,7 @@ function fakePool({
   existingInviteGroups = [],
   existingInviteGroupMembers = [],
   existingMentorReports = [],
+  existingMentorReportTopics = [],
   existingNotifications = [],
   eventInsertThrows = false,
   notificationInsertThrows = false,
@@ -44,6 +46,7 @@ function fakePool({
   const notifications = existingNotifications.map(row => ({ ...row }));
   const inviteGroupMembers = existingInviteGroupMembers.map(row => ({ ...row }));
   const mentorReports = existingMentorReports.map(row => ({ ...row }));
+  const mentorReportTopics = existingMentorReportTopics.map(row => ({ ...row }));
   let version = currentVersion;
   let updatedAt = metaUpdatedAt;
 
@@ -441,7 +444,7 @@ function fakePool({
         if (notificationInsertThrows) {
           throw new Error('notification insert failed');
         }
-        const idempotencyKey = params[9];
+        const idempotencyKey = params[10];
         if (
           idempotencyKey
           && notifications.some(row => String(row.idempotency_key) === String(idempotencyKey))
@@ -451,17 +454,18 @@ function fakePool({
         notifications.push({
           id: params[0],
           application_id: params[1],
-          type: params[2],
-          chat_id: params[3],
-          chat_target: params[4],
-          text: params[5],
-          parse_mode: params[6],
-          status: params[7],
-          error: params[8],
-          idempotency_key: params[9],
-          next_attempt_at: params[10],
-          created_at: params[11],
-          updated_at: params[12]
+          mentor_report_id: params[2],
+          type: params[3],
+          chat_id: params[4],
+          chat_target: params[5],
+          text: params[6],
+          parse_mode: params[7],
+          status: params[8],
+          error: params[9],
+          idempotency_key: params[10],
+          next_attempt_at: params[11],
+          created_at: params[12],
+          updated_at: params[13]
         });
         return { rowCount: 1, rows: [] };
       }
@@ -506,6 +510,47 @@ function fakePool({
           }
         }
         return { rowCount: count, rows: [] };
+      }
+      if (/SELECT id\s+FROM mentor_reports\s+WHERE application_id/i.test(sql)) {
+        const appUuid = String(params[0]);
+        const rows = mentorReports
+          .filter(report => String(report.application_id) === appUuid && !report.voided_at)
+          .map(report => ({ id: report.id }));
+        return { rowCount: rows.length, rows };
+      }
+      if (/INSERT INTO mentor_reports/i.test(sql)) {
+        mentorReports.push({
+          id: params[0],
+          application_id: params[1],
+          mentor_telegram_user_id: params[2],
+          mentor_username: params[3],
+          mentor_name: params[4],
+          result_status: params[5],
+          decision: params[6],
+          mastered: params[7],
+          total: params[8],
+          venue_id: params[9],
+          venue_label: params[10],
+          venue_loft: params[11],
+          hall: params[12],
+          mentor_comment: params[13],
+          trainee_message_text: params[14],
+          report_text: params[15],
+          source: 'api_report',
+          created_at: params[16],
+          voided_at: null
+        });
+        return { rowCount: 1, rows: [] };
+      }
+      if (/INSERT INTO mentor_report_topics/i.test(sql)) {
+        mentorReportTopics.push({
+          id: params[0],
+          mentor_report_id: params[1],
+          topic_order: params[2],
+          title: params[3],
+          created_at: params[4]
+        });
+        return { rowCount: 1, rows: [] };
       }
       if (/UPDATE applications\s+SET shift_id = \$1,\s+invite_group_id = NULL/is.test(sql)) {
         const target = apps.find(app => String(app.id) === String(params[14]));
@@ -726,6 +771,29 @@ function fakePool({
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
+      if (/UPDATE applications\s+SET status = \$1,\s+mentor_report_received = true/is.test(sql)) {
+        const nextStatus = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[11]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.status = nextStatus;
+          target.mentor_report_received = true;
+          target.mentor_report_at = nowIso;
+          target.mentor_reporter_telegram_user_id = params[2];
+          target.mentor_decision = params[3];
+          target.mentor_report_venue_id = params[4];
+          target.mentor_report_venue = params[5];
+          target.mentor_report_loft = params[6];
+          target.mentor_report_hall = params[7];
+          target.mentor_comment_for_trainee = params[8];
+          target.mentor_comment_sent_at = null;
+          target.mentor_comment_delivery_status = params[9];
+          target.mentor_comment_delivery_error = params[10];
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
       if (/UPDATE applications\s+SET experience = 'experienced'/is.test(sql)) {
         const nowIso = params[0];
         const appUuid = String(params[1]);
@@ -804,6 +872,7 @@ function fakePool({
     getInviteGroups: () => inviteGroups,
     getInviteGroupMembers: () => inviteGroupMembers,
     getMentorReports: () => mentorReports,
+    getMentorReportTopics: () => mentorReportTopics,
     getNotifications: () => notifications,
     getShifts: () => shifts,
     getApplications: () => apps,
@@ -816,6 +885,17 @@ function fakePool({
 
 const recruiter = { role: 'recruiter', telegram: { user: { id: '111' } } };
 const trainee = { role: 'trainee', userId: '222', telegram: { user: { id: '222', username: 'trainee_user' } } };
+const mentor = {
+  role: 'mentor',
+  telegram: {
+    user: {
+      id: '333',
+      username: 'mentor_user',
+      first_name: 'Софья',
+      last_name: 'Сучкова'
+    }
+  }
+};
 
 function traineeApplication(overrides = {}) {
   return {
@@ -830,6 +910,31 @@ function traineeApplication(overrides = {}) {
     telegramCode: '@manual_note',
     status: 'pending',
     comment: '',
+    ...overrides
+  };
+}
+
+function mentorReportCommand(overrides = {}) {
+  return {
+    action: 'mentor_report_result',
+    applicationId: 501,
+    mentorTraineeName: 'Иван Иванов',
+    mentorDecision: 'Стажировка пройдена',
+    mentorCommentForTrainee: 'Внутренний комментарий наставника.',
+    reportText: 'Полный отчёт наставника для группы.',
+    mentorTraineeResult: {
+      date: '2026-08-01',
+      venue: 'LOFT #5 · SMALL',
+      venueId: 'loft5_small',
+      venueLoft: 'LOFT #5',
+      hall: 'SMALL',
+      mastered: 28,
+      total: 29,
+      decision: 'Стажировка пройдена',
+      topicsToRepeat: [
+        { order: 16, title: 'Синхронная подача и сервировка тарелок' }
+      ]
+    },
     ...overrides
   };
 }
@@ -2775,6 +2880,315 @@ const queuedApp = {
   experience: null,
   mentor_report_received: false
 };
+
+// -----------------------------------------------------------------------------
+// mentor_report_result
+// -----------------------------------------------------------------------------
+
+const mentorReportShift = {
+  id: 'shift-uuid-mentor',
+  legacy_id: 808,
+  date: '2026-08-01',
+  seats: 3,
+  open: true,
+  canceled: false
+};
+
+const mentorReportApp = {
+  id: 'app-uuid-mentor-501',
+  legacy_id: 501,
+  shift_id: 'shift-uuid-mentor',
+  status: 'feedback',
+  invite_group_id: 'group-uuid-mentor',
+  group_link: 'https://t.me/+mentor-group',
+  venue_id: 'loft5_small',
+  trainee_telegram_user_id: '222',
+  trainee_telegram_chat_id: '999222',
+  telegram_username: 'trainee_user',
+  name: 'Иван Иванов',
+  mentor_report_received: false
+};
+
+test('mentorReportResultInPostgres stores report, queues trainee result and auto-closes resolved shift', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingInviteGroups: [{
+      id: 'group-uuid-mentor',
+      legacy_id: 901,
+      shift_id: 'shift-uuid-mentor',
+      venue_id: 'loft5_small',
+      link: 'https://t.me/+mentor-group'
+    }],
+    existingApplications: [
+      { ...mentorReportApp },
+      {
+        id: 'app-uuid-mentor-502',
+        legacy_id: 502,
+        shift_id: 'shift-uuid-mentor',
+        status: 'passed',
+        invite_group_id: 'group-uuid-mentor',
+        group_link: 'https://t.me/+mentor-group',
+        venue_id: 'loft5_small',
+        mentor_report_received: true
+      }
+    ]
+  });
+  const now = new Date('2026-07-30T12:00:00.000Z');
+
+  const result = await mentorReportResultInPostgres({
+    pool,
+    actor: mentor,
+    command: mentorReportCommand(),
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.applicationLegacyId, 501);
+  assert.equal(result.previousStatus, 'feedback');
+  assert.equal(result.nextStatus, 'passed');
+  assert.equal(result.shiftLegacyId, 808);
+  assert.equal(result.shiftAutoClosed, true);
+  assert.equal(result.version, 41);
+  assert.equal(pool.getVersion(), 41);
+  assert.equal(pool.getShifts()[0].open, false);
+
+  const app = pool.getApplications().find(row => Number(row.legacy_id) === 501);
+  assert.equal(app.status, 'passed');
+  assert.equal(app.mentor_report_received, true);
+  assert.equal(app.mentor_reporter_telegram_user_id, '333');
+  assert.equal(app.mentor_decision, 'Стажировка пройдена');
+  assert.equal(app.mentor_report_venue_id, 'loft5_small');
+  assert.equal(app.mentor_report_hall, 'SMALL');
+  assert.equal(app.mentor_comment_delivery_status, null);
+  assert.equal(app.mentor_comment_delivery_error, '');
+
+  const reports = pool.getMentorReports();
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].application_id, 'app-uuid-mentor-501');
+  assert.equal(reports[0].result_status, 'passed');
+  assert.equal(reports[0].mentor_username, 'mentor_user');
+  assert.equal(reports[0].source, 'api_report');
+  assert.ok(reports[0].trainee_message_text.includes('📋 <b>Итоги стажировки</b>'));
+  assert.ok(reports[0].trainee_message_text.includes('🟢 Стажировка пройдена.'));
+
+  const topics = pool.getMentorReportTopics();
+  assert.equal(topics.length, 1);
+  assert.equal(topics[0].mentor_report_id, reports[0].id);
+  assert.equal(topics[0].topic_order, 16);
+
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].mentor_report_id, reports[0].id);
+  assert.equal(notifications[0].type, 'mentor_result');
+  assert.equal(notifications[0].status, 'pending');
+  assert.equal(notifications[0].chat_id, '999222');
+  assert.equal(notifications[0].chat_target, 'trainee');
+  assert.equal(notifications[0].parse_mode, 'HTML');
+  assert.ok(notifications[0].text.includes('Темы для повторения'));
+  assert.ok(notifications[0].idempotency_key.startsWith('mentor_report_result:501:'));
+  assert.deepEqual(result.notifications, { total: 1, pending: 1, skipped: 0, inserted: 1 });
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.deepEqual(eventInserts.map(call => call.params[3]), [
+    'mentor_report_received',
+    'application_passed',
+    'mentor_result_notification_queued',
+    'shift_auto_closed'
+  ]);
+  const reportPayload = JSON.parse(eventInserts[0].params[6]);
+  assert.equal(reportPayload.action, 'mentor_report_result');
+  assert.equal(reportPayload.previousStatus, 'feedback');
+  assert.equal(reportPayload.nextStatus, 'passed');
+  assert.equal(reportPayload.topicCount, 1);
+  assert.ok(pool.calls.some(call => /^COMMIT$/i.test(call.sql)));
+});
+
+test('mentorReportResultInPostgres records failed result and skipped trainee notification without chat id', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift, open: true }],
+    existingApplications: [{
+      ...mentorReportApp,
+      trainee_telegram_user_id: null,
+      trainee_telegram_chat_id: null
+    }]
+  });
+  const result = await mentorReportResultInPostgres({
+    pool,
+    actor: mentor,
+    command: mentorReportCommand({
+      mentorDecision: 'Требуется повторная стажировка',
+      mentorTraineeResult: {
+        ...mentorReportCommand().mentorTraineeResult,
+        decision: 'Требуется повторная стажировка'
+      }
+    }),
+    now: new Date('2026-07-30T12:00:00.000Z')
+  });
+
+  assert.equal(result.nextStatus, 'failed');
+  assert.equal(result.mentorCommentDeliveryStatus, 'skipped');
+  assert.equal(result.mentorCommentDeliveryError, 'telegram_chat_missing');
+  assert.deepEqual(result.notifications, { total: 1, pending: 0, skipped: 1, inserted: 1 });
+  assert.equal(pool.getApplications()[0].status, 'failed');
+  assert.equal(pool.getApplications()[0].mentor_comment_delivery_status, 'skipped');
+  assert.equal(pool.getApplications()[0].mentor_comment_delivery_error, 'telegram_chat_missing');
+  assert.equal(pool.getNotifications()[0].status, 'skipped');
+  assert.equal(pool.getNotifications()[0].chat_id, null);
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.deepEqual(eventInserts.map(call => call.params[3]), [
+    'mentor_report_received',
+    'application_failed',
+    'mentor_result_notification_skipped',
+    'shift_auto_closed'
+  ]);
+});
+
+test('mentorReportResultInPostgres rejects duplicate, mismatched and ineligible reports', async () => {
+  const duplicatePool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingApplications: [{ ...mentorReportApp }],
+    existingMentorReports: [{ id: 'report-existing', application_id: 'app-uuid-mentor-501' }]
+  });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: duplicatePool,
+      actor: mentor,
+      command: mentorReportCommand(),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandConflictError
+      && /уже отправлен/i.test(err.message)
+  );
+  assert.ok(duplicatePool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.equal(duplicatePool.getMentorReports().length, 1);
+
+  const mismatchPool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingApplications: [{ ...mentorReportApp }]
+  });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: mismatchPool,
+      actor: mentor,
+      command: mentorReportCommand({ mentorTraineeName: 'Пётр Петров' }),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /не совпадает с заявкой/i.test(err.message)
+  );
+
+  const wrongHallPool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingApplications: [{ ...mentorReportApp }]
+  });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: wrongHallPool,
+      actor: mentor,
+      command: mentorReportCommand({
+        mentorTraineeResult: {
+          ...mentorReportCommand().mentorTraineeResult,
+          hall: 'BLACKWOOD'
+        }
+      }),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /Зал отчёта не относится/i.test(err.message)
+  );
+
+  const ineligiblePool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingApplications: [{ ...mentorReportApp, status: 'confirmed' }]
+  });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: ineligiblePool,
+      actor: mentor,
+      command: mentorReportCommand(),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /cannot receive mentor report/i.test(err.message)
+  );
+});
+
+test('mentorReportResultInPostgres rejects invalid inputs and non-mentor actors before opening transaction', async () => {
+  const unauthorizedPool = fakePool({ currentVersion: 40 });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: unauthorizedPool,
+      actor: recruiter,
+      command: mentorReportCommand(),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    PostgresCommandAuthorizationError
+  );
+  assert.equal(unauthorizedPool.calls.some(call => call.sql === 'CONNECT'), false);
+
+  const invalidDecisionPool = fakePool({ currentVersion: 40 });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: invalidDecisionPool,
+      actor: mentor,
+      command: mentorReportCommand({ mentorDecision: 'Непонятный итог' }),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /mentorDecision is invalid/.test(err.message)
+  );
+  assert.equal(invalidDecisionPool.calls.some(call => call.sql === 'CONNECT'), false);
+
+  const invalidTopicsPool = fakePool({ currentVersion: 40 });
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool: invalidTopicsPool,
+      actor: mentor,
+      command: mentorReportCommand({
+        mentorTraineeResult: {
+          ...mentorReportCommand().mentorTraineeResult,
+          mastered: 30,
+          total: 29
+        }
+      }),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    err => err instanceof PostgresCommandValidationError
+      && /cannot exceed total/.test(err.message)
+  );
+  assert.equal(invalidTopicsPool.calls.some(call => call.sql === 'CONNECT'), false);
+});
+
+test('mentorReportResultInPostgres rolls back and releases when notification insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 40,
+    existingShifts: [{ ...mentorReportShift }],
+    existingApplications: [{ ...mentorReportApp }],
+    notificationInsertThrows: true
+  });
+
+  await assert.rejects(
+    () => mentorReportResultInPostgres({
+      pool,
+      actor: mentor,
+      command: mentorReportCommand(),
+      now: new Date('2026-07-30T12:00:00.000Z')
+    }),
+    /notification insert failed/
+  );
+
+  const sqls = pool.calls.map(call => call.sql.trim());
+  assert.ok(sqls.some(sql => /^ROLLBACK$/i.test(sql)));
+  assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
+  assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
+});
 
 test('assignShiftInPostgres moves queue application onto target shift with pending status', async () => {
   const pool = fakePool({

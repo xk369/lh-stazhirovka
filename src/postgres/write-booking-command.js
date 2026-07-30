@@ -3,9 +3,11 @@ import {
   BOOKING_STATUSES,
   BOOKING_STEP_BACK_STATUSES,
   BOOKING_STATUS_LABELS,
+  MENTOR_REPORT_TRAINEE_STATUSES,
   SEAT_HOLDING_STATUSES,
   SHIFT_CANCELLATION_APPLICATION_STATUSES,
   TRAINEE_WRITE_STATUSES,
+  bookingStatusFromMentorDecision,
   canRecruiterSetApplicationStatus
 } from '../booking-state-machine.js';
 import { buildBookingImportPlan } from './import-booking-state.js';
@@ -45,6 +47,11 @@ const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const TRAINEE_MUTABLE_STATUSES = new Set(['pending', 'queue']);
 const CANCEL_APPLICATION_STATUSES = new Set(['pending', 'queue']);
+const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
+const MENTOR_RESULT_STATUS_EVENTS = Object.freeze({
+  passed: 'application_passed',
+  failed: 'application_failed'
+});
 const TRAINEE_PROFILE_FIELDS = Object.freeze([
   'name',
   'phone',
@@ -286,13 +293,144 @@ const VENUE_LABELS = Object.freeze({
   birch: 'THE BIRCH',
   metelitsa: 'МЕТЕЛИЦА'
 });
+const VENUE_HALLS = Object.freeze({
+  loft1: { loft: 'LOFT #1', halls: ['AVANTAGE', 'CHATEAU', 'ROYAL BLANC'] },
+  loft2: { loft: 'LOFT #2', halls: ['ROCKFELLER&ROTHSHILD`S HALL', 'BACKYARD'] },
+  loft3: { loft: 'LOFT #3', halls: ['MONTBLANC', 'GRACE', 'RATUSHA'] },
+  loft4: { loft: 'LOFT #4', halls: ['ANDY&CYNDY', 'MONDRIAN', 'BANKSY', 'LONG&ITTEN'] },
+  loft5_contrabanda: { loft: 'LOFT #5', halls: ['CONTRABANDA'], fixedHall: 'CONTRABANDA' },
+  loft5_small: { loft: 'LOFT #5', halls: ['SMALL'], fixedHall: 'SMALL' },
+  loft8: { loft: 'LOFT #8', halls: ['MAIN HALL', 'WELCOME HALL', 'ROSEWOOD HALL', 'MILINIS HALL'] },
+  loft10: { loft: 'LOFT #10 (TAU)', halls: ['MAIN HALL'], fixedHall: 'MAIN HALL' },
+  birch: { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
+  metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] }
+});
 
 function statusLabel(status) {
   return BOOKING_STATUS_LABELS[status] || status;
 }
 
+function requireMentor(actor) {
+  if (!actor || actor.role !== 'mentor') {
+    throw new PostgresCommandAuthorizationError('Недостаточно прав для отчёта наставника.');
+  }
+  if (!actorTelegramUserId(actor)) {
+    throw new PostgresCommandAuthorizationError('Не удалось определить Telegram ID наставника.');
+  }
+}
+
+function actorTelegramName(actor) {
+  return [
+    String(actor?.telegram?.user?.first_name || '').trim(),
+    String(actor?.telegram?.user?.last_name || '').trim()
+  ].filter(Boolean).join(' ');
+}
+
+function comparablePersonName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeVenueReportHall(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeMentorTraineeResult(value) {
+  const result = value && typeof value === 'object' ? value : {};
+  const topics = Array.isArray(result.topicsToRepeat) ? result.topicsToRepeat : [];
+  const normalized = {
+    date: normalizeOptionalText(result.date, 'mentorTraineeResult.date', 20),
+    venue: normalizeOptionalText(result.venue, 'mentorTraineeResult.venue', 120),
+    venueId: normalizeOptionalText(result.venueId, 'mentorTraineeResult.venueId', 80),
+    venueLoft: normalizeOptionalText(result.venueLoft, 'mentorTraineeResult.venueLoft', 80),
+    hall: normalizeOptionalText(normalizeVenueReportHall(result.hall), 'mentorTraineeResult.hall', 80),
+    mastered: Math.max(Number.parseInt(result.mastered, 10) || 0, 0),
+    total: Math.max(Number.parseInt(result.total, 10) || 0, 0),
+    decision: normalizeOptionalText(result.decision, 'mentorTraineeResult.decision', 120),
+    topicsToRepeat: topics.slice(0, 40).map((topic, index) => ({
+      order: Math.max(Number.parseInt(topic?.order, 10) || index + 1, 1),
+      title: normalizeRequiredText(topic?.title, 'mentorTraineeResult.topic.title', 220)
+    }))
+  };
+  if (normalized.total > 0 && normalized.mastered > normalized.total) {
+    throw new PostgresCommandValidationError('mentorTraineeResult.mastered cannot exceed total.');
+  }
+  return normalized;
+}
+
+function normalizeMentorReportInput(command) {
+  const mentorTraineeResult = normalizeMentorTraineeResult(command?.mentorTraineeResult);
+  const mentorDecision = normalizeRequiredText(
+    command?.mentorDecision || mentorTraineeResult.decision,
+    'mentorDecision',
+    120
+  );
+  const nextStatus = bookingStatusFromMentorDecision(mentorDecision, '');
+  if (!MENTOR_RESULT_STATUS_EVENTS[nextStatus]) {
+    throw new PostgresCommandValidationError('mentorDecision is invalid.');
+  }
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    mentorTraineeName: normalizeOptionalText(command?.mentorTraineeName, 'mentorTraineeName', 180),
+    mentorDecision,
+    mentorCommentForTrainee: normalizeOptionalText(
+      command?.mentorCommentForTrainee,
+      'mentorCommentForTrainee',
+      1200
+    ),
+    reportText: normalizeRequiredText(command?.reportText, 'reportText', 3900),
+    mentorTraineeResult: {
+      ...mentorTraineeResult,
+      decision: mentorTraineeResult.decision || mentorDecision
+    },
+    nextStatus
+  };
+}
+
+function ensureMentorReportTargetMatchesRow(row, submittedName) {
+  const expectedName = comparablePersonName(row?.name);
+  const receivedName = comparablePersonName(submittedName);
+  if (expectedName && receivedName && expectedName !== receivedName) {
+    throw new PostgresCommandValidationError(
+      'Выбранный стажёр не совпадает с заявкой. Обновите список и выберите стажёра заново.'
+    );
+  }
+}
+
+function ensureMentorReportVenueMatchesRow(row, resultPayload) {
+  const result = normalizeMentorTraineeResult(resultPayload);
+  const expectedVenueId = normalizeOptionalText(row?.venue_id, 'application.venueId', 80);
+  if (!expectedVenueId || !result.venueId) return;
+  if (expectedVenueId !== result.venueId) {
+    throw new PostgresCommandValidationError(
+      'Площадка отчёта не совпадает с площадкой заявки стажёра. Обновите список и выберите стажёра заново.'
+    );
+  }
+
+  const config = VENUE_HALLS[expectedVenueId];
+  if (!config) return;
+  if (config.halls.length > 1 && !result.hall) {
+    throw new PostgresCommandValidationError('Выберите зал стажировки внутри площадки стажёра.');
+  }
+  if (result.hall && config.halls.length && !config.halls.includes(result.hall)) {
+    throw new PostgresCommandValidationError('Зал отчёта не относится к площадке заявки стажёра.');
+  }
+}
+
 function applicationRowHasInviteGroup(row) {
   return Boolean(row.invite_group_id) || Boolean(String(row.group_link || '').trim());
+}
+
+function applicationRowCanReceiveMentorReport(row) {
+  return (
+    !row?.mentor_report_received
+    && applicationRowHasInviteGroup(row)
+    && MENTOR_REPORT_TRAINEE_STATUSES.has(String(row?.status || ''))
+  );
 }
 
 function applicationRowCompletesShift(row) {
@@ -795,6 +933,33 @@ function composeBookingStageChangedNotificationText({ currentStatus, previousSta
   ].join('\n');
 }
 
+function composeMentorResultNotificationText({ result }) {
+  const passed = result.decision === 'Стажировка пройдена';
+  const decisionLine = passed ? '🟢 Стажировка пройдена.' : '🔴 Стажировка не пройдена.';
+  const topics = result.topicsToRepeat
+    .map(topic => `• ${topic.order}. ${escapeTelegramHtml(topic.title)}`);
+  const lines = [
+    '📋 <b>Итоги стажировки</b>',
+    '',
+    `Дата: ${escapeTelegramHtml(displayShiftDate(result.date))}`,
+    `Площадка: ${escapeTelegramHtml(result.venue || '—')}`,
+    '',
+    `Освоено: ${result.mastered} из ${result.total} тем.`,
+    ''
+  ];
+
+  if (topics.length) {
+    lines.push('📚 <b>Темы для повторения</b>', '', ...topics);
+  } else if (passed) {
+    lines.push('🎉 Поздравляем! Все темы успешно освоены.');
+  } else {
+    lines.push('📚 Темы для повторения не указаны наставником.');
+  }
+
+  lines.push('', '━━━━━━━━━━━━━━━', '', decisionLine);
+  return lines.join('\n').trim();
+}
+
 function stableNotificationKey(parts) {
   const digest = createHash('sha256')
     .update(JSON.stringify(parts))
@@ -962,6 +1127,33 @@ function stepBackNotificationRow({ app, previousStatus, nextStatus, nowIso }) {
   };
 }
 
+function mentorResultNotificationRow({ app, mentorReportId, result, nextStatus, nowIso }) {
+  const chatId = String(app.trainee_telegram_chat_id || app.trainee_telegram_user_id || '').trim();
+  const notificationKey = stableNotificationKey({
+    action: 'mentor_report_result',
+    applicationLegacyId: Number(app.legacy_id),
+    nextStatus,
+    mentorReportId
+  });
+  const status = chatId ? 'pending' : 'skipped';
+  return {
+    id: randomUUID(),
+    applicationId: app.id,
+    mentorReportId,
+    type: 'mentor_result',
+    chatId: chatId || null,
+    chatTarget: 'trainee',
+    text: composeMentorResultNotificationText({ result }),
+    parseMode: 'HTML',
+    status,
+    error: status === 'skipped' ? 'telegram_chat_missing' : null,
+    idempotencyKey: notificationKey,
+    nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
 async function insertNotifications(client, rows) {
   if (!Array.isArray(rows) || rows.length === 0) return { inserted: 0 };
   let inserted = 0;
@@ -969,15 +1161,16 @@ async function insertNotifications(client, rows) {
     const result = await client.query(
       `
         INSERT INTO notifications (
-          id, application_id, type, chat_id, chat_target, text, parse_mode,
+          id, application_id, mentor_report_id, type, chat_id, chat_target, text, parse_mode,
           status, error, idempotency_key, next_attempt_at, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (idempotency_key) DO NOTHING
       `,
       [
         row.id,
         row.applicationId,
+        row.mentorReportId || null,
         row.type,
         row.chatId,
         row.chatTarget,
@@ -2537,6 +2730,327 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
       shiftLegacyId,
       shiftAutoClosed,
       shiftDate: shiftDateText,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function mentorReportResultInPostgres({ pool, actor, command, now = new Date() }) {
+  requireMentor(actor);
+  const {
+    applicationLegacyId,
+    mentorTraineeName,
+    mentorDecision,
+    mentorCommentForTrainee,
+    reportText,
+    mentorTraineeResult,
+    nextStatus
+  } = normalizeMentorReportInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              shifts.date::text AS shift_date,
+              applications.invite_group_id,
+              invite_groups.legacy_id AS invite_group_legacy_id,
+              applications.venue_id,
+              applications.group_link,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.name,
+              applications.mentor_report_received
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+         LEFT JOIN invite_groups ON invite_groups.id = applications.invite_group_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    const previousStatus = String(app.status || '');
+
+    const activeReportResult = await client.query(
+      `SELECT id
+         FROM mentor_reports
+        WHERE application_id = $1
+          AND voided_at IS NULL
+        FOR UPDATE`,
+      [app.id]
+    );
+    if (activeReportResult.rowCount > 0) {
+      throw new PostgresCommandConflictError('Отчёт по этому стажёру уже отправлен.');
+    }
+    if (!applicationRowCanReceiveMentorReport(app)) {
+      throw new PostgresCommandValidationError('application cannot receive mentor report.');
+    }
+    ensureMentorReportTargetMatchesRow(app, mentorTraineeName);
+    ensureMentorReportVenueMatchesRow(app, mentorTraineeResult);
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const mentorReportId = randomUUID();
+    const shiftLegacyId = app.shift_legacy_id ? Number(app.shift_legacy_id) : null;
+    const traineeMessageText = composeMentorResultNotificationText({ result: mentorTraineeResult });
+    const mentorUsername = actorTelegramUsername(actor);
+    const mentorName = actorTelegramName(actor);
+
+    await client.query(
+      `INSERT INTO mentor_reports (
+          id, application_id, mentor_telegram_user_id, mentor_username, mentor_name,
+          result_status, decision, mastered, total,
+          venue_id, venue_label, venue_loft, hall,
+          mentor_comment, trainee_message_text, report_text, source, created_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5,
+          $6, $7, $8, $9,
+          $10, $11, $12, $13,
+          $14, $15, $16, 'api_report', $17
+        )`,
+      [
+        mentorReportId,
+        app.id,
+        actorTelegramUserId(actor),
+        mentorUsername,
+        mentorName,
+        nextStatus,
+        mentorDecision,
+        mentorTraineeResult.mastered,
+        mentorTraineeResult.total,
+        mentorTraineeResult.venueId,
+        mentorTraineeResult.venue,
+        mentorTraineeResult.venueLoft,
+        mentorTraineeResult.hall,
+        mentorCommentForTrainee,
+        traineeMessageText,
+        reportText,
+        nowIso
+      ]
+    );
+
+    for (const topic of mentorTraineeResult.topicsToRepeat) {
+      await client.query(
+        `INSERT INTO mentor_report_topics (
+            id, mentor_report_id, topic_order, title, created_at
+          )
+          VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), mentorReportId, topic.order, topic.title, nowIso]
+      );
+    }
+
+    const notificationRow = mentorResultNotificationRow({
+      app,
+      mentorReportId,
+      result: mentorTraineeResult,
+      nextStatus,
+      nowIso
+    });
+    const mentorCommentDeliveryStatus = MENTOR_COMMENT_DELIVERY_STATUSES.has(notificationRow.status)
+      ? notificationRow.status
+      : null;
+    const mentorCommentDeliveryError = notificationRow.status === 'skipped'
+      ? notificationRow.error || ''
+      : '';
+
+    await client.query(
+      `UPDATE applications
+          SET status = $1,
+              mentor_report_received = true,
+              mentor_report_at = $2,
+              mentor_reporter_telegram_user_id = $3,
+              mentor_decision = $4,
+              mentor_report_venue_id = $5,
+              mentor_report_venue = $6,
+              mentor_report_loft = $7,
+              mentor_report_hall = $8,
+              mentor_comment_for_trainee = $9,
+              mentor_comment_sent_at = NULL,
+              mentor_comment_delivery_status = $10,
+              mentor_comment_delivery_error = $11,
+              updated_at = $2,
+              row_version = row_version + 1
+        WHERE id = $12`,
+      [
+        nextStatus,
+        nowIso,
+        actorTelegramUserId(actor),
+        mentorDecision,
+        mentorTraineeResult.venueId,
+        mentorTraineeResult.venue,
+        mentorTraineeResult.venueLoft,
+        mentorTraineeResult.hall,
+        mentorCommentForTrainee,
+        mentorCommentDeliveryStatus,
+        mentorCommentDeliveryError,
+        app.id
+      ]
+    );
+
+    const notificationResult = await insertNotifications(client, [notificationRow]);
+
+    let shiftAutoClosed = false;
+    let shiftDateText = app.shift_date || '';
+    if (app.shift_id) {
+      const shiftResult = await client.query(
+        `SELECT id, legacy_id, open, canceled, date::text AS date
+           FROM shifts
+          WHERE id = $1
+          FOR UPDATE`,
+        [app.shift_id]
+      );
+      if (shiftResult.rowCount === 1) {
+        const shiftRow = shiftResult.rows[0];
+        shiftDateText = shiftDateAsString(shiftRow.date);
+        if (!shiftRow.canceled && shiftRow.open) {
+          const cohort = await client.query(
+            `SELECT status, mentor_report_received
+               FROM applications
+              WHERE shift_id = $1`,
+            [app.shift_id]
+          );
+          const rows = cohort.rows;
+          const allFinal = rows.length > 0 && rows.every(applicationRowCompletesShift);
+          if (allFinal) {
+            await client.query(
+              `UPDATE shifts
+                  SET open = false,
+                      updated_at = $1,
+                      row_version = row_version + 1
+                WHERE id = $2`,
+              [nowIso, app.shift_id]
+            );
+            shiftAutoClosed = true;
+          }
+        }
+      }
+    }
+
+    const events = [
+      {
+        eventType: 'mentor_report_received',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'mentor',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          mentorReportId,
+          previousStatus,
+          nextStatus,
+          mentorDecision,
+          venueId: mentorTraineeResult.venueId,
+          hall: mentorTraineeResult.hall,
+          mastered: mentorTraineeResult.mastered,
+          total: mentorTraineeResult.total,
+          topicCount: mentorTraineeResult.topicsToRepeat.length
+        },
+        createdAt: nowIso
+      },
+      {
+        eventType: MENTOR_RESULT_STATUS_EVENTS[nextStatus],
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'mentor',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          previousStatus,
+          nextStatus,
+          mentorReportId
+        },
+        createdAt: nowIso
+      }
+    ];
+    if (notificationRow.status === 'pending') {
+      events.push({
+        eventType: 'mentor_result_notification_queued',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'system',
+        actorTelegramUserId: null,
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          mentorReportId,
+          idempotencyKey: notificationRow.idempotencyKey
+        },
+        createdAt: nowIso
+      });
+    }
+    if (notificationRow.status === 'skipped') {
+      events.push({
+        eventType: 'mentor_result_notification_skipped',
+        applicationId: applicationLegacyId,
+        shiftId: shiftLegacyId,
+        actorType: 'system',
+        actorTelegramUserId: null,
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          mentorReportId,
+          reason: notificationRow.error || 'telegram_chat_missing'
+        },
+        createdAt: nowIso
+      });
+    }
+    if (shiftAutoClosed) {
+      events.push({
+        eventType: 'shift_auto_closed',
+        applicationId: null,
+        shiftId: shiftLegacyId,
+        actorType: 'system',
+        actorTelegramUserId: null,
+        payload: {
+          action: 'mentor_report_result',
+          previousVersion: meta.version,
+          nextVersion,
+          date: shiftDateText
+        },
+        createdAt: nowIso
+      });
+    }
+    await insertApplicationEvents(client, events);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      mentorReportId,
+      previousStatus,
+      nextStatus,
+      shiftLegacyId,
+      shiftDate: shiftDateText,
+      shiftAutoClosed,
+      mentorCommentDeliveryStatus: mentorCommentDeliveryStatus || '',
+      mentorCommentDeliveryError,
+      notifications: {
+        total: 1,
+        pending: notificationRow.status === 'pending' ? 1 : 0,
+        skipped: notificationRow.status === 'skipped' ? 1 : 0,
+        inserted: notificationResult.inserted
+      },
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,

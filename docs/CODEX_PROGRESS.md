@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 86%.
+- Current migration progress: 90%.
 
 ## Migration Staging
 
@@ -109,6 +109,12 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   early trainee-owned or recruiter-owned applications in `pending`/`queue`
   before invite/mentor side effects exist, preserving audit history through
   `application_cancelled` events before the row delete.
+- Added a transactional `mentor_report_result` Postgres write path for mentor
+  report finalization: mentor-only, active report duplicate protection,
+  selected trainee/venue/hall validation, final application status update,
+  `mentor_reports` and `mentor_report_topics` writes, durable trainee
+  `mentor_result` notification/outbox row, result/notification audit events and
+  shift auto-close when the report resolves the last open application.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -132,6 +138,17 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   failed first because local PostgreSQL could not create shared memory
   (`shmget Operation not permitted`), then the same command passed with
   escalation.
+- 2026-07-30: targeted `node --test test/postgres-write-command.test.js
+  test/booking-storage-adapter.test.js test/postgres-command-contracts.test.js`
+  passed, 150/150 tests after adding transactional PostgreSQL
+  `mentor_report_result` command coverage, adapter routing and command-contract
+  alignment.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
+  transactional PostgreSQL `mentor_report_result`.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `mentor_report_result` PostgreSQL write smoke. A sandboxed run failed
+  first because local PostgreSQL could not create shared memory (`shmget
+  Operation not permitted`), then the same command passed with escalation.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -238,6 +255,17 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   scope, unit coverage and live PostgreSQL smoke. No `src/server.js` runtime
   wiring, no live Telegram worker and no deploy. Raised migration progress to
   86%.
+- 2026-07-30: added transactional PostgreSQL `mentor_report_result` directly in
+  `migration/postgres-foundation`. The command is mentor-only, locks
+  `booking_state_meta` and the target application, checks active
+  `mentor_reports` before writes to prevent duplicate mentor report spam,
+  validates selected trainee plus venue/hall against the application, writes
+  normalized mentor report rows/topics, updates application final status and
+  mentor-result fields, writes durable trainee `mentor_result` notification
+  outbox rows (`pending` or explicit `skipped` when no Telegram target), emits
+  result/notification audit events and auto-closes the shift when all attached
+  applications are final. No `src/server.js` runtime wiring, no live Telegram
+  worker and no deploy. Raised migration progress to 90%.
 - 2026-07-29: audited existing Markdown instructions and found stale migration
   staging commit references plus an old README backup path. Added this progress
   log, linked it from `AGENTS.md`, updated staging commit references to
@@ -497,8 +525,9 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend command is `mentor_report_result`.
+2. Continue Stage 5 with the remaining report-only command:
+   `trainee_report_submission` should write durable outbox/audit data without
+   mutating booking state.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

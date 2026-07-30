@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 86%.
+- Общий прогресс: 90%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -296,6 +296,31 @@
   - writes `booking_state_reset` with removed and inserted row counts;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `mentor_report_result` writable PostgreSQL command:
+  - mentor-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - active `mentor_reports` duplicate check with `FOR UPDATE` before writing
+    anything, so repeated mentor submits cannot create duplicate reports or
+    notification spam;
+  - validates that the selected trainee, venue and hall still match the
+    application;
+  - accepts only applications that are already invited/awaiting mentor feedback
+    and still have an invite group or group link;
+  - writes `mentor_reports` and `mentor_report_topics`;
+  - updates the application final status from the mentor decision
+    (`passed`/`failed`) and stores mentor result metadata;
+  - writes a durable trainee `mentor_result` notification/outbox row with
+    `status='pending'`, or `status='skipped'` +
+    `telegram_chat_missing` when no Telegram target exists;
+  - writes `mentor_report_received`, `application_passed` or
+    `application_failed`, `mentor_result_notification_queued` or
+    `mentor_result_notification_skipped`, and optional `shift_auto_closed`
+    events;
+  - auto-closes the shift when this report makes every attached application
+    final;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -315,7 +340,8 @@
 
 ## Очередь Writable Команд
 
-1. `mentor_report_result` через `/api/report`
+1. `trainee_report_submission` через `/api/report` (notification/outbox only,
+   without booking-state mutation)
 
 ## Runtime-Wiring Blockers
 

@@ -8,6 +8,7 @@ import {
   clearStateInPostgres,
   createShiftInPostgres,
   markExperiencedInPostgres,
+  mentorReportResultInPostgres,
   returnToQueueInPostgres,
   resetDemoStateInPostgres,
   sendInvitesInPostgres,
@@ -130,6 +131,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async mark_experienced(command, actor) {
       const result = await markExperiencedInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async mentor_report_result(command, actor) {
+      const result = await mentorReportResultInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },

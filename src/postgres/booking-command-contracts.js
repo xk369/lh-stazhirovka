@@ -275,9 +275,8 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
       'mentor_report_received',
       'application_passed',
       'application_failed',
-      'mentor_result_notification_sent',
+      'mentor_result_notification_queued',
       'mentor_result_notification_skipped',
-      'mentor_result_notification_failed',
       'shift_auto_closed'
     ],
     requiresBaseVersion: false,

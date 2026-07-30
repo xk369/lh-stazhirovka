@@ -10,6 +10,10 @@ import { BOOKING_STORAGE_MODES, BookingStorageReadOnlyError } from '../src/booki
 
 const recruiter = { role: 'recruiter', telegram: { user: { id: '111' } } };
 const trainee = { role: 'trainee', userId: '222', telegram: { user: { id: '222', username: 'trainee_user' } } };
+const mentor = {
+  role: 'mentor',
+  telegram: { user: { id: '333', username: 'mentor_user', first_name: 'Софья', last_name: 'Сучкова' } }
+};
 
 test('JSON adapter delegates readState and applyCommand to injected functions', async () => {
   const readState = async () => ({ version: 3 });
@@ -1100,12 +1104,123 @@ test('Postgres write adapter routes return_to_queue through the transactional wr
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes mentor_report_result through the transactional writer and returns fresh state', async () => {
+  const fakeState = {
+    version: 132,
+    updatedAt: '2026-07-29T20:20:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T20:20:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase() });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 131, updated_at: '2026-07-01T00:00:00.000Z' }] };
+        }
+        if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'app-uuid-501',
+              legacy_id: 501,
+              status: 'feedback',
+              shift_id: 'shift-uuid-88',
+              shift_legacy_id: 88,
+              shift_date: '2026-08-01',
+              invite_group_id: 'group-uuid-1',
+              invite_group_legacy_id: 901,
+              venue_id: 'loft5_small',
+              group_link: 'https://t.me/+mentor',
+              trainee_telegram_user_id: '501',
+              trainee_telegram_chat_id: '501',
+              telegram_username: 'trainee501',
+              name: 'Иван Иванов',
+              mentor_report_received: false
+            }]
+          };
+        }
+        if (/SELECT id\s+FROM mentor_reports\s+WHERE application_id/i.test(sql)) {
+          return { rowCount: 0, rows: [] };
+        }
+        if (/FROM shifts\s+WHERE id = \$1/i.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'shift-uuid-88',
+              legacy_id: 88,
+              open: true,
+              canceled: false,
+              date: '2026-08-01'
+            }]
+          };
+        }
+        if (/SELECT status, mentor_report_received\s+FROM applications\s+WHERE shift_id/i.test(sql)) {
+          return { rowCount: 1, rows: [{ status: 'passed', mentor_report_received: true }] };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501, id: 'app-uuid-501' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 88, id: 'shift-uuid-88' }] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    {
+      action: 'mentor_report_result',
+      applicationId: 501,
+      mentorTraineeName: 'Иван Иванов',
+      mentorDecision: 'Стажировка пройдена',
+      mentorCommentForTrainee: 'Комментарий наставника',
+      reportText: 'Полный отчёт наставника',
+      mentorTraineeResult: {
+        date: '2026-08-01',
+        venue: 'LOFT #5 · SMALL',
+        venueId: 'loft5_small',
+        venueLoft: 'LOFT #5',
+        hall: 'SMALL',
+        mastered: 29,
+        total: 29,
+        decision: 'Стажировка пройдена',
+        topicsToRepeat: []
+      }
+    },
+    mentor
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.changed, true);
+  assert.equal(outcome.result.applicationLegacyId, 501);
+  assert.equal(outcome.result.nextStatus, 'passed');
+  assert.equal(outcome.result.version, 132);
+  assert.deepEqual(outcome.result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter rejects still-unsupported commands with a stable code', async () => {
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { throw new Error('connect must not be called'); } }
   });
   await assert.rejects(
-    () => adapter.applyCommand({ action: 'mentor_report_result' }, recruiter),
+    () => adapter.applyCommand({ action: 'trainee_report_submission' }, trainee),
     err => err instanceof BookingCommandNotImplementedError
       && err.code === 'BOOKING_COMMAND_NOT_IMPLEMENTED_IN_POSTGRES'
   );

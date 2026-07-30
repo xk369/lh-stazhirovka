@@ -82,6 +82,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-mark-experienced-write-smoke.js
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  node scripts/postgres-mentor-report-result-write-smoke.js
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   node scripts/postgres-admin-state-write-smoke.js
 
 if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
