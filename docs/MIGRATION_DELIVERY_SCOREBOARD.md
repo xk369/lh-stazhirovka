@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 90%.
+- Общий прогресс: 92%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -321,6 +321,20 @@
     final;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `trainee_report_submission` writable PostgreSQL command:
+  - trainee-only;
+  - server-supplied trainee report chat id is required, so report-group
+    misconfiguration fails before writes instead of silently accepting a report;
+  - writes one durable `trainee_report` notification/outbox row for the trainee
+    report group;
+  - deduplicates repeated submits by `telegram_user_id + report_checksum`, so
+    double taps do not create duplicate outbox rows or audit events;
+  - writes a PII-safe `trainee_report_received` audit event with checksum and
+    length, not raw report text;
+  - does not mutate booking state, application status, shifts or
+    `booking_state_meta.version`;
+  - returns no fresh booking state through the adapter;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -340,8 +354,9 @@
 
 ## Очередь Writable Команд
 
-1. `trainee_report_submission` через `/api/report` (notification/outbox only,
-   without booking-state mutation)
+Все текущие контракты write-команд для `/api/state` и `/api/report`
+реализованы в PostgreSQL write layer. Следующая работа: Stage 6 notification
+delivery worker/dry-run processing и staging-only runtime wiring.
 
 ## Runtime-Wiring Blockers
 
@@ -376,8 +391,9 @@
 
 ## Next Concrete Step
 
-Claude: paused/exhausted. If Claude is reintroduced, give it the next single
-command work package, not the already completed `send_invites` outbox slice.
+Claude: paused/exhausted. If Claude is reintroduced, give it only a scoped
+Stage 6 worker/dry-run task, not another write-command slice.
 
-Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `mentor_report_result`.
+Codex: continue from `migration/postgres-foundation`; next recommended slice is
+the notification worker/dry-run runner that claims pending `notifications`,
+records delivery attempts, and remains disabled for production until staging QA.

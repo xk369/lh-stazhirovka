@@ -69,6 +69,19 @@ test('commands that notify trainees declare outbox writes and idempotency', () =
   }
 });
 
+test('trainee report submission contract is report-only outbox plus audit event', () => {
+  const command = bookingWriteCommandContract('trainee_report_submission');
+
+  assert.ok(command);
+  assert.equal(command.source, COMMAND_SOURCES.API_REPORT);
+  assert.equal(command.requiresBaseVersion, false);
+  assert.equal(command.returnsFreshState, false);
+  assert.deepEqual(command.locks, []);
+  assert.ok(command.writes.includes(WRITE_TABLES.NOTIFICATIONS));
+  assert.ok(command.writes.includes(WRITE_TABLES.APPLICATION_EVENTS));
+  assert.deepEqual(command.eventTypes, ['trainee_report_received']);
+});
+
 test('unknown write command has no contract', () => {
   assert.equal(bookingWriteCommandContract('unknown_action'), null);
 });

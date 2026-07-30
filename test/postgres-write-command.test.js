@@ -17,6 +17,7 @@ import {
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  traineeReportSubmissionInPostgres,
   toggleShiftInPostgres,
   updateCommentInPostgres,
   updateShiftCapacityInPostgres,
@@ -2880,6 +2881,161 @@ const queuedApp = {
   experience: null,
   mentor_report_received: false
 };
+
+// -----------------------------------------------------------------------------
+// trainee_report_submission
+// -----------------------------------------------------------------------------
+
+test('traineeReportSubmissionInPostgres writes trainee report notification and audit event', async () => {
+  const pool = fakePool();
+  const result = await traineeReportSubmissionInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'trainee_report_submission',
+      reportText: 'Итоговый отчёт стажёра по смене.'
+    },
+    reportChatId: '-1003951918570',
+    now: new Date('2026-07-30T14:00:00.000Z')
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.duplicate, false);
+  assert.equal(result.notificationStatus, 'pending');
+  assert.deepEqual(result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.match(result.idempotencyKey, /^trainee_report_submission:222:/);
+
+  const notifications = pool.getNotifications();
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].application_id, null);
+  assert.equal(notifications[0].mentor_report_id, null);
+  assert.equal(notifications[0].type, 'trainee_report');
+  assert.equal(notifications[0].chat_id, '-1003951918570');
+  assert.equal(notifications[0].chat_target, 'trainee_report_group');
+  assert.equal(notifications[0].text, 'Итоговый отчёт стажёра по смене.');
+  assert.equal(notifications[0].parse_mode, null);
+  assert.equal(notifications[0].status, 'pending');
+  assert.equal(notifications[0].error, null);
+  assert.equal(notifications[0].idempotency_key, result.idempotencyKey);
+
+  const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInserts.length, 1);
+  assert.equal(eventInserts[0].params[3], 'trainee_report_received');
+  assert.equal(eventInserts[0].params[4], 'trainee');
+  assert.equal(eventInserts[0].params[5], '222');
+  const payload = JSON.parse(eventInserts[0].params[6]);
+  assert.equal(payload.action, 'trainee_report_submission');
+  assert.equal(payload.idempotencyKey, result.idempotencyKey);
+  assert.equal(payload.notificationStatus, 'pending');
+  assert.equal(payload.reportLength, 'Итоговый отчёт стажёра по смене.'.length);
+
+  const sqls = pool.calls.map(call => call.sql);
+  assert.equal(sqls.some(sql => /booking_state_meta/i.test(sql)), false);
+  assert.ok(sqls.some(sql => /^BEGIN$/i.test(sql)));
+  assert.ok(sqls.some(sql => /^COMMIT$/i.test(sql)));
+  assert.ok(sqls.some(sql => /^RELEASE$/i.test(sql)));
+});
+
+test('traineeReportSubmissionInPostgres is idempotent for duplicate trainee reports', async () => {
+  const pool = fakePool();
+  const command = {
+    action: 'trainee_report_submission',
+    reportText: 'Один и тот же отчёт не должен дублироваться.'
+  };
+  const first = await traineeReportSubmissionInPostgres({
+    pool,
+    actor: trainee,
+    command,
+    reportChatId: '-1003951918570',
+    now: new Date('2026-07-30T14:10:00.000Z')
+  });
+  const second = await traineeReportSubmissionInPostgres({
+    pool,
+    actor: trainee,
+    command,
+    reportChatId: '-1003951918570',
+    now: new Date('2026-07-30T14:11:00.000Z')
+  });
+
+  assert.equal(first.changed, true);
+  assert.equal(second.changed, false);
+  assert.equal(second.duplicate, true);
+  assert.equal(second.idempotencyKey, first.idempotencyKey);
+  assert.equal(pool.getNotifications().length, 1);
+  assert.equal(
+    pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql)).length,
+    1
+  );
+  assert.equal(
+    pool.calls.filter(call => /^COMMIT$/i.test(call.sql)).length,
+    2
+  );
+});
+
+test('traineeReportSubmissionInPostgres rejects invalid actors and report text before connecting', async () => {
+  const pool = fakePool();
+  await assert.rejects(
+    () => traineeReportSubmissionInPostgres({
+      pool,
+      actor: recruiter,
+      command: { action: 'trainee_report_submission', reportText: 'Отчёт' },
+      reportChatId: '-1003951918570'
+    }),
+    PostgresCommandAuthorizationError
+  );
+  await assert.rejects(
+    () => traineeReportSubmissionInPostgres({
+      pool,
+      actor: { role: 'trainee', telegram: { user: {} } },
+      command: { action: 'trainee_report_submission', reportText: 'Отчёт' },
+      reportChatId: '-1003951918570'
+    }),
+    PostgresCommandAuthorizationError
+  );
+  await assert.rejects(
+    () => traineeReportSubmissionInPostgres({
+      pool,
+      actor: trainee,
+      command: { action: 'trainee_report_submission', reportText: '' },
+      reportChatId: '-1003951918570'
+    }),
+    PostgresCommandValidationError
+  );
+  await assert.rejects(
+    () => traineeReportSubmissionInPostgres({
+      pool,
+      actor: trainee,
+      command: { action: 'trainee_report_submission', reportText: 'Отчёт' },
+      reportChatId: ''
+    }),
+    PostgresCommandValidationError
+  );
+  assert.equal(pool.calls.some(call => call.sql === 'CONNECT'), false);
+});
+
+test('traineeReportSubmissionInPostgres rolls back on audit event insert failure', async () => {
+  const pool = fakePool({ eventInsertThrows: true });
+  await assert.rejects(
+    () => traineeReportSubmissionInPostgres({
+      pool,
+      actor: trainee,
+      command: {
+        action: 'trainee_report_submission',
+        reportText: 'Отчёт с ошибкой audit event.'
+      },
+      reportChatId: '-1003951918570',
+      now: new Date('2026-07-30T14:15:00.000Z')
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.ok(pool.calls.some(call => /^RELEASE$/i.test(call.sql)));
+});
 
 // -----------------------------------------------------------------------------
 // mentor_report_result

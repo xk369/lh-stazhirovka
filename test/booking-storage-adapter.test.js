@@ -1215,12 +1215,58 @@ test('Postgres write adapter routes mentor_report_result through the transaction
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes trainee_report_submission without reading fresh booking state', async () => {
+  const workedCommands = [];
+  let readFreshStateCalled = false;
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T20:30:00.000Z'),
+    readFreshState: async () => {
+      readFreshStateCalled = true;
+      throw new Error('readFreshState must not be called for report-only command');
+    },
+    reportChatIds: { trainee: '-1003951918570' }
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql, params = []) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase(), rawSql: sql, params });
+        return { rowCount: /INSERT INTO notifications/i.test(sql) ? 1 : 0, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    {
+      action: 'trainee_report_submission',
+      reportText: 'Итоговый отчёт стажёра по смене.'
+    },
+    trainee
+  );
+  assert.equal(outcome.state, null);
+  assert.equal(readFreshStateCalled, false);
+  assert.equal(outcome.result.changed, true);
+  assert.equal(outcome.result.notificationStatus, 'pending');
+  assert.deepEqual(outcome.result.notifications, {
+    total: 1,
+    pending: 1,
+    skipped: 0,
+    inserted: 1
+  });
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => /INSERT INTO notifications/i.test(call.rawSql)));
+  assert.ok(workedCommands.some(call => /INSERT INTO application_events/i.test(call.rawSql)));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter rejects still-unsupported commands with a stable code', async () => {
   const adapter = createPostgresWriteBookingStorageAdapter({
     pool: { async connect() { throw new Error('connect must not be called'); } }
   });
   await assert.rejects(
-    () => adapter.applyCommand({ action: 'trainee_report_submission' }, trainee),
+    () => adapter.applyCommand({ action: 'future_unimplemented_command' }, trainee),
     err => err instanceof BookingCommandNotImplementedError
       && err.code === 'BOOKING_COMMAND_NOT_IMPLEMENTED_IN_POSTGRES'
   );

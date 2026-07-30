@@ -14,6 +14,7 @@ import {
   sendInvitesInPostgres,
   setApplicationStatusInPostgres,
   stepBackApplicationInPostgres,
+  traineeReportSubmissionInPostgres,
   toggleShiftInPostgres,
   updateCommentInPostgres,
   updateShiftCapacityInPostgres,
@@ -54,7 +55,8 @@ export function createPostgresReadOnlyBookingStorageAdapter({ pool }) {
 export function createPostgresWriteBookingStorageAdapter({
   pool,
   now = () => new Date(),
-  readFreshState = () => readBookingStateFromPostgres(pool)
+  readFreshState = () => readBookingStateFromPostgres(pool),
+  reportChatIds = {}
 }) {
   if (!pool) throw new TypeError('postgres write adapter requires a pg pool.');
 
@@ -138,6 +140,16 @@ export function createPostgresWriteBookingStorageAdapter({
       const result = await mentorReportResultInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
+    },
+    async trainee_report_submission(command, actor) {
+      const result = await traineeReportSubmissionInPostgres({
+        pool,
+        actor,
+        command,
+        reportChatId: reportChatIds.trainee,
+        now: now()
+      });
+      return { state: null, result };
     },
     async return_to_queue(command, actor) {
       const result = await returnToQueueInPostgres({ pool, actor, command, now: now() });

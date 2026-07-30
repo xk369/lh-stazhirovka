@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 90%.
+- Current migration progress: 92%.
 
 ## Migration Staging
 
@@ -115,6 +115,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `mentor_reports` and `mentor_report_topics` writes, durable trainee
   `mentor_result` notification/outbox row, result/notification audit events and
   shift auto-close when the report resolves the last open application.
+- Added a transactional `trainee_report_submission` Postgres write path for
+  trainee reports through `/api/report`: trainee-only, server-supplied report
+  chat id, durable `trainee_report` notification/outbox row, idempotency by
+  Telegram user + report checksum, PII-safe `trainee_report_received` audit
+  event and no booking-state mutation/version bump.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -149,6 +154,20 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   live `mentor_report_result` PostgreSQL write smoke. A sandboxed run failed
   first because local PostgreSQL could not create shared memory (`shmget
   Operation not permitted`), then the same command passed with escalation.
+- 2026-07-30: targeted `node --test test/postgres-write-command.test.js
+  test/booking-storage-adapter.test.js test/postgres-command-contracts.test.js`
+  passed, 156/156 tests after adding transactional PostgreSQL
+  `trainee_report_submission` command coverage, adapter routing and
+  command-contract alignment.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
+  transactional PostgreSQL `trainee_report_submission`.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  live `trainee_report_submission` PostgreSQL write smoke. A sandboxed run
+  failed first because local PostgreSQL could not create shared memory
+  (`shmget Operation not permitted`), then the same command passed with
+  escalation.
+- 2026-07-30: `git diff --check` passed after adding transactional PostgreSQL
+  `trainee_report_submission`.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -235,14 +254,24 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: added transactional PostgreSQL `trainee_report_submission`
+  directly in `migration/postgres-foundation`. The command is trainee-only,
+  requires a server-supplied trainee report chat id, writes a durable
+  `trainee_report` notification/outbox row, writes a PII-safe
+  `trainee_report_received` audit event, deduplicates repeated submissions by
+  Telegram user + report checksum, returns no fresh booking state and does not
+  mutate `booking_state_meta.version`. Added adapter routing, command-contract
+  scope, unit coverage and live PostgreSQL smoke. No `src/server.js` runtime
+  wiring, no live Telegram worker and no deploy. Raised migration progress to
+  92%.
 - 2026-07-30: added transactional PostgreSQL `toggle_shift` on
   `migration/postgres-foundation`: recruiter-only, `booking_state_meta` and
   target `shifts` row locks, optimistic `baseVersion`, explicit open/close and
   implicit toggle, no-op when the requested open state is unchanged,
   `shift_opened`/`shift_closed` audit events, adapter routing and live
   PostgreSQL smoke. Production runtime wiring, `main` and Telegram live
-  delivery remain untouched. Migration progress is now 82%; next slices are
-  `clear_state`, `reset_demo_state` and `mentor_report_result`.
+  delivery remain untouched. Migration progress was 82% at the time of that
+  historical entry; those slices are now completed.
 - 2026-07-30: added transactional PostgreSQL `clear_state` and
   `reset_demo_state` directly in `migration/postgres-foundation`. Both commands
   are recruiter-only, lock `booking_state_meta`, reject stale `baseVersion` and
@@ -525,12 +554,12 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Continue Stage 5 with the remaining report-only command:
-   `trainee_report_submission` should write durable outbox/audit data without
-   mutating booking state.
-3. Continue Stage 6 after enough notifier commands exist: add the notification
+2. Continue Stage 6: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.
+3. Prepare controlled writable-runtime wiring for migration staging only after
+   the notification worker has a dry-run gate and the command mapping is
+   reviewed against `/api/state` + `/api/report`.
 4. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 5. Run `npm run test:postgres` after every Postgres write command.
@@ -552,6 +581,9 @@ Known doc rule:
   back-to-`pending` command must be specified.
 - PostgreSQL `update_comment` is internal and intentionally does not create a
   trainee notification/outbox row.
+- PostgreSQL `trainee_report_submission` is report-only: it writes a group
+  delivery outbox row and an audit event, but intentionally does not bump
+  booking-state version or change candidate/application status.
 
 ## Do Not Forget
 

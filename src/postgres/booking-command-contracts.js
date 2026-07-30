@@ -289,7 +289,7 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
     action: 'trainee_report_submission',
     source: COMMAND_SOURCES.API_REPORT,
     actorRoles: ['trainee'],
-    writes: [WRITE_TABLES.NOTIFICATIONS],
+    writes: [WRITE_TABLES.NOTIFICATIONS, WRITE_TABLES.APPLICATION_EVENTS],
     locks: [],
     eventTypes: ['trainee_report_received'],
     requiresBaseVersion: false,

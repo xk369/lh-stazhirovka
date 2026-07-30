@@ -391,6 +391,16 @@ function normalizeMentorReportInput(command) {
   };
 }
 
+function normalizeTraineeReportInput(command) {
+  return {
+    reportText: normalizeRequiredText(command?.reportText, 'reportText', 3900)
+  };
+}
+
+function normalizeReportChatId(value, field) {
+  return normalizeRequiredText(value, field, 120);
+}
+
 function ensureMentorReportTargetMatchesRow(row, submittedName) {
   const expectedName = comparablePersonName(row?.name);
   const receivedName = comparablePersonName(submittedName);
@@ -1149,6 +1159,36 @@ function mentorResultNotificationRow({ app, mentorReportId, result, nextStatus, 
     error: status === 'skipped' ? 'telegram_chat_missing' : null,
     idempotencyKey: notificationKey,
     nextAttemptAt: status === 'pending' ? nowIso : null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+}
+
+function traineeReportChecksum(reportText) {
+  return createHash('sha256')
+    .update(reportText)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+function traineeReportNotificationRow({ actor, reportText, reportChatId, nowIso }) {
+  const telegramUserId = actorTelegramUserId(actor);
+  const reportChecksum = traineeReportChecksum(reportText);
+  const notificationKey = `trainee_report_submission:${telegramUserId}:${reportChecksum}`;
+  return {
+    id: randomUUID(),
+    applicationId: null,
+    mentorReportId: null,
+    type: 'trainee_report',
+    chatId: reportChatId,
+    chatTarget: 'trainee_report_group',
+    text: reportText,
+    parseMode: null,
+    status: 'pending',
+    error: null,
+    idempotencyKey: notificationKey,
+    reportChecksum,
+    nextAttemptAt: nowIso,
     createdAt: nowIso,
     updatedAt: nowIso
   };
@@ -3055,6 +3095,70 @@ export async function mentorReportResultInPostgres({ pool, actor, command, now =
       previousVersion: meta.version,
       updatedAt: nowIso,
       changed: true
+    };
+  });
+}
+
+export async function traineeReportSubmissionInPostgres({
+  pool,
+  actor,
+  command,
+  reportChatId = '',
+  now = new Date()
+}) {
+  requireTrainee(actor);
+  const telegramUserId = actorTelegramUserId(actor);
+  if (!telegramUserId) {
+    throw new PostgresCommandAuthorizationError('Не удалось определить Telegram ID стажёра.');
+  }
+  const { reportText } = normalizeTraineeReportInput(command);
+  const normalizedReportChatId = normalizeReportChatId(reportChatId, 'traineeReportChatId');
+
+  return runInPostgresTransaction(pool, async client => {
+    const nowIso = now.toISOString();
+    const notificationRow = traineeReportNotificationRow({
+      actor,
+      reportText,
+      reportChatId: normalizedReportChatId,
+      nowIso
+    });
+    const notificationResult = await insertNotifications(client, [notificationRow]);
+    const inserted = notificationResult.inserted === 1;
+
+    if (inserted) {
+      await insertApplicationEvents(client, [{
+        eventType: 'trainee_report_received',
+        applicationId: null,
+        shiftId: null,
+        actorType: 'trainee',
+        actorTelegramUserId: telegramUserId,
+        payload: {
+          action: 'trainee_report_submission',
+          idempotencyKey: notificationRow.idempotencyKey,
+          notificationId: notificationRow.id,
+          notificationStatus: notificationRow.status,
+          chatTarget: notificationRow.chatTarget,
+          reportChecksum: notificationRow.reportChecksum,
+          reportLength: reportText.length
+        },
+        createdAt: nowIso
+      }]);
+    }
+
+    return {
+      changed: inserted,
+      duplicate: !inserted,
+      idempotencyKey: notificationRow.idempotencyKey,
+      reportChecksum: notificationRow.reportChecksum,
+      notificationId: inserted ? notificationRow.id : null,
+      notificationStatus: notificationRow.status,
+      notifications: {
+        total: 1,
+        pending: inserted ? 1 : 0,
+        skipped: 0,
+        inserted: notificationResult.inserted
+      },
+      updatedAt: nowIso
     };
   });
 }
