@@ -206,7 +206,7 @@ assert.equal(reportResult.result.notifications.total, 2);
 current = await recruiterState(recruiterInitData);
 const finalApplication = current.state.applications.find(item => item.id === applicationId);
 assert.equal(finalApplication.status, 'passed');
-assert.equal(finalApplication.mentorReportReceived, true);
+assert.equal(finalApplication.mentorReport, true);
 
 const pool = createPostgresPool();
 try {
