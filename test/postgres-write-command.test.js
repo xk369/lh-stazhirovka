@@ -5,6 +5,7 @@ import {
   PostgresCommandConflictError,
   PostgresCommandValidationError,
   assignShiftInPostgres,
+  cancelApplicationInPostgres,
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
   createShiftInPostgres,
@@ -169,7 +170,8 @@ function fakePool({
           attempt: row.attempt ?? 'first',
           limits: row.limits ?? '',
           recruiter_comment: row.recruiter_comment ?? '',
-          experience: row.experience ?? null
+          experience: row.experience ?? null,
+          mentor_report_received: Boolean(row.mentor_report_received)
         }] : [] };
       }
       if (/FROM invite_groups\s+WHERE id = ANY\(\$1::uuid\[\]\)/i.test(sql)) {
@@ -662,6 +664,12 @@ function fakePool({
         updatedAt = params[1];
         return { rowCount: 1, rows: [] };
       }
+      if (/DELETE FROM applications WHERE id = \$1/i.test(sql)) {
+        const appUuid = String(params[0]);
+        const index = apps.findIndex(app => String(app.id) === appUuid);
+        if (index >= 0) apps.splice(index, 1);
+        return { rowCount: index >= 0 ? 1 : 0, rows: [] };
+      }
       if (/FROM applications WHERE legacy_id = ANY/.test(sql)) {
         const requested = new Set((params[0] || []).map(String));
         const rows = apps
@@ -1087,6 +1095,228 @@ test('upsertTraineeApplicationInPostgres rolls back and releases on event insert
         baseVersion: 10,
         application: traineeApplication()
       }
+    }),
+    /event insert failed/
+  );
+  assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
+  assert.ok(pool.calls.some(call => call.sql === 'RELEASE'));
+});
+
+test('cancelApplicationInPostgres deletes trainee-owned pending application and writes an audit event', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingShifts: [{
+      id: 'shift-uuid-88',
+      legacy_id: 88,
+      date: '2026-08-01',
+      seats: 2,
+      open: true,
+      canceled: false
+    }],
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: 'shift-uuid-88',
+      status: 'pending',
+      trainee_telegram_user_id: '222',
+      trainee_telegram_chat_id: '222',
+      telegram_username: 'trainee_user',
+      name: 'Иван Иванов'
+    }]
+  });
+  const now = new Date('2026-07-29T12:30:00.000Z');
+
+  const result = await cancelApplicationInPostgres({
+    pool,
+    actor: trainee,
+    command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 },
+    now
+  });
+
+  assert.equal(result.version, 11);
+  assert.equal(result.previousVersion, 10);
+  assert.equal(result.applicationLegacyId, 501);
+  assert.equal(result.previousStatus, 'pending');
+  assert.equal(result.previousShiftId, 88);
+  assert.equal(result.updatedAt, now.toISOString());
+  assert.equal(pool.getApplications().length, 0);
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'application_cancelled');
+  assert.equal(eventInsert.params[4], 'trainee');
+  assert.match(eventInsert.params[6], /"previousStatus":"pending"/);
+  const eventIndex = pool.calls.findIndex(call => /INSERT INTO application_events/.test(call.sql));
+  const deleteIndex = pool.calls.findIndex(call => /DELETE FROM applications WHERE id/.test(call.sql));
+  assert.ok(eventIndex > -1 && deleteIndex > eventIndex);
+});
+
+test('cancelApplicationInPostgres lets recruiter delete an early queue application', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    existingApplications: [{
+      id: 'app-uuid-502',
+      legacy_id: 502,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '333',
+      trainee_telegram_chat_id: '333',
+      name: 'Queue Trainee'
+    }]
+  });
+
+  const result = await cancelApplicationInPostgres({
+    pool,
+    actor: recruiter,
+    command: { action: 'cancel_application', baseVersion: 10, applicationId: 502 },
+    now: new Date('2026-07-29T12:35:00.000Z')
+  });
+
+  assert.equal(result.previousStatus, 'queue');
+  assert.equal(result.previousShiftId, null);
+  assert.equal(pool.getApplications().length, 0);
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[4], 'recruiter');
+});
+
+test('cancelApplicationInPostgres rejects stale version, unknown app and non-owners', async () => {
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({ currentVersion: 11 }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    PostgresCommandConflictError
+  );
+
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({ currentVersion: 10 }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    /application not found/
+  );
+
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'queue',
+          trainee_telegram_user_id: '333',
+          trainee_telegram_chat_id: '333'
+        }]
+      }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    PostgresCommandAuthorizationError
+  );
+});
+
+test('cancelApplicationInPostgres rejects progressed applications and invite/mentor state', async () => {
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'confirmed',
+          trainee_telegram_user_id: '222',
+          trainee_telegram_chat_id: '222'
+        }]
+      }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    /current status/
+  );
+
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'pending',
+          trainee_telegram_user_id: '222',
+          trainee_telegram_chat_id: '222',
+          invite_group_id: 'group-uuid-1'
+        }]
+      }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    /invite group/
+  );
+
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool: fakePool({
+        currentVersion: 10,
+        existingApplications: [{
+          id: 'app-uuid-501',
+          legacy_id: 501,
+          shift_id: null,
+          status: 'queue',
+          trainee_telegram_user_id: '222',
+          trainee_telegram_chat_id: '222',
+          mentor_report_received: true
+        }]
+      }),
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    /mentor report/
+  );
+});
+
+test('cancelApplicationInPostgres rejects invalid input and unsupported actors before opening a transaction', async () => {
+  const pool = fakePool({ currentVersion: 10 });
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool,
+      actor: { role: 'mentor', telegram: { user: { id: '444' } } },
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
+    }),
+    PostgresCommandAuthorizationError
+  );
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool,
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 0 }
+    }),
+    PostgresCommandValidationError
+  );
+  assert.equal(pool.calls.length, 0);
+});
+
+test('cancelApplicationInPostgres rolls back and releases when event insert fails', async () => {
+  const pool = fakePool({
+    currentVersion: 10,
+    eventInsertThrows: true,
+    existingApplications: [{
+      id: 'app-uuid-501',
+      legacy_id: 501,
+      shift_id: null,
+      status: 'queue',
+      trainee_telegram_user_id: '222',
+      trainee_telegram_chat_id: '222'
+    }]
+  });
+
+  await assert.rejects(
+    () => cancelApplicationInPostgres({
+      pool,
+      actor: trainee,
+      command: { action: 'cancel_application', baseVersion: 10, applicationId: 501 }
     }),
     /event insert failed/
   );

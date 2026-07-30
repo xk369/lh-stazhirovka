@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 78%.
+- Current migration progress: 80%.
 
 ## Migration Staging
 
@@ -96,6 +96,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   enforces queue-without-shift and pending-with-open-shift invariants, protects
   seat capacity, rejects чужие and already progressed applications, writes
   PII-safe audit events and returns fresh state through the Postgres adapter.
+- Added a transactional `cancel_application` Postgres write path for deleting
+  early trainee-owned or recruiter-owned applications in `pending`/`queue`
+  before invite/mentor side effects exist, preserving audit history through
+  `application_cancelled` events before the row delete.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -403,6 +407,15 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `upsert_trainee_application` into `migration/postgres-foundation`.
 - 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
   live `upsert_trainee_application` PostgreSQL write smoke.
+- 2026-07-30: added transactional PostgreSQL `cancel_application` directly in
+  `migration/postgres-foundation`. The command accepts trainees and recruiters,
+  locks `booking_state_meta` and the target application, rejects stale
+  `baseVersion`, unknown applications, чужие trainee-owned deletes, progressed
+  statuses and applications that already have invite/mentor side effects. It
+  writes `application_cancelled` before deleting the application so the audit
+  event keeps legacy identifiers after `ON DELETE SET NULL`, then deletes the
+  row and bumps state version. No `src/server.js` runtime wiring, no live
+  Telegram worker and no deploy. Raised migration progress to 80%.
 
 ## Documentation Audit
 
@@ -438,9 +451,8 @@ Known doc rule:
 
 1. Keep production untouched and keep PR #3 in draft.
 2. Continue Stage 5 by implementing one remaining writable Postgres command per
-   iteration; the next high-value backend commands are `cancel_application`,
-   `toggle_shift`, `clear_state`, `reset_demo_state` and
-   `mentor_report_result`.
+   iteration; the next high-value backend commands are `toggle_shift`,
+   `clear_state`, `reset_demo_state` and `mentor_report_result`.
 3. Continue Stage 6 after enough notifier commands exist: add the notification
    worker/dry-run runner that claims pending rows and records sent/failed/skipped
    delivery results without touching production.

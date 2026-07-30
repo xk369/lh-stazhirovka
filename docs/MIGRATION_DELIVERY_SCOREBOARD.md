@@ -6,7 +6,7 @@
 
 ## Current Progress
 
-- Общий прогресс: 78%.
+- Общий прогресс: 80%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: writable PostgreSQL command layer + notifications/outbox.
@@ -46,6 +46,25 @@
     `application_returned_to_queue` events as needed;
   - no trainee notification/outbox write, because this is a trainee-owned form
     submission/update rather than a recruiter/mentor stage message;
+  - version bump;
+  - live PostgreSQL smoke inside `npm run test:postgres`.
+- `cancel_application` writable PostgreSQL command:
+  - trainee/recruiter;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - optimistic `baseVersion` check;
+  - trainees can delete only their own application;
+  - accepts only early `pending`/`queue` applications before invite/mentor side
+    effects exist;
+  - rejects progressed statuses, invite-group links and mentor-result state so
+    history is not silently erased by the simple delete command;
+  - writes `application_cancelled` before deleting the row, preserving legacy
+    identifiers in event payload after `application_events.application_id`
+    becomes `NULL` through `ON DELETE SET NULL`;
+  - deletes the `applications` row;
+  - no trainee notification/outbox write, because this is the trainee-owned
+    cancellation action before confirmation/invite; recruiter-facing
+    cancellation with trainee message remains `cancel_internship`;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
 - `create_shift` writable PostgreSQL command:
@@ -261,11 +280,10 @@
 
 ## Очередь Writable Команд
 
-1. `cancel_application`
-2. `toggle_shift`
-3. `clear_state`
-4. `reset_demo_state`
-5. `mentor_report_result` через `/api/report`
+1. `toggle_shift`
+2. `clear_state`
+3. `reset_demo_state`
+4. `mentor_report_result` через `/api/report`
 
 ## Runtime-Wiring Blockers
 
@@ -304,4 +322,4 @@ Claude: paused/exhausted. If Claude is reintroduced, give it the next single
 command work package, not the already completed `send_invites` outbox slice.
 
 Codex: continue from `migration/postgres-foundation`; next recommended command
-slice is `cancel_application`, then `toggle_shift`.
+slice is `toggle_shift`, then destructive admin commands.

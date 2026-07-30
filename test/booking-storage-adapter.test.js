@@ -131,6 +131,72 @@ test('Postgres write adapter routes upsert_trainee_application and returns fresh
   assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
 });
 
+test('Postgres write adapter routes cancel_application and returns fresh state', async () => {
+  const fakeState = {
+    version: 12,
+    updatedAt: '2026-07-29T12:20:00.000Z',
+    shifts: [],
+    applications: [],
+    inviteGroups: []
+  };
+  const workedCommands = [];
+  const adapter = createPostgresWriteBookingStorageAdapter({
+    pool: { async connect() { return fakeClient(); } },
+    now: () => new Date('2026-07-29T12:20:00.000Z'),
+    readFreshState: async () => fakeState
+  });
+
+  function fakeClient() {
+    return {
+      async query(sql, params = []) {
+        workedCommands.push({ sql: sql.trim().split(/\s+/)[0].toUpperCase(), params });
+        if (/booking_state_meta/i.test(sql) && /SELECT/i.test(sql)) {
+          return { rowCount: 1, rows: [{ version: 11 }] };
+        }
+        if (/FROM applications\s+LEFT JOIN shifts ON shifts\.id = applications\.shift_id/is.test(sql)) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'app-uuid-501',
+              legacy_id: 501,
+              status: 'queue',
+              shift_id: null,
+              shift_legacy_id: null,
+              invite_group_id: null,
+              invite_group_legacy_id: null,
+              group_link: '',
+              trainee_telegram_user_id: '222',
+              trainee_telegram_chat_id: '222',
+              telegram_username: 'trainee_user',
+              name: 'Иван Иванов',
+              mentor_report_received: false
+            }]
+          };
+        }
+        if (/FROM applications WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 1, rows: [{ legacy_id: 501, id: 'app-uuid-501' }] };
+        }
+        if (/FROM shifts WHERE legacy_id = ANY/i.test(sql)) {
+          return { rowCount: 0, rows: [] };
+        }
+        return { rowCount: 1, rows: [] };
+      },
+      release() {}
+    };
+  }
+
+  const outcome = await adapter.applyCommand(
+    { action: 'cancel_application', baseVersion: 11, applicationId: 501 },
+    trainee
+  );
+  assert.equal(outcome.state, fakeState);
+  assert.equal(outcome.result.version, 12);
+  assert.equal(outcome.result.applicationLegacyId, 501);
+  assert.equal(outcome.result.previousStatus, 'queue');
+  assert.ok(workedCommands.some(call => call.sql === 'BEGIN'));
+  assert.ok(workedCommands.some(call => call.sql === 'COMMIT'));
+});
+
 test('Postgres write adapter routes create_shift through the transactional writer and returns fresh state', async () => {
   const fakeState = { version: 11, updatedAt: '2026-07-29T12:00:00.000Z', shifts: [], applications: [], inviteGroups: [] };
   const workedCommands = [];

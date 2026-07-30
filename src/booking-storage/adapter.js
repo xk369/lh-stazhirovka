@@ -2,6 +2,7 @@ import { BOOKING_STORAGE_MODES, BookingStorageReadOnlyError } from '../booking-s
 import { readBookingStateFromPostgres } from '../postgres/read-booking-state.js';
 import {
   assignShiftInPostgres,
+  cancelApplicationInPostgres,
   cancelInternshipInPostgres,
   cancelShiftInPostgres,
   createShiftInPostgres,
@@ -56,6 +57,11 @@ export function createPostgresWriteBookingStorageAdapter({
   const commandHandlers = {
     async upsert_trainee_application(command, actor) {
       const result = await upsertTraineeApplicationInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async cancel_application(command, actor) {
+      const result = await cancelApplicationInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },

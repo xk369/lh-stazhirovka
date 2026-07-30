@@ -43,6 +43,7 @@ const RETURN_TO_QUEUE_STATUSES = new Set(['queue', 'pending', 'confirmed', 'invi
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const TRAINEE_MUTABLE_STATUSES = new Set(['pending', 'queue']);
+const CANCEL_APPLICATION_STATUSES = new Set(['pending', 'queue']);
 const TRAINEE_PROFILE_FIELDS = Object.freeze([
   'name',
   'phone',
@@ -417,6 +418,13 @@ function normalizeSendInvitesInput(command) {
 }
 
 function normalizeCancelInternshipInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeCancelApplicationInput(command) {
   return {
     applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
     baseVersion: normalizeBaseVersion(command)
@@ -1099,6 +1107,107 @@ export async function upsertTraineeApplicationInPostgres({
       shiftLegacyId: application.shiftLegacyId,
       created: !existing,
       updated: Boolean(existing),
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function cancelApplicationInPostgres({ pool, actor, command, now = new Date() }) {
+  if (!['trainee', 'recruiter'].includes(String(actor?.role || ''))) {
+    throw new PostgresCommandAuthorizationError('Недостаточно прав для отмены заявки.');
+  }
+  const { applicationLegacyId, baseVersion } = normalizeCancelApplicationInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              applications.invite_group_id,
+              invite_groups.legacy_id AS invite_group_legacy_id,
+              applications.group_link,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.name,
+              applications.mentor_report_received
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+         LEFT JOIN invite_groups ON invite_groups.id = applications.invite_group_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+
+    const app = appResult.rows[0];
+    if (actor.role === 'trainee' && !applicationRowBelongsToTrainee(app, actor)) {
+      throw new PostgresCommandAuthorizationError('Нельзя отменить чужую заявку.');
+    }
+
+    const previousStatus = String(app.status || '');
+    if (!CANCEL_APPLICATION_STATUSES.has(previousStatus)) {
+      throw new PostgresCommandValidationError(
+        'application cannot be canceled in current status.'
+      );
+    }
+    if (app.invite_group_id || String(app.group_link || '').trim()) {
+      throw new PostgresCommandValidationError(
+        'application with invite group must be canceled by cancel_internship.'
+      );
+    }
+    if (app.mentor_report_received) {
+      throw new PostgresCommandValidationError(
+        'application with mentor report cannot be deleted by cancel_application.'
+      );
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const shiftLegacyId = app.shift_legacy_id ? Number(app.shift_legacy_id) : null;
+
+    await insertApplicationEvents(client, [{
+      eventType: 'application_cancelled',
+      applicationId: applicationLegacyId,
+      shiftId: shiftLegacyId,
+      actorType: actor.role === 'recruiter' ? 'recruiter' : 'trainee',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'cancel_application',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus,
+        previousShiftId: shiftLegacyId
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'DELETE FROM applications WHERE id = $1',
+      [app.id]
+    );
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      previousShiftId: shiftLegacyId,
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,
