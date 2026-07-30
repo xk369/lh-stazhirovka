@@ -6,10 +6,11 @@
 
 ## Current Progress
 
-- Общий прогресс: 92%.
+- Общий прогресс: 95%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: writable PostgreSQL command layer + notifications/outbox.
+- Текущий stage: notification worker complete; staging-only writable runtime
+  wiring and QA next.
 
 ## Что Уже Интегрировано В Base
 
@@ -335,6 +336,19 @@
     `booking_state_meta.version`;
   - returns no fresh booking state through the adapter;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- PostgreSQL notification worker/dry-run runner:
+  - claims due `notifications` rows with `FOR UPDATE SKIP LOCKED`;
+  - marks claimed rows `sending` and increments `attempt_count`;
+  - sends only through the existing Telegram delivery gateway, so dry-run/live
+    policy stays centralized in `TELEGRAM_DELIVERY_MODE`;
+  - records successful live delivery as `sent`;
+  - records dry-run and malformed rows as `skipped`;
+  - returns transient failures to `pending` with `next_attempt_at`;
+  - marks final failures as `failed`;
+  - includes unit coverage for claim, live success, dry-run skip, malformed
+    rows and retry/fail behavior;
+  - includes a dry-run PostgreSQL smoke inside `npm run test:postgres`;
+  - is not wired into production runtime.
 - PR safety check.
 - PostgreSQL command contracts.
 
@@ -355,8 +369,9 @@
 ## Очередь Writable Команд
 
 Все текущие контракты write-команд для `/api/state` и `/api/report`
-реализованы в PostgreSQL write layer. Следующая работа: Stage 6 notification
-delivery worker/dry-run processing и staging-only runtime wiring.
+реализованы в PostgreSQL write layer. Notification worker/dry-run processing
+тоже реализован. Следующая работа: staging-only writable runtime wiring and
+full role QA.
 
 ## Runtime-Wiring Blockers
 
@@ -371,11 +386,9 @@ delivery worker/dry-run processing и staging-only runtime wiring.
   shifts. If UI/API needs to move an already assigned, confirmed or invited
   application, add a separate command that explicitly handles old shift,
   invite-group, venue and archive links before runtime cutover.
-- PostgreSQL write commands that need trainee-facing messages now write durable
-  `notifications` rows for their covered paths, but there is still no worker
-  that claims pending rows and marks delivery as `sent`, `failed` or `skipped`.
-  Do not wire writable Postgres into runtime until the worker/dry-run policy is
-  implemented and tested.
+- PostgreSQL notification worker exists and is tested in dry-run, but
+  production must remain disabled. Staging writable runtime can be wired only
+  with `TELEGRAM_DELIVERY_MODE=dry_run` and explicit QA.
 
 ## Two-Agent Rules
 
@@ -392,8 +405,8 @@ delivery worker/dry-run processing и staging-only runtime wiring.
 ## Next Concrete Step
 
 Claude: paused/exhausted. If Claude is reintroduced, give it only a scoped
-Stage 6 worker/dry-run task, not another write-command slice.
+staging-QA or docs-verification task, not production runtime work.
 
 Codex: continue from `migration/postgres-foundation`; next recommended slice is
-the notification worker/dry-run runner that claims pending `notifications`,
-records delivery attempts, and remains disabled for production until staging QA.
+controlled staging-only writable runtime wiring, followed by full role QA and a
+plan-vs-implementation audit before any production cutover discussion.

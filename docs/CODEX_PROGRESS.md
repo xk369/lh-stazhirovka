@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 92%.
+- Current migration progress: 95%.
 
 ## Migration Staging
 
@@ -120,6 +120,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   chat id, durable `trainee_report` notification/outbox row, idempotency by
   Telegram user + report checksum, PII-safe `trainee_report_received` audit
   event and no booking-state mutation/version bump.
+- Added a PostgreSQL notification worker/dry-run runner for claiming pending
+  outbox rows, recording `sent`/`failed`/`skipped` delivery state, retrying
+  transient errors and smoke-testing dry-run processing inside
+  `npm run test:postgres`.
 - Added migration PR safety check and command contracts for future write commands.
 - Published the branch and opened draft PR #3.
 
@@ -168,6 +172,18 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   escalation.
 - 2026-07-30: `git diff --check` passed after adding transactional PostgreSQL
   `trainee_report_submission`.
+- 2026-07-30: targeted `node --test test/notification-worker.test.js
+  test/postgres-write-command.test.js test/booking-storage-adapter.test.js
+  test/postgres-command-contracts.test.js` passed, 161/161 tests after adding
+  the PostgreSQL notification worker/dry-run runner.
+- 2026-07-30: `npm test -- --test-reporter=dot` passed after adding the
+  PostgreSQL notification worker/dry-run runner.
+- 2026-07-30: `npm run test:postgres` passed outside the sandbox after adding
+  the PostgreSQL notification worker dry-run smoke. A sandboxed run failed
+  first because local PostgreSQL could not create shared memory (`shmget
+  Operation not permitted`), then the same command passed with escalation.
+- 2026-07-30: `git diff --check` passed after adding the PostgreSQL
+  notification worker/dry-run runner.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -254,6 +270,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: added the PostgreSQL notification worker/dry-run runner directly
+  in `migration/postgres-foundation`. The worker claims due pending
+  `notifications` rows with `FOR UPDATE SKIP LOCKED`, marks them `sending`,
+  sends through the existing Telegram delivery gateway, records `sent`,
+  `skipped`, `pending` retry or `failed`, and never bypasses
+  `TELEGRAM_DELIVERY_MODE`. Added a CLI runner plus a dry-run PostgreSQL smoke
+  in `npm run test:postgres`. No `src/server.js` runtime wiring, no production
+  deploy and no live Telegram enablement. Raised migration progress to 95%.
 - 2026-07-30: added transactional PostgreSQL `trainee_report_submission`
   directly in `migration/postgres-foundation`. The command is trainee-only,
   requires a server-supplied trainee report chat id, writes a durable
@@ -554,12 +578,12 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Continue Stage 6: add the notification
-   worker/dry-run runner that claims pending rows and records sent/failed/skipped
-   delivery results without touching production.
-3. Prepare controlled writable-runtime wiring for migration staging only after
-   the notification worker has a dry-run gate and the command mapping is
-   reviewed against `/api/state` + `/api/report`.
+2. Prepare controlled writable-runtime wiring for migration staging only:
+   `BOOKING_STORAGE_MODE=postgres`, `TELEGRAM_DELIVERY_MODE=dry_run`, no
+   production deploy and no live Telegram.
+3. Review command mapping against `/api/state` + `/api/report` before enabling
+   staging writes, especially `return_to_queue` versus legacy
+   back-to-`pending` behavior.
 4. Run local tests again after any doc/code changes:
    `npm test` and `git diff --check`.
 5. Run `npm run test:postgres` after every Postgres write command.
@@ -568,9 +592,8 @@ Known doc rule:
    archive, bad links, duplicate clicks and version conflicts.
 7. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-8. Only after the critical `/api/state` write commands and required outbox
-   paths are implemented and smoke-tested should we wire writable Postgres mode
-   into `src/server.js`.
+8. Only after staging writable QA passes should we plan a production cutover
+   window and rollback path.
 
 ## Current Runtime-Wiring Notes
 
@@ -584,6 +607,9 @@ Known doc rule:
 - PostgreSQL `trainee_report_submission` is report-only: it writes a group
   delivery outbox row and an audit event, but intentionally does not bump
   booking-state version or change candidate/application status.
+- PostgreSQL notification worker exists and is covered by unit + dry-run
+  PostgreSQL smoke, but production runtime is still not wired to writable
+  Postgres and no live worker is enabled.
 
 ## Do Not Forget
 
