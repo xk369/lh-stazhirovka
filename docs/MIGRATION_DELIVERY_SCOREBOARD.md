@@ -6,17 +6,18 @@
 
 ## Current Progress
 
-- Общий прогресс по полному migration plan: 88%.
-- Готовность backend implementation в `migration/postgres-foundation`: 98%.
+- Общий прогресс по полному migration plan: 93%.
+- Готовность backend implementation в `migration/postgres-foundation`: 99%.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: staging-only writable runtime wiring complete locally; full
-  migration staging QA next.
+- Текущий stage: staging-only writable runtime enabled; core live migration
+  staging QA passed; final rehearsal and production cutover plan next.
 
 ## Что Уже Интегрировано В Base
 
 - PostgreSQL schema/import/read-only parity.
-- Migration staging с `BOOKING_STORAGE_MODE=postgres_readonly`.
+- Migration staging с `BOOKING_STORAGE_MODE=postgres`, dedicated PostgreSQL
+  volume and `TELEGRAM_DELIVERY_MODE=dry_run`.
 - Telegram dry-run delivery gateway.
 - `application_events` planning/writer foundation.
 - Storage adapter seam.

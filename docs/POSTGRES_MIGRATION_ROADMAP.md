@@ -442,23 +442,27 @@ Event log нужен, чтобы расследовать жалобы без р
 - [x] Прогнать схему и импорт на реальном временном PostgreSQL 14.
 - [x] Сделать read-only инструмент обратного чтения и полевого сравнения JSON
   с PostgreSQL; временный интеграционный тест включает эту проверку.
-- [x] Прогнать импорт и полевое сравнение на свежей read-only копии реального
-  prod `data/db.json`, не подключая PostgreSQL к runtime приложения:
-  2026-07-26, state version 912, 15 дат, 79 заявок, 35 групп, 37 связей
-  участников и 20 отчетов наставников; паритет подтвержден.
+- [x] Прогнать импорт и полевое сравнение на свежей копии реального prod
+  `data/db.json`, не подключая PostgreSQL к production runtime:
+  2026-07-30, 16 дат, 83 заявки, 37 групп, 39 связей участников и
+  25 отчетов наставников; паритет подтвержден на dedicated migration-staging
+  PostgreSQL.
 
 ### Этап C: чтение из Postgres на staging
 
 - [x] Добавить явный `BOOKING_STORAGE_MODE=postgres_readonly` без изменения
   production default `json`.
-- [x] Переключить отдельный migration staging на чтение из Postgres:
-  `stazhirovka-migration.151.244.243.164.sslip.io`, commit `f96caed`,
+- [x] Переключить отдельный migration staging на PostgreSQL runtime:
+  `stazhirovka-migration.151.244.243.164.sslip.io`, commit `fe321f0`,
   отдельные app/DB containers и volume, host port `3502`.
 - JSON оставить офлайн-бэкапом для управляемого rollback; автоматического
   fallback между источниками истины не делать.
-- [x] Прогнать server smoke: signed recruiter read, write rejection, dry-run
-  report/notification, state immutability, internal/public health.
-- Прогнать полный UI/role QA до перехода к записи в Postgres.
+- [x] Прогнать server smoke: signed recruiter read, writable health,
+  dry-run report/notification, internal/public health.
+- [x] Прогнать core role QA после перехода к записи в Postgres: synthetic
+  trainee application, recruiter confirmation, invite outbox, attendance,
+  mentor report result, final `passed` status and worker dry-run.
+- Прогнать финальный ручной UI/rehearsal QA перед production cutover.
 
 ### Этап D: запись в Postgres на staging
 
@@ -470,7 +474,8 @@ Event log нужен, чтобы расследовать жалобы без р
 - [x] Добавить staging-only runtime `BOOKING_STORAGE_MODE=postgres`, который
   маршрутизирует `/api/state` и `/api/report` через PostgreSQL command adapter
   и outbox, без прямой JSON-записи и без live Telegram в dry-run режиме.
-- Прогнать полный QA.
+- [x] Прогнать core live staging QA через HTTP runtime.
+- Прогнать финальный ручной UI/rehearsal QA.
 
 ### Этап E: production migration
 

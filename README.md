@@ -155,9 +155,11 @@ https://ваш-домен/booking
 The production runtime still uses `data/db.json`. PostgreSQL support in this
 branch is an isolated migration contour. `BOOKING_STORAGE_MODE=json` remains
 the default. Migration staging can explicitly use
-`BOOKING_STORAGE_MODE=postgres_readonly`; this reads the imported PostgreSQL
-state but rejects every booking-state change with
-`503 BOOKING_STORAGE_READ_ONLY`.
+`BOOKING_STORAGE_MODE=postgres_readonly` for read-only parity checks or
+`BOOKING_STORAGE_MODE=postgres` for writable PostgreSQL runtime QA. In writable
+mode `/api/state` and `/api/report` use the transactional PostgreSQL command
+adapter and durable `notifications` outbox. Keep writable staging paired with
+`TELEGRAM_DELIVERY_MODE=dry_run` until a production cutover is approved.
 
 Apply the schema to an empty staging database:
 

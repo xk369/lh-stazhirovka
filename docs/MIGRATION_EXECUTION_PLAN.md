@@ -22,7 +22,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **88%**.
+Текущий общий прогресс: **93%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -41,10 +41,10 @@ production работает на PostgreSQL, цепочка проверена, 
 | 1. Safety baseline и документы | 5% | готово | Зафиксированы правила: прод не трогать, staging отдельно, Telegram dry-run. |
 | 2. Postgres schema/import/read-only parity | 20% | готово | JSON импортируется в Postgres, обратное чтение совпадает с JSON, read-only staging поднят. |
 | 3. Синхронизация с актуальным `main` | 10% | готово | Миграционная ветка содержит все свежие prod-фиксы, тесты проходят. |
-| 4. Полный event log | 15% | готово в коде, ждет staging QA | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
-| 5. Writable Postgres command layer | 20% | готово в коде, ждет staging QA | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
-| 6. Notifications/outbox | 15% | готово в коде, live worker не включен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
-| 7. Full staging QA и rehearsal | 10% | следующий этап | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
+| 4. Полный event log | 15% | готово, core staging QA пройден | Каждое бизнес-действие пишет понятное событие с actor, application, shift и payload. |
+| 5. Writable Postgres command layer | 20% | готово, core staging QA пройден | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
+| 6. Notifications/outbox | 15% | готово, worker dry-run проверен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
+| 7. Full staging QA и rehearsal | 10% | в процессе | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
 | 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
 
 ## Детальный Порядок

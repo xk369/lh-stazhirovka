@@ -10,7 +10,8 @@ Current deployment:
 
 - URL: `https://stazhirovka-migration.151.244.243.164.sslip.io`;
 - server path: `/opt/loft-hall-internship-migration-staging`;
-- branch: `migration/postgres-foundation`.
+- branch: `migration/postgres-foundation`;
+- last verified commit: `fe321f0`.
 
 Production must not be stopped, rebuilt or connected to this PostgreSQL
 database.
@@ -84,6 +85,24 @@ Expected health fields:
   "bookingStorageWritable": true
 }
 ```
+
+## Last verified QA
+
+2026-07-30:
+
+- refreshed the dedicated migration-staging PostgreSQL volume from a current
+  production `data/db.json` copy;
+- parity passed for 16 shifts, 83 applications, 37 invite groups,
+  39 invite-group members and 25 mentor reports;
+- `/api/health` returned `BOOKING_STORAGE_MODE=postgres`,
+  `bookingStorageWritable=true` and `TELEGRAM_DELIVERY_MODE=dry_run`;
+- `scripts/postgres-staging-role-qa.js` passed against the live staging HTTP
+  runtime;
+- `scripts/process-postgres-notifications.js` processed the accumulated QA
+  outbox in dry-run mode: 6 claimed, 0 sent, 6 skipped, 0 failed.
+
+This QA used synthetic staging-only applications and did not send real Telegram
+messages.
 
 ## Refreshing production data
 

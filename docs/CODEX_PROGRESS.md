@@ -24,7 +24,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 88% overall / 98% implementation.
+- Current migration progress: 93% overall / 99% implementation.
 
 ## Migration Staging
 
@@ -38,6 +38,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
+- Current staging commit: `fe321f0`.
+- Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
+  16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
+  25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
+  `failed=8`, `passed=17`.
+- Core live staging QA passed against HTTP runtime in PostgreSQL writable mode:
+  create application -> recruiter confirmation -> invite outbox -> attendance
+  -> mentor report -> final `passed` status -> outbox worker dry-run.
 
 ## Completed In This Migration Branch
 
@@ -211,6 +219,20 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   then the same command passed with escalation.
 - 2026-07-30: `git diff --check` passed after wiring writable PostgreSQL
   runtime mode.
+- 2026-07-30: migration staging was refreshed from current production
+  `data/db.json`, imported into a clean dedicated PostgreSQL volume and passed
+  `db:migrate`, `db:import-json` and `db:verify-parity`.
+- 2026-07-30: migration staging `/api/health` passed from commit `fe321f0`:
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true`,
+  `TELEGRAM_DELIVERY_MODE=dry_run`.
+- 2026-07-30: live staging role QA passed through HTTP runtime:
+  synthetic trainee application, recruiter confirmation, invite creation,
+  `feedback` attendance, mentor report finalization, final status `passed`,
+  and three pending outbox rows (`send_invites`, `mentor_report`,
+  `mentor_result`).
+- 2026-07-30: staging notification worker processed accumulated QA outbox rows
+  in dry-run mode: 6 claimed, 0 sent, 6 skipped, 0 failed, 0 retry. No real
+  Telegram messages were sent.
 - 2026-07-29: `npm test` passed, 144/144 tests after integrating
   `update_shift_capacity` into `migration/postgres-foundation` and importing
   seat-holding statuses from the shared state machine.
@@ -297,6 +319,15 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-07-30: enabled writable PostgreSQL migration staging from commit
+  `fe321f0` after refreshing it with a current production JSON snapshot.
+  Parity passed on 16 shifts, 83 applications, 37 invite groups, 39
+  invite-group members and 25 mentor reports. Core end-to-end staging QA passed
+  through real HTTP routes in `BOOKING_STORAGE_MODE=postgres` and
+  `TELEGRAM_DELIVERY_MODE=dry_run`: trainee application, recruiter status
+  changes, invite outbox, mentor report result, final `passed` state and
+  notification worker dry-run. Production, `main` and live Telegram remain
+  untouched. Current progress is 93% overall / 99% implementation.
 - 2026-07-30: wired staging-only writable PostgreSQL runtime directly in
   `migration/postgres-foundation`. In `BOOKING_STORAGE_MODE=postgres`,
   `/api/state` now applies commands through the PostgreSQL adapter and
@@ -304,8 +335,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   Mentor reports now queue both the full mentor report for `MENTOR_CHAT_ID` and
   the trainee-facing result message when possible. Added a real-server writable
   runtime smoke to `npm run test:postgres`. Production, `main` and live
-  Telegram remain untouched. Current progress is 88% overall / 98%
-  implementation.
+  Telegram remain untouched. Progress later advanced after the live staging QA
+  entry above.
 - 2026-07-30: added the PostgreSQL notification worker/dry-run runner directly
   in `migration/postgres-foundation`. The worker claims due pending
   `notifications` rows with `FOR UPDATE SKIP LOCKED`, marks them `sending`,
@@ -357,8 +388,8 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   worker and no deploy. Raised migration progress to 90%.
 - 2026-07-29: audited existing Markdown instructions and found stale migration
   staging commit references plus an old README backup path. Added this progress
-  log, linked it from `AGENTS.md`, updated staging commit references to
-  `f96caed`, and corrected the production backup path in `README.md`.
+  log, linked it from `AGENTS.md`, updated then-current staging commit
+  references, and corrected the production backup path in `README.md`.
 - 2026-07-29: started Stage D safely without enabling runtime Postgres writes.
   Added `src/booking-state-events.js` to plan audit events from
   `currentState -> nextState`, covering recruiter actions, invite groups,

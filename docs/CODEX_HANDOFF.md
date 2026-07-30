@@ -35,26 +35,31 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   `TELEGRAM_DELIVERY_MODE=dry_run`, `TELEGRAM_POLLING=no` and
   `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
 - Last local verification: `npm test -- --test-reporter=dot`,
-  `npm run test:postgres` and `git diff --check` passed on 2026-07-30 after
-  wiring `BOOKING_STORAGE_MODE=postgres` runtime smoke. The sandboxed
-  `test:postgres` run fails on local PostgreSQL shared memory (`shmget
-  Operation not permitted`); the same command passes outside the sandbox.
-- On 2026-07-27 migration staging imported a fresh production snapshot at
-  state version 912: 15 shifts, 79 applications, 35 invite groups,
-  37 memberships and 20 mentor reports. Field-level parity passed before the
-  application was started. The temporary JSON copy containing PII was deleted
-  after the check.
+  `npm run test:postgres`, `node --check scripts/postgres-staging-role-qa.js`
+  and `git diff --check` passed on 2026-07-30 after wiring
+  `BOOKING_STORAGE_MODE=postgres` runtime smoke and staging role QA.
+  The sandboxed `test:postgres` run fails on local PostgreSQL shared memory
+  (`shmget Operation not permitted`); the same command passes outside the
+  sandbox.
+- On 2026-07-30 migration staging imported a fresh production snapshot:
+  16 shifts, 83 applications, 37 invite groups, 39 memberships and
+  25 mentor reports. Field-level parity passed before writable staging QA.
 - Migration staging is deployed at
   `https://stazhirovka-migration.151.244.243.164.sslip.io` from commit
-  `f96caed`, server path `/opt/loft-hall-internship-migration-staging`.
+  `fe321f0`, server path `/opt/loft-hall-internship-migration-staging`.
 - Its app is bound to `127.0.0.1:3502`; containers are
   `loft-internship-app-migration-staging` and
   `loft-internship-postgres-migration-staging`; PostgreSQL uses the dedicated
   `loft-internship-postgres-migration-staging-data` volume.
-- Server smoke checks proved recruiter reads from PostgreSQL, booking-state
-  writes return `503 BOOKING_STORAGE_READ_ONLY`, report delivery returns
-  `messageId: null`, personal notifications are skipped as
-  `telegram_delivery_dry_run`, and state remains version 912.
+- Server smoke checks proved writable staging health:
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true` and
+  `TELEGRAM_DELIVERY_MODE=dry_run`.
+- Live staging role QA passed through HTTP runtime: synthetic trainee
+  application, recruiter confirmation, invite creation, attendance to
+  `feedback`, mentor report finalization, final status `passed`, and durable
+  outbox rows for `send_invites`, `mentor_report` and `mentor_result`.
+- Staging notification worker dry-run processed accumulated QA outbox rows
+  without real Telegram delivery: 6 claimed, 0 sent, 6 skipped, 0 failed.
 - Branch `migration/postgres-foundation` is published in draft PR #3. Do not
   merge it into `main` until writable staging QA, cutover rehearsal and rollback
   plan are approved.
@@ -104,6 +109,8 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `scripts/db-migrate.js` - применяет неизменяемые SQL-миграции к `DATABASE_URL`.
 - `scripts/import-booking-json.js` - импортирует копию JSON в пустую PostgreSQL-БД транзакционно.
 - `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
+- `scripts/postgres-staging-role-qa.js` - staging-only HTTP role QA for
+  writable PostgreSQL mode with synthetic data and dry-run Telegram delivery.
 - `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
 - `src/booking-storage-mode.js` - явный выбор
   `json`/`postgres_readonly`/`postgres` и стабильная ошибка запрета legacy
