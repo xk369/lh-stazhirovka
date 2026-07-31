@@ -361,6 +361,28 @@ test('report submission success does not auto-close the mini app', async () => {
   assert.doesNotMatch(sendSuccessBlock, /tg\?\.close|disableClosingConfirmation|closeMiniApp/);
 });
 
+test('mentor report submission locks the selected trainee target', async () => {
+  const html = await readPublicFile('index.html');
+  const validateReport = html.match(/function validateReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const postReport = html.match(/async function postReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const sendAndCloseReport = html.match(/async function sendAndCloseReport\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
+
+  assert.match(html, /function reportTargetConfirmationText\(\) \{/);
+  assert.match(html, /BOOKING_VENUE_LABELS\[trainee\.venueId\]/);
+  assert.match(html, /const BOOKING_VENUE_HALLS = \{/);
+  assert.match(html, /function bookingVenueHallConfig\(venueId\) \{/);
+  assert.match(html, /Лофт подтянут из записи стажёра/);
+  assert.match(validateReport, /applyMentorTraineeProfile\(selected, \{ save: false \}\)/);
+  assert.match(postReport, /const mentorTrainee = state\.role === 'mentor' \? selectedMentorTrainee\(\) : null/);
+  assert.match(postReport, /applicationId: mentorTrainee \? mentorTrainee\.applicationId : undefined/);
+  assert.match(postReport, /mentorTraineeName: mentorTrainee \? mentorTrainee\.name : undefined/);
+  assert.match(postReport, /mentorTraineeResult: state\.role === 'mentor' \? mentorTraineeResultPayload\(\) : undefined/);
+  assert.match(html, /venueId: state\.profile\.bookingVenueId \|\| ''/);
+  assert.match(html, /const selectedHall = selectedMentorReportHall\(\)/);
+  assert.match(html, /hall: selectedHall\.hall/);
+  assert.match(sendAndCloseReport, /confirmAction\(reportTargetConfirmationText\(\)\)/);
+});
+
 test('trainee report date is loaded from the trainee booking state', async () => {
   const html = await readPublicFile('index.html');
   const loadBookingProfile = html.match(/async function loadTraineeBookingProfile\(\) \{[\s\S]*?\n      \}/)?.[0] || '';
@@ -392,7 +414,8 @@ test('mentor manual trainee fields appear only after selecting the fallback opti
   assert.match(visibleProfileFields, /mentorManualTraineeMode\(\)/);
   assert.match(validateReport, /mentorManualTraineeMode\(\)/);
   assert.match(validateReport, /Укажите ФИО стажёра для ручного отчёта/);
-  assert.match(postReport, /selectedMentorTrainee\(\) \? state\.profile\.traineeApplicationId : undefined/);
+  assert.match(postReport, /applicationId: mentorTrainee \? mentorTrainee\.applicationId : undefined/);
+  assert.match(postReport, /mentorTraineeName: mentorTrainee \? mentorTrainee\.name : undefined/);
   assert.match(html, /function mentorTraineeLookupPayload\(\) \{/);
   assert.match(postReport, /mentorTraineeLookup: state\.role === 'mentor' \? mentorTraineeLookupPayload\(\) : undefined/);
   assert.match(server, /function findMentorReportApplicationForLookup\(state, lookup\) \{/);

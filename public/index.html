@@ -893,6 +893,44 @@
       font-weight: 900
     }
 
+    .mentor-venue-lock {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 10px;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--text)
+    }
+
+    .mentor-venue-lock span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800
+    }
+
+    .mentor-venue-lock strong {
+      font-size: 16px;
+      line-height: 1.25
+    }
+
+    .mentor-hall-fixed {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      max-width: 100%;
+      min-height: 40px;
+      padding: 9px 13px;
+      border: 1px solid rgba(73, 204, 150, .32);
+      border-radius: 999px;
+      background: rgba(73, 204, 150, .1);
+      color: var(--ok);
+      font-size: 14px;
+      font-weight: 850;
+      overflow-wrap: anywhere
+    }
+
     .hall-picker {
       position: fixed;
       inset: 0;
@@ -1976,6 +2014,18 @@
         birch: 'THE BIRCH',
         metelitsa: 'МЕТЕЛИЦА'
       };
+      const BOOKING_VENUE_HALLS = {
+        loft1: { loft: 'LOFT #1' },
+        loft2: { loft: 'LOFT #2' },
+        loft3: { loft: 'LOFT #3' },
+        loft4: { loft: 'LOFT #4' },
+        loft5_contrabanda: { loft: 'LOFT #5', fixedHall: 'CONTRABANDA' },
+        loft5_small: { loft: 'LOFT #5', fixedHall: 'SMALL' },
+        loft8: { loft: 'LOFT #8' },
+        loft10: { loft: 'LOFT #10 (TAU)', fixedHall: 'MAIN HALL' },
+        birch: { loft: 'THE BIRCH' },
+        metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] }
+      };
       const tg = window.Telegram?.WebApp;
       const state = {
         screen: 'home', role: null, items: [], profileFields: [], summaryFields: [], profile: { date: '' }, answers: {},
@@ -2232,10 +2282,42 @@
         state.profile.mentorReportAlreadySent = false;
         syncManualTraineeName();
       }
+      function hallGroupByLoft(loft) {
+        return HALL_GROUPS.find(group => group.loft === loft) || null;
+      }
+      function bookingVenueHallConfig(venueId) {
+        const base = BOOKING_VENUE_HALLS[venueId];
+        if (!base) return null;
+        const group = hallGroupByLoft(base.loft);
+        const halls = base.fixedHall
+          ? [base.fixedHall]
+          : Array.isArray(base.halls)
+            ? base.halls
+            : group?.halls || [];
+        return {
+          venueId,
+          label: BOOKING_VENUE_LABELS[venueId] || base.loft,
+          loft: base.loft,
+          halls,
+          fixedHall: base.fixedHall || ''
+        };
+      }
+      function mentorHallValueForVenue(venueId, currentValue = '') {
+        const config = bookingVenueHallConfig(venueId);
+        if (!config) return currentValue || '';
+        const current = parseHallValue(currentValue);
+        const currentHallAllowed = current.loft === config.loft && current.hall && config.halls.includes(current.hall);
+        if (currentHallAllowed) return hallValue(config.loft, current.hall);
+        const defaultHall = config.fixedHall || (config.halls.length === 1 ? config.halls[0] : '');
+        if (defaultHall) return hallValue(config.loft, defaultHall);
+        return config.halls.length ? '' : config.loft;
+      }
       function traineeOptionLabel(trainee) {
         const parts = [
           trainee.name,
           trainee.date ? formatDate(trainee.date) : '',
+          BOOKING_VENUE_LABELS[trainee.venueId] || '',
+          trainee.telegramUsername || '',
           trainee.statusLabel || ''
         ].filter(Boolean);
         return parts.join(' · ');
@@ -2243,6 +2325,7 @@
       function applyMentorTraineeProfile(trainee, options = {}) {
         if (!trainee) return;
         const name = splitPersonName(trainee.name);
+        const previousVenueId = state.profile.bookingVenueId || '';
         state.profile.traineeApplicationId = String(trainee.applicationId);
         state.profile.traineeFio = trainee.name || '';
         state.profile.traineeFirstName = trainee.firstName || name.firstName || '';
@@ -2252,6 +2335,10 @@
         state.profile.bookingStatus = trainee.status || '';
         state.profile.bookingStatusLabel = trainee.statusLabel || '';
         state.profile.bookingVenueId = trainee.venueId || '';
+        state.profile.hall = mentorHallValueForVenue(
+          state.profile.bookingVenueId,
+          previousVenueId === state.profile.bookingVenueId ? state.profile.hall : ''
+        );
         state.profile.mentorReportAlreadySent = Boolean(trainee.mentorReport);
         if (options.save !== false) saveDraft();
       }
@@ -2403,9 +2490,13 @@
         const items = roleItems().sort((a, b) => Number(a.item_order) - Number(b.item_order));
         const failed = items.filter(item => state.answers[item.id]?.status === 'no');
         const mastered = items.filter(item => state.answers[item.id]?.status === 'yes').length;
+        const selectedHall = selectedMentorReportHall();
         return {
           date: state.profile.date || '',
           venue: traineeResultVenueLabel(),
+          venueId: state.profile.bookingVenueId || '',
+          venueLoft: selectedHall.loft,
+          hall: selectedHall.hall,
           mastered,
           total: items.length,
           decision: state.summary.mentorDecision || '',
@@ -2426,14 +2517,46 @@
         const text = String(value || '').trim();
         for (const group of HALL_GROUPS) {
           for (const hall of group.halls) {
-            if (text === hallValue(group.loft, hall)) return { loft: group.loft, hall };
+            if (text === hallValue(group.loft, hall) || text === `${group.loft} · ${hall}`) return { loft: group.loft, hall };
           }
+          if (text === group.loft) return { loft: group.loft, hall: '' };
         }
-        return { loft: HALL_GROUPS[0].loft, hall: '' };
+        const config = bookingVenueHallConfig(state.profile.bookingVenueId);
+        if (config && text === config.loft) return { loft: config.loft, hall: '' };
+        return { loft: '', hall: '', raw: text };
+      }
+      function selectedMentorReportHall() {
+        const config = bookingVenueHallConfig(state.profile.bookingVenueId);
+        const selected = parseHallValue(state.profile.hall);
+        if (!config) return selected;
+        if (selected.loft === config.loft) return selected;
+        return parseHallValue(mentorHallValueForVenue(config.venueId, state.profile.hall));
       }
       function renderHallField(field, id, value) {
+        const venueConfig = state.role === 'mentor' ? bookingVenueHallConfig(state.profile.bookingVenueId) : null;
+        if (venueConfig) {
+          value = mentorHallValueForVenue(venueConfig.venueId, value);
+          state.profile.hall = value;
+          const selected = parseHallValue(value);
+          const venueLock = `<div class="mentor-venue-lock"><span>Площадка из записи рекрута</span><strong>${escapeHtml(venueConfig.label)}</strong></div>`;
+          if (venueConfig.halls.length > 1) {
+            const options = [
+              '<option value="">Выберите зал</option>',
+              ...venueConfig.halls.map(hall => {
+                const optionValue = hallValue(venueConfig.loft, hall);
+                return `<option value="${escapeHtml(optionValue)}" ${selected.hall === hall ? 'selected' : ''}>${escapeHtml(hall)}</option>`;
+              })
+            ].join('');
+            return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span>${venueLock}<select class="input" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}">${options}</select><span class="field-help">Лофт подтянут из записи стажёра. Выберите только зал внутри этой площадки.</span><span class="error">Выберите зал</span></label>`;
+          }
+          if (venueConfig.halls.length === 1) {
+            const hall = venueConfig.halls[0];
+            return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span>${venueLock}<input type="hidden" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" value="${escapeHtml(value)}"><span class="mentor-hall-fixed">${escapeHtml(hall)}</span><span class="field-help">Зал подтянут автоматически по площадке, выбранной рекрутом.</span><span class="error">Выберите зал</span></label>`;
+          }
+          return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span>${venueLock}<input type="hidden" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" value="${escapeHtml(value)}"><span class="field-help">Для этой площадки отдельный зал выбирать не нужно.</span><span class="error">Выберите зал</span></label>`;
+        }
         const selected = parseHallValue(value);
-        const display = selected.hall ? hallValue(selected.loft, selected.hall) : 'Выбрать лофт и зал';
+        const display = selected.hall ? hallValue(selected.loft, selected.hall) : selected.raw || 'Выбрать лофт и зал';
         const subtitle = selected.hall ? selected.loft : 'Нажмите, чтобы открыть список';
         return `<label class="field" id="${escapeHtml(id)}-field"><span class="field-label"><span>${escapeHtml(field.label)}</span></span><input type="hidden" id="${escapeHtml(id)}" data-profile-key="${escapeHtml(field.field_key)}" value="${escapeHtml(value)}"><button class="hall-select" type="button" data-hall-open><span class="hall-select-value"><strong>${escapeHtml(display)}</strong><span>${escapeHtml(subtitle)}</span></span><span class="hall-select-icon">⌄</span></button><span class="error">Выберите зал</span></label>`;
       }
@@ -2734,11 +2857,38 @@
       }
       function validateReport() {
         if (!state.role) { showStatus('Выберите роль перед отправкой отчёта.', 'error'); return false }
-        if (state.role === 'mentor' && !mentorManualTraineeMode() && !selectedMentorTrainee()) { showStatus('Выберите стажёра из списка или пункт «Нет нужного стажёра в списке».', 'error'); return false }
-        if (state.role === 'mentor' && mentorManualTraineeMode() && !String(state.profile.traineeFio || '').trim()) { showStatus('Укажите ФИО стажёра для ручного отчёта.', 'error'); return false }
+        if (state.role === 'mentor') {
+          const selected = selectedMentorTrainee();
+          if (mentorManualTraineeMode()) {
+            if (!String(state.profile.traineeFio || '').trim()) {
+              showStatus('Укажите ФИО стажёра для ручного отчёта.', 'error');
+              return false;
+            }
+            syncManualTraineeName();
+          } else {
+            if (!selected) {
+              showStatus('Выберите стажёра из списка или пункт «Нет нужного стажёра в списке».', 'error');
+              return false;
+            }
+            applyMentorTraineeProfile(selected, { save: false });
+          }
+        }
         const missingItems = roleItems().filter(i => i.required && !state.answers[i.id]?.status); if (missingItems.length) { showStatus(`Заполните все пункты чек-листа. Осталось: ${missingItems.length}.`, 'error'); return false }
         const missingFields = roleSummaryFields().filter(f => f.required && !String(state.summary[f.field_key] || '').trim()); if (missingFields.length) { showStatus(`Заполните итоговые поля. Осталось: ${missingFields.length}.`, 'error'); return false }
         return true;
+      }
+      function reportTargetConfirmationText() {
+        if (state.role !== 'mentor') return 'Отправить итоговый отчёт в рабочую группу?';
+        const trainee = selectedMentorTrainee();
+        if (!trainee) return 'Отправить итоговый отчёт в рабочую группу?';
+        return [
+          'Отправить отчёт наставника именно по этому стажёру?',
+          '',
+          trainee.name || 'Стажёр',
+          trainee.date ? `Дата: ${formatDate(trainee.date)}` : '',
+          trainee.telegramUsername ? `Telegram: ${trainee.telegramUsername}` : '',
+          BOOKING_VENUE_LABELS[trainee.venueId] ? `Площадка: ${BOOKING_VENUE_LABELS[trainee.venueId]}` : ''
+        ].filter(line => line !== '').join('\n');
       }
       function showStatus(text, type) { const el = $('#sendStatus'); el.textContent = text; el.className = `send-status show ${type}`; }
       function confirmAction(message) {
@@ -2755,6 +2905,11 @@
       async function postReport() {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
+        const mentorTrainee = state.role === 'mentor' ? selectedMentorTrainee() : null;
+        if (state.role === 'mentor' && !mentorTrainee && !mentorManualTraineeMode()) {
+          clearTimeout(timeout);
+          throw new Error('Выберите стажёра из списка или пункт «Нет нужного стажёра в списке».');
+        }
         try {
           const response = await fetch('/api/report', {
             method: 'POST',
@@ -2763,7 +2918,8 @@
               initData: tg?.initData || '',
               role: state.role,
               reportText: reportText(),
-              applicationId: state.role === 'mentor' && selectedMentorTrainee() ? state.profile.traineeApplicationId : undefined,
+              applicationId: mentorTrainee ? mentorTrainee.applicationId : undefined,
+              mentorTraineeName: mentorTrainee ? mentorTrainee.name : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
               mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined,
@@ -2797,7 +2953,7 @@
         btn.disabled = true;
         let sent = false;
         try {
-          const confirmed = await confirmAction('Отправить итоговый отчёт в рабочую группу?');
+          const confirmed = await confirmAction(reportTargetConfirmationText());
           if (!confirmed) return;
 
           btn.classList.add('is-loading');

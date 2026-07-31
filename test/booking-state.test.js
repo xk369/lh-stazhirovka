@@ -596,6 +596,29 @@ test('legacy yes/no experience values do not block booking writes', () => {
   assert.equal(next.applications[0].experience, undefined);
 });
 
+test('legacy invalid mentor delivery status does not block booking writes', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Legacy Delivery Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'passed',
+    mentorReport: true,
+    mentorCommentDeliveryStatus: 'manual_backfill_not_sent'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'create_shift', baseVersion: 2, date: '2026-07-11', seats: 2 },
+    recruiterActor,
+    new Date('2026-07-03T09:00:00+03:00')
+  );
+
+  assert.equal(next.applications[0].mentorCommentDeliveryStatus, '');
+});
+
 test('trainee registry export includes experienced status', () => {
   const source = bookingState();
   source.applications = [{
