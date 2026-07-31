@@ -8,6 +8,7 @@ import {
   applyRespondAssignmentOffer,
   bookingStateForActor,
   composeAssignmentOfferMessage,
+  composeAssignmentOfferResponseMessage,
   composeBookingStageChangedMessage,
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
@@ -227,6 +228,24 @@ test('assignment offer message explains the three hour confirmation window', () 
   assert.match(text, /Подтвердите выход на стажировку/);
   assert.match(text, /10\.07\.2026/);
   assert.match(text, /3 часов/);
+});
+
+test('assignment offer response messages confirm booking or queue status', () => {
+  const application = { name: 'Виктория Неудахина' };
+  const shift = { date: '2026-07-10' };
+
+  const accepted = composeAssignmentOfferResponseMessage(application, shift, 'accepted');
+  assert.match(accepted, /Вы записаны на стажировку/);
+  assert.match(accepted, /10\.07\.2026/);
+  assert.match(accepted, /рабочую группу/);
+
+  const declined = composeAssignmentOfferResponseMessage(application, shift, 'declined');
+  assert.match(declined, /остались в предварительной записи/);
+  assert.match(declined, /предварительной очереди/);
+
+  const expired = composeAssignmentOfferResponseMessage(application, shift, 'expired');
+  assert.match(expired, /Время ответа истекло/);
+  assert.match(expired, /предварительной записи/);
 });
 
 test('rejects trainee booking when shift has no free seats', () => {
