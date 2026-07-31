@@ -191,7 +191,7 @@ test('assignment offer response accepts or declines without baseVersion', () => 
     new Date('2026-07-03T10:00:00.000Z')
   );
   assert.equal(accepted.result.status, 'accepted');
-  assert.equal(accepted.state.applications[0].status, 'pending');
+  assert.equal(accepted.state.applications[0].status, 'confirmed');
   assert.equal(accepted.state.applications[0].shiftId, 1);
   assert.equal(accepted.state.applications[0].recruiterQueueComment, '');
   assert.equal(accepted.state.applications[0].assignmentOffer, null);
@@ -206,6 +206,17 @@ test('assignment offer response accepts or declines without baseVersion', () => 
   assert.equal(declined.state.applications[0].status, 'queue');
   assert.equal(declined.state.applications[0].shiftId, null);
   assert.equal(declined.state.applications[0].assignmentOffer, null);
+
+  const expired = applyRespondAssignmentOffer(
+    offeredState,
+    { applicationId: 20, token: 'offer-token', decision: 'accept' },
+    traineeActor,
+    new Date('2026-07-03T12:00:01.000Z')
+  );
+  assert.equal(expired.result.status, 'expired');
+  assert.equal(expired.state.applications[0].status, 'queue');
+  assert.equal(expired.state.applications[0].shiftId, null);
+  assert.equal(expired.state.applications[0].assignmentOffer, null);
 });
 
 test('assignment offer message explains the three hour confirmation window', () => {

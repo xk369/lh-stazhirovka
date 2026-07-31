@@ -1671,7 +1671,7 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
   next.applications[index] = {
     ...application,
     shiftId: offer.shiftId,
-    status: 'pending',
+    status: 'confirmed',
     recruiterQueueComment: '',
     assignmentOffer: null
   };
