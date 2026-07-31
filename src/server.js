@@ -1128,6 +1128,52 @@ function composeAssignmentOfferMessage(application, shift) {
   ].join('\n');
 }
 
+function composeAssignmentOfferResponseMessage(application, shift, resultStatus) {
+  const dateText = escapeTelegramHtml(formatRuDate(shift?.date));
+  const name = escapeTelegramHtml(application?.name || 'Стажёр');
+  if (resultStatus === 'accepted') {
+    return [
+      '✅ <b>Вы записаны на стажировку</b>',
+      '',
+      `${name}, вы подтвердили выход на <b>${dateText}</b>.`,
+      '',
+      'Ожидайте приглашение в рабочую группу от рекрута.'
+    ].join('\n');
+  }
+  if (resultStatus === 'declined') {
+    return [
+      '↩️ <b>Вы остались в предварительной записи</b>',
+      '',
+      `${name}, вы отказались от предложенной даты <b>${dateText}</b>.`,
+      '',
+      'Заявка остаётся в предварительной очереди. Рекрут сможет предложить другую дату.'
+    ].join('\n');
+  }
+  if (resultStatus === 'expired') {
+    return [
+      '⏱️ <b>Время ответа истекло</b>',
+      '',
+      `Запрос на дату <b>${dateText}</b> больше неактуален.`,
+      '',
+      'Вы остались в предварительной записи.'
+    ].join('\n');
+  }
+  if (resultStatus === 'unavailable') {
+    return [
+      '⚠️ <b>Дата уже недоступна</b>',
+      '',
+      `Запись на <b>${dateText}</b> сейчас недоступна.`,
+      '',
+      'Вы остались в предварительной записи. Рекрут сможет предложить другую дату.'
+    ].join('\n');
+  }
+  return [
+    'ℹ️ <b>Ответ по стажировке обработан</b>',
+    '',
+    'Актуальный статус можно посмотреть в мини-приложении.'
+  ].join('\n');
+}
+
 function assignmentOfferActionUrl(request, application, decision) {
   const offer = application.assignmentOffer;
   const params = new URLSearchParams({
@@ -1167,6 +1213,30 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
     return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
   } catch (error) {
     console.error('Assignment offer delivery error:', error);
+    return {
+      ok: false,
+      status: 'failed',
+      applicationId: application.id,
+      error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
+    };
+  }
+}
+
+async function sendAssignmentOfferResponseToTrainee(application, shift, resultStatus) {
+  if (!application?.telegramChatId) {
+    return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
+  }
+  try {
+    const message = await sendTelegramMessage({
+      botToken: config.botToken,
+      chatId: application.telegramChatId,
+      text: composeAssignmentOfferResponseMessage(application, shift, resultStatus),
+      parseMode: 'HTML',
+      disableWebPagePreview: true
+    });
+    return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
+  } catch (error) {
+    console.error('Assignment offer response delivery error:', error);
     return {
       ok: false,
       status: 'failed',
@@ -2327,12 +2397,23 @@ app.post('/api/assignment-offer/respond', async (request, response, next) => {
       await writeBookingState(result.state);
       return result;
     });
+    const responseApplication = outcome.state.applications.find(
+      application => String(application.id) === String(request.body?.applicationId)
+    );
+    const responseNotification = responseApplication
+      ? await sendAssignmentOfferResponseToTrainee(
+        responseApplication,
+        outcome.result.shift,
+        outcome.result.status
+      )
+      : null;
 
     console.info(JSON.stringify({
       event: 'booking_assignment_offer_responded',
       applicationId: request.body?.applicationId,
       result: outcome.result.status,
       telegramUserId: actor.telegram.user.id,
+      notificationStatus: responseNotification?.status || 'unknown',
       timestamp: new Date().toISOString()
     }));
 
@@ -2340,6 +2421,7 @@ app.post('/api/assignment-offer/respond', async (request, response, next) => {
       ok: true,
       role: actor.role,
       result: outcome.result,
+      ...(responseNotification ? { assignmentOfferResponseNotification: responseNotification } : {}),
       state: bookingStateForActor(outcome.state, actor)
     });
   } catch (error) {
@@ -2732,6 +2814,7 @@ export {
   applyBookingCommand,
   bookingStateForActor,
   composeAssignmentOfferMessage,
+  composeAssignmentOfferResponseMessage,
   composeBookingStageChangedMessage,
   composeMentorTraineeResultMessage,
   composeShiftCancellationMessage,
