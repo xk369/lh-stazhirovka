@@ -366,7 +366,7 @@ test('new common venues are available across recruiter, mentor and server layers
   assert.match(serverJs, /ludwig: 'LUDWIG HALL'/);
   assert.match(serverJs, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
   assert.match(serverJs, /ludwig: \{ loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\], fixedHall: 'LUDWIG HALL' \}/);
-  assert.match(serverJs, /vishnevy_sad: \{ loft: 'ВИШНЕВЫЙ САД', halls: \['CHEKHOB HALL', 'LEVITAN HALL'\] \}/);
+  assert.match(serverJs, /vishnevy_sad: \{ loft: 'ВИШНЕВЫЙ САД', halls: \['CHEKHOV HALL', 'LEVITAN HALL'\] \}/);
 });
 
 test('report submission success does not auto-close the mini app', async () => {

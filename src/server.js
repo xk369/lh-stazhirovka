@@ -110,7 +110,7 @@ const VENUE_HALLS = {
   birch: { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
   metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] },
   ludwig: { loft: 'LUDWIG HALL', halls: ['LUDWIG HALL'], fixedHall: 'LUDWIG HALL' },
-  vishnevy_sad: { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOB HALL', 'LEVITAN HALL'] }
+  vishnevy_sad: { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOV HALL', 'LEVITAN HALL'] }
 };
 
 class BookingValidationError extends Error {
