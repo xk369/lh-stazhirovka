@@ -836,6 +836,27 @@
       border-color: color-mix(in srgb, var(--bad) 25%, var(--line));
       background: color-mix(in srgb, var(--bad) 8%, var(--surface));
     }
+    .assignment-offer-notice {
+      display: grid;
+      gap: 5px;
+      border-radius: 16px;
+      color: var(--warn);
+      border-color: color-mix(in srgb, var(--warn) 28%, var(--line));
+      background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+    }
+    .assignment-offer-notice b {
+      color: inherit;
+      font-size: 14px;
+      font-weight: 950;
+    }
+    .assignment-offer-notice span,
+    .assignment-offer-notice p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.35;
+    }
     .queue-search-panel {
       display: grid;
       gap: 8px;
@@ -965,10 +986,68 @@
       line-height: 1.3;
       overflow-wrap: anywhere;
     }
+    .queue-offer-state {
+      display: grid;
+      gap: 3px;
+      border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--line));
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+      color: var(--warn);
+      padding: 9px 10px;
+      line-height: 1.2;
+    }
+    .queue-offer-state.expired {
+      border-color: color-mix(in srgb, var(--bad) 24%, var(--line));
+      background: color-mix(in srgb, var(--bad) 7%, var(--surface));
+      color: var(--bad);
+    }
+    .queue-offer-state b {
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .queue-offer-state span {
+      font-size: 11px;
+      font-weight: 850;
+      color: inherit;
+      opacity: .88;
+    }
+    .queue-comment-field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .queue-comment-field label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 950;
+      line-height: 1.1;
+    }
+    .queue-comment-field textarea {
+      width: 100%;
+      min-height: 56px;
+      max-height: 112px;
+      resize: vertical;
+      border-radius: 14px;
+      padding: 10px 11px;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+    .queue-comment-save {
+      width: 100%;
+      min-height: 34px;
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 7px 10px;
+    }
     .queue-assign-button {
       width: 100%;
       min-height: 38px;
       border-radius: 999px;
+    }
+    .queue-assign-button:disabled {
+      opacity: .62;
+      cursor: not-allowed;
     }
     .queue-assign-row {
       display: grid;
@@ -994,6 +1073,14 @@
       font-size: 12px;
       font-weight: 850;
       line-height: 1.3;
+    }
+    .queue-card-message {
+      margin: 0;
+      padding: 8px 10px;
+      border-radius: 14px;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.25;
     }
     .date-title, .name { font-weight: 950; line-height: 1.25; }
     .date-title { font-size: 19px; }
@@ -2889,6 +2976,7 @@
     };
     const candidateActionMessages = new Map();
     const shiftActionMessages = new Map();
+    const queueActionMessages = new Map();
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const WORKGROUP_CUSTOM_MANAGER_VALUE = "__custom_manager__";
@@ -2961,6 +3049,7 @@
     let candidateSearch = "";
     let registryRenderFrame = 0;
     let lastStateRefreshAt = 0;
+    let assignmentOfferResponseHandled = false;
     const expandedShiftIds = new Set();
     let closedDatesExpanded = false;
 
@@ -3000,7 +3089,7 @@
 
     fillProfile();
     render();
-    refreshBookingStateOnResume();
+    handleInitialBookingState();
 
     function seed() {
       return {
@@ -3091,6 +3180,14 @@
         mentorDecision: app.mentorDecision || "",
         mentorCommentDeliveryStatus: app.mentorCommentDeliveryStatus || "",
         mentorCommentDeliveryError: app.mentorCommentDeliveryError || "",
+        recruiterQueueComment: app.recruiterQueueComment || "",
+        assignmentOffer: app.assignmentOffer && typeof app.assignmentOffer === "object" ? {
+          token: app.assignmentOffer.token || "",
+          shiftId: app.assignmentOffer.shiftId ?? null,
+          requestedAt: app.assignmentOffer.requestedAt || "",
+          expiresAt: app.assignmentOffer.expiresAt || "",
+          requestedByTelegramUserId: app.assignmentOffer.requestedByTelegramUserId || ""
+        } : null,
         experience: app.experience === "experienced" ? "experienced" : ""
       };
     }
@@ -3269,12 +3366,73 @@
       return payload;
     }
 
+    async function handleInitialBookingState() {
+      try {
+        await refreshBookingStateFromServer();
+      } catch (error) {
+        console.error("Не удалось обновить состояние записи", error);
+      }
+      await handleAssignmentOfferFromUrl();
+    }
+
     function refreshBookingStateOnResume() {
       if (!SERVER_STATE_AVAILABLE || !telegramInitData()) return;
       const now = Date.now();
       if (now - lastStateRefreshAt < 3500) return;
       lastStateRefreshAt = now;
       refreshBookingStateFromServer().catch(error => console.error("Не удалось обновить состояние записи", error));
+    }
+
+    async function handleAssignmentOfferFromUrl() {
+      if (assignmentOfferResponseHandled) return;
+      const params = new URLSearchParams(window.location.search);
+      const decision = params.get("assignmentOffer");
+      const applicationId = Number(params.get("applicationId") || 0);
+      const token = params.get("token") || "";
+      if (!["accept", "decline"].includes(decision) || !applicationId || !token) return;
+      assignmentOfferResponseHandled = true;
+
+      if (!SERVER_STATE_AVAILABLE || !telegramInitData()) {
+        setTraineeFormStatus("Откройте ссылку внутри Telegram Mini App, чтобы подтвердить дату.");
+        return;
+      }
+
+      setTraineeFormStatus(decision === "accept" ? "Подтверждаем дату стажировки..." : "Отправляем отказ от даты...");
+      try {
+        const response = await fetch("/api/assignment-offer/respond", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            initData: telegramInitData(),
+            applicationId,
+            token,
+            decision
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || "Не удалось обработать ответ.");
+        }
+        applyServerStatePayload(result);
+        const status = result?.result?.status;
+        const shiftDate = result?.result?.shift?.date ? formatLongDate(result.result.shift.date) : "";
+        const message = status === "accepted"
+          ? `Дата подтверждена${shiftDate ? `: ${shiftDate}` : ""}. Рекрут увидит вашу запись.`
+          : status === "declined"
+            ? "Вы отказались от предложенной даты. Заявка осталась в предварительной записи."
+            : status === "expired"
+              ? "Время ответа истекло. Заявка осталась в предварительной записи."
+              : status === "unavailable"
+                ? "Эта дата уже недоступна. Заявка осталась в предварительной записи."
+                : "Ответ обработан.";
+        setTraineeFormStatus(message);
+      } catch (error) {
+        console.error("Не удалось обработать ответ на дату", error);
+        setTraineeFormStatus(error.message || "Не удалось обработать ответ.");
+      } finally {
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+        window.history.replaceState(null, "", cleanUrl);
+      }
     }
 
     async function unlockRecruiter() {
@@ -3634,12 +3792,36 @@
       return [...state.applications].reverse().find(app => app.name.toLowerCase() === state.profile.name.toLowerCase()) || null;
     }
 
+    function isAssignmentOfferActive(app) {
+      if (!app?.assignmentOffer || app.status !== "queue") return false;
+      const expiresAt = Date.parse(app.assignmentOffer.expiresAt || "");
+      return Number.isFinite(expiresAt) && expiresAt > Date.now();
+    }
+
+    function assignmentOfferShift(app) {
+      if (!app?.assignmentOffer?.shiftId) return null;
+      return state.shifts.find(shift => String(shift.id) === String(app.assignmentOffer.shiftId)) || null;
+    }
+
+    function assignmentOfferExpiresLabel(app) {
+      const expiresAt = Date.parse(app?.assignmentOffer?.expiresAt || "");
+      if (!Number.isFinite(expiresAt)) return "";
+      return new Intl.DateTimeFormat("ru-RU", {
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(expiresAt));
+    }
+
     function freeSeats(shift) {
       if (shift.remainingSeats !== null && shift.remainingSeats !== undefined && Number.isFinite(Number(shift.remainingSeats))) {
         return Math.max(Number(shift.remainingSeats), 0);
       }
       const seatHoldingStatuses = ["pending", "confirmed", "invited", "feedback", "passed", "failed", "noshow"];
-      return Math.max(Number(shift.seats) - state.applications.filter(app => String(app.shiftId) === String(shift.id) && seatHoldingStatuses.includes(app.status)).length, 0);
+      const used = state.applications.filter(app =>
+        (String(app.shiftId) === String(shift.id) && seatHoldingStatuses.includes(app.status)) ||
+        (isAssignmentOfferActive(app) && String(app.assignmentOffer.shiftId) === String(shift.id))
+      ).length;
+      return Math.max(Number(shift.seats) - used, 0);
     }
 
     function openShifts() {
@@ -3864,6 +4046,20 @@
       return "";
     }
 
+    function renderAssignmentOfferNotice(app) {
+      if (!app?.assignmentOffer) return "";
+      const shift = assignmentOfferShift(app);
+      const expires = assignmentOfferExpiresLabel(app);
+      const active = isAssignmentOfferActive(app);
+      return `
+        <div class="notice assignment-offer-notice ${active ? "" : "bad"}">
+          <b>${active ? "Рекрут предложил дату" : "Запрос на дату истёк"}</b>
+          <span>${shift ? formatDate(shift.date) : "Дата недоступна"}${expires ? ` · ответ до ${escapeHtml(expires)}` : ""}</span>
+          <p>${active ? "Откройте сообщение от бота и нажмите «Да» или «Нет»." : "Ваша заявка остаётся в предварительной записи."}</p>
+        </div>
+      `;
+    }
+
     function renderMyStatus(app) {
       const shift = state.shifts.find(item => item.id === app.shiftId);
       const meta = getStatusMeta(app.status);
@@ -3883,6 +4079,7 @@
             </div>
           </div>
           <div class="notice status-message">${escapeHtml(meta.text)}</div>
+          ${renderAssignmentOfferNotice(app)}
           ${["pending", "queue"].includes(app.status) ? `<div class="meta">Данные заявки можно изменить выше в блоке “Мои данные”. Изменения сохраняются автоматически до решения рекрута.</div>` : ""}
           ${renderStageTrack(app)}
           ${app.status === "invited" ? renderTraineeInvite(app) : ""}
@@ -4122,7 +4319,8 @@
         app.trainingDate,
         trainingNames[app.training],
         attemptNames[app.attempt],
-        app.limits
+        app.limits,
+        app.recruiterQueueComment
       ].filter(Boolean).join(" ").toLowerCase();
     }
 
@@ -4183,14 +4381,22 @@
         .sort((left, right) => String(left.date || "").localeCompare(String(right.date || "")));
     }
 
-    function renderQueueShiftOptions(shifts) {
+    function renderQueueShiftOptions(shifts, selectedShiftId = "") {
       return shifts.map(shift => `
-        <option value="${shift.id}">${escapeHtml(formatDate(shift.date))} · ${freeSeats(shift)} свободно</option>
+        <option value="${shift.id}" ${String(selectedShiftId) === String(shift.id) ? "selected" : ""}>${escapeHtml(formatDate(shift.date))} · ${freeSeats(shift)} свободно</option>
       `).join("");
     }
 
     function renderQueueCandidate(app, shifts) {
-      const shiftOptions = renderQueueShiftOptions(shifts);
+      const offerActive = isAssignmentOfferActive(app);
+      const offerShift = assignmentOfferShift(app);
+      const offerExpired = Boolean(app.assignmentOffer && !offerActive);
+      const candidateShifts = offerActive && offerShift
+        ? [offerShift, ...shifts.filter(shift => String(shift.id) !== String(offerShift.id))]
+        : shifts;
+      const shiftOptions = renderQueueShiftOptions(candidateShifts, offerShift?.id || "");
+      const expiresLabel = assignmentOfferExpiresLabel(app);
+      const actionMessage = queueActionMessages.get(String(app.id)) || "";
       return `
         <article class="queue-candidate-card">
           <div class="queue-candidate-main">
@@ -4204,14 +4410,33 @@
             ${badge(app.attempt === "first", attemptNames[app.attempt])}
           </div>
           ${app.limits ? `<p class="queue-candidate-limits">Ограничения: ${escapeHtml(app.limits)}</p>` : ""}
-          ${shifts.length ? `
+          ${offerActive ? `
+            <div class="queue-offer-state">
+              <b>Ждём подтверждение</b>
+              <span>${offerShift ? escapeHtml(formatDate(offerShift.date)) : "Дата не найдена"}${expiresLabel ? ` · до ${escapeHtml(expiresLabel)}` : ""}</span>
+            </div>
+          ` : offerExpired ? `
+            <div class="queue-offer-state expired">
+              <b>Запрос истёк</b>
+              <span>Можно выбрать дату и отправить новый запрос.</span>
+            </div>
+          ` : ""}
+          <div class="queue-comment-field">
+            <label for="queueComment${app.id}">Коммент для Жени</label>
+            <textarea id="queueComment${app.id}" data-queue-comment-input="${app.id}" rows="2" maxlength="600" placeholder="Видит только рекрут">${escapeHtml(app.recruiterQueueComment || "")}</textarea>
+            <button class="quiet queue-comment-save" data-save-queue-comment="${app.id}" type="button">Сохранить комментарий</button>
+          </div>
+          ${candidateShifts.length ? `
             <div class="queue-assign-row">
               <select class="queue-date-select" data-queue-shift="${app.id}" aria-label="Дата для ${escapeHtml(app.name)}">
                 ${shiftOptions}
               </select>
-              <button class="quiet queue-assign-button" data-assign-selected="${app.id}" type="button">Записать</button>
+              <button class="quiet queue-assign-button" data-assign-selected="${app.id}" type="button" ${offerActive ? "disabled aria-disabled=\"true\"" : ""}>
+                ${offerActive ? "Запрос отправлен" : "Запросить"}
+              </button>
             </div>
           ` : `<div class="queue-no-seat">Нет открытых дат со свободными местами.</div>`}
+          ${actionMessage ? `<div class="form-status queue-card-message">${escapeHtml(actionMessage)}</div>` : ""}
         </article>
       `;
     }
@@ -5153,6 +5378,38 @@ ${managerLine}
       render();
     }
 
+    async function saveQueueComment(applicationId) {
+      const input = document.querySelector(`[data-queue-comment-input="${CSS.escape(String(applicationId))}"]`);
+      const app = state.applications.find(item => String(item.id) === String(applicationId));
+      if (!input || !app) return;
+      queueActionMessages.delete(String(applicationId));
+      await queueBookingCommand("update_queue_comment", { applicationId: Number(applicationId), comment: input.value.trim() });
+      queueActionMessages.set(String(applicationId), "Комментарий сохранён.");
+      renderQueuePool();
+    }
+
+    async function requestAssignmentConfirmation(applicationId, shiftId) {
+      const app = state.applications.find(item => String(item.id) === String(applicationId));
+      const shift = state.shifts.find(item => String(item.id) === String(shiftId));
+      if (!app || !shift) return;
+      const confirmed = await confirmAction(
+        `Отправить «${app.name}» запрос на подтверждение выхода ${formatLongDate(shift.date)}?\n\nЕсли стажёр нажмёт «Да», он автоматически запишется на эту дату. Если «Нет» или не ответит за 3 часа, останется в предварительной записи.`
+      );
+      if (!confirmed) return;
+      queueActionMessages.delete(String(applicationId));
+      const result = await queueBookingCommand("request_assignment_confirmation", { applicationId, shiftId });
+      const status = result?.assignmentOfferNotification?.status;
+      const message = status === "sent"
+        ? "Запрос отправлен стажёру. Место временно зарезервировано на 3 часа."
+        : status === "skipped"
+          ? "Запрос создан, но Telegram стажёра не подключён."
+          : status === "failed"
+            ? "Запрос создан, но сообщение не доставлено. Проверьте Telegram стажёра."
+            : "Запрос создан.";
+      queueActionMessages.set(String(applicationId), message);
+      render();
+    }
+
     async function editShiftSeats(id) {
       const shift = state.shifts.find(item => String(item.id) === String(id));
       if (!shift || shift.canceled) return;
@@ -5485,6 +5742,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         render();
         return;
       }
+      const saveQueueCommentButton = event.target.closest("[data-save-queue-comment]");
+      if (saveQueueCommentButton) {
+        await saveQueueComment(Number(saveQueueCommentButton.dataset.saveQueueComment));
+        return;
+      }
       const assignSelected = event.target.closest("[data-assign-selected]");
       if (assignSelected) {
         const applicationId = Number(assignSelected.dataset.assignSelected);
@@ -5494,8 +5756,7 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
           alert("Выберите дату со свободными местами.");
           return;
         }
-        await queueBookingCommand("assign_shift", { applicationId, shiftId });
-        render();
+        await requestAssignmentConfirmation(applicationId, shiftId);
         return;
       }
       const assign = event.target.closest("[data-assign]");

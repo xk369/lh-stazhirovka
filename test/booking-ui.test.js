@@ -185,6 +185,10 @@ test('recruiter queue is searchable, grouped by priority and exposes Telegram co
   assert.match(html, /function renderQueuePool\(\)/);
   assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
   assert.match(html, /data-assign-selected="\$\{app\.id\}"/);
+  assert.match(html, /Коммент для Жени/);
+  assert.match(html, /data-save-queue-comment="\$\{app\.id\}"/);
+  assert.match(html, /request_assignment_confirmation/);
+  assert.match(html, /update_queue_comment/);
   assert.doesNotMatch(renderRecruiterDates, /renderQueuePool|renderQueueForShift|queue-priority-group/);
   assert.doesNotMatch(datesSection, /Самый приоритетный|Нужно внимательнее|Низший приоритет|Очередь отображается/);
 });
@@ -306,7 +310,7 @@ test('trainee status hydrates from server-owned applications without a local pro
 
   assert.match(applyServerStatePayload, /hydrateTraineeProfileFromServerState\(\)/);
   assert.match(html, /let lastStateRefreshAt = 0/);
-  assert.match(html, /refreshBookingStateOnResume\(\);/);
+  assert.match(html, /handleInitialBookingState\(\);/);
   assert.match(resumeRefresh, /now - lastStateRefreshAt < 3500/);
   assert.match(html, /document\.addEventListener\("visibilitychange"/);
   assert.match(html, /window\.addEventListener\("focus", refreshBookingStateOnResume\)/);
