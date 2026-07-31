@@ -8,6 +8,10 @@ async function readPublicFile(name) {
   return readFile(new URL(`public/${name}`, projectRoot), 'utf8');
 }
 
+async function readProjectFile(name) {
+  return readFile(new URL(name, projectRoot), 'utf8');
+}
+
 test('home menu names describe the user action behind every entry', async () => {
   const html = await readPublicFile('index.html');
 
@@ -347,6 +351,22 @@ test('invite group date selector shows only actual dates in ascending order', as
   assert.match(renderInviteGroups, /inviteShifts\.map/);
   assert.match(ensureInviteDraft, /const inviteShifts = groupInviteShifts\(\)/);
   assert.doesNotMatch(renderInviteGroups, /state\.shifts\.map\(shift => `<option value="\$\{shift\.id\}"/);
+});
+
+test('new common venues are available across recruiter, mentor and server layers', async () => {
+  const bookingHtml = await readPublicFile('booking.html');
+  const reportHtml = await readPublicFile('index.html');
+  const serverJs = await readProjectFile('src/server.js');
+
+  assert.match(bookingHtml, /id: "ludwig", name: "LUDWIG HALL"/);
+  assert.match(bookingHtml, /id: "vishnevy_sad", name: "ВИШНЕВЫЙ САД"/);
+  assert.match(reportHtml, /loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\]/);
+  assert.match(reportHtml, /ludwig: 'LUDWIG HALL'/);
+  assert.match(reportHtml, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
+  assert.match(serverJs, /ludwig: 'LUDWIG HALL'/);
+  assert.match(serverJs, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
+  assert.match(serverJs, /ludwig: \{ loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\], fixedHall: 'LUDWIG HALL' \}/);
+  assert.match(serverJs, /vishnevy_sad: \{ loft: 'ВИШНЕВЫЙ САД', halls: \['CHEKHOB HALL', 'LEVITAN HALL'\] \}/);
 });
 
 test('report submission success does not auto-close the mini app', async () => {

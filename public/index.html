@@ -2000,6 +2000,7 @@
         { loft: 'LOFT #8', halls: ['MAIN HALL', 'WELCOME HALL', 'ROSEWOOD HALL', 'MILINIS HALL'] },
         { loft: 'LOFT #10 (TAU)', halls: ['MAIN HALL'] },
         { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
+        { loft: 'LUDWIG HALL', halls: ['LUDWIG HALL'] },
         { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOB HALL', 'LEVITAN HALL'] }
       ];
       const BOOKING_VENUE_LABELS = {
@@ -2012,7 +2013,9 @@
         loft8: 'LOFT #8',
         loft10: 'LOFT #10 (TAU)',
         birch: 'THE BIRCH',
-        metelitsa: 'МЕТЕЛИЦА'
+        metelitsa: 'МЕТЕЛИЦА',
+        ludwig: 'LUDWIG HALL',
+        vishnevy_sad: 'ВИШНЕВЫЙ САД'
       };
       const BOOKING_VENUE_HALLS = {
         loft1: { loft: 'LOFT #1' },
@@ -2024,7 +2027,9 @@
         loft8: { loft: 'LOFT #8' },
         loft10: { loft: 'LOFT #10 (TAU)', fixedHall: 'MAIN HALL' },
         birch: { loft: 'THE BIRCH' },
-        metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] }
+        metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] },
+        ludwig: { loft: 'LUDWIG HALL', fixedHall: 'LUDWIG HALL' },
+        vishnevy_sad: { loft: 'ВИШНЕВЫЙ САД' }
       };
       const tg = window.Telegram?.WebApp;
       const state = {

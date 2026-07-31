@@ -94,7 +94,9 @@ const VENUE_LABELS = {
   loft8: 'LOFT#8',
   loft10: 'LOFT#10 (TAU)',
   birch: 'THE BIRCH',
-  metelitsa: 'МЕТЕЛИЦА'
+  metelitsa: 'МЕТЕЛИЦА',
+  ludwig: 'LUDWIG HALL',
+  vishnevy_sad: 'ВИШНЕВЫЙ САД'
 };
 const VENUE_HALLS = {
   loft1: { loft: 'LOFT #1', halls: ['AVANTAGE', 'CHATEAU', 'ROYAL BLANC'] },
@@ -106,7 +108,9 @@ const VENUE_HALLS = {
   loft8: { loft: 'LOFT #8', halls: ['MAIN HALL', 'WELCOME HALL', 'ROSEWOOD HALL', 'MILINIS HALL'] },
   loft10: { loft: 'LOFT #10 (TAU)', halls: ['MAIN HALL'], fixedHall: 'MAIN HALL' },
   birch: { loft: 'THE BIRCH', halls: ['AMBERWOOD', 'BLACKWOOD', 'MANGO', 'MAHOGANY'] },
-  metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] }
+  metelitsa: { loft: 'МЕТЕЛИЦА', halls: [] },
+  ludwig: { loft: 'LUDWIG HALL', halls: ['LUDWIG HALL'], fixedHall: 'LUDWIG HALL' },
+  vishnevy_sad: { loft: 'ВИШНЕВЫЙ САД', halls: ['CHEKHOB HALL', 'LEVITAN HALL'] }
 };
 
 class BookingValidationError extends Error {
