@@ -5,7 +5,9 @@ import {
   BookingValidationError,
   applyBookingCommand,
   applyMentorReportResultToBookingState,
+  applyRespondAssignmentOffer,
   bookingStateForActor,
+  composeAssignmentOfferMessage,
   composeBookingStageChangedMessage,
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
@@ -104,6 +106,116 @@ test('public booking state exposes server-side seat availability without leaking
   assert.equal(result.shifts[0].bookedSeats, 3);
   assert.equal(result.shifts[0].remainingSeats, 1);
   assert.deepEqual(result.applications.map(application => application.id), [10]);
+});
+
+test('assignment confirmation request keeps trainee in queue and holds a seat', () => {
+  const now = new Date('2099-07-03T09:00:00.000Z');
+  const state = {
+    version: 3,
+    updatedAt: '2099-07-03T00:00:00.000Z',
+    shifts: [{ id: 1, date: '2099-07-10', seats: 1, open: true }],
+    applications: [
+      {
+        id: 20,
+        shiftId: null,
+        name: 'Очередь Тест',
+        phone: '+79990000000',
+        training: 'passed',
+        trainingDate: '2026-07-01',
+        attempt: 'first',
+        limits: '',
+        status: 'queue',
+        telegramUserId: '999',
+        telegramChatId: '999',
+        recruiterQueueComment: 'Созвониться вечером'
+      }
+    ],
+    inviteGroups: []
+  };
+
+  const next = applyBookingCommand(
+    state,
+    { action: 'request_assignment_confirmation', baseVersion: 3, applicationId: 20, shiftId: 1 },
+    recruiterActor,
+    now
+  );
+  const application = next.applications[0];
+  assert.equal(application.status, 'queue');
+  assert.equal(application.shiftId, null);
+  assert.equal(application.recruiterQueueComment, 'Созвониться вечером');
+  assert.equal(application.assignmentOffer.shiftId, 1);
+  assert.ok(application.assignmentOffer.token);
+  assert.equal(
+    bookingStateForActor(next, recruiterActor).shifts[0].remainingSeats,
+    0
+  );
+  const traineeState = bookingStateForActor(next, traineeActor);
+  assert.equal('recruiterQueueComment' in traineeState.applications[0], false);
+});
+
+test('assignment offer response accepts or declines without baseVersion', () => {
+  const offeredState = {
+    version: 4,
+    updatedAt: '2026-07-03T09:00:00.000Z',
+    shifts: [{ id: 1, date: '2026-07-10', seats: 2, open: true }],
+    applications: [
+      {
+        id: 20,
+        shiftId: null,
+        name: 'Очередь Тест',
+        phone: '+79990000000',
+        training: 'passed',
+        trainingDate: '2026-07-01',
+        attempt: 'first',
+        limits: '',
+        status: 'queue',
+        telegramUserId: '999',
+        telegramChatId: '999',
+        recruiterQueueComment: 'Созвониться вечером',
+        assignmentOffer: {
+          token: 'offer-token',
+          shiftId: 1,
+          requestedAt: '2026-07-03T09:00:00.000Z',
+          expiresAt: '2026-07-03T12:00:00.000Z',
+          requestedByTelegramUserId: '1294774551'
+        }
+      }
+    ],
+    inviteGroups: []
+  };
+
+  const accepted = applyRespondAssignmentOffer(
+    offeredState,
+    { applicationId: 20, token: 'offer-token', decision: 'accept' },
+    traineeActor,
+    new Date('2026-07-03T10:00:00.000Z')
+  );
+  assert.equal(accepted.result.status, 'accepted');
+  assert.equal(accepted.state.applications[0].status, 'pending');
+  assert.equal(accepted.state.applications[0].shiftId, 1);
+  assert.equal(accepted.state.applications[0].recruiterQueueComment, '');
+  assert.equal(accepted.state.applications[0].assignmentOffer, null);
+
+  const declined = applyRespondAssignmentOffer(
+    offeredState,
+    { applicationId: 20, token: 'offer-token', decision: 'decline' },
+    traineeActor,
+    new Date('2026-07-03T10:00:00.000Z')
+  );
+  assert.equal(declined.result.status, 'declined');
+  assert.equal(declined.state.applications[0].status, 'queue');
+  assert.equal(declined.state.applications[0].shiftId, null);
+  assert.equal(declined.state.applications[0].assignmentOffer, null);
+});
+
+test('assignment offer message explains the three hour confirmation window', () => {
+  const text = composeAssignmentOfferMessage(
+    { name: 'Виктория Неудахина' },
+    { date: '2026-07-10' }
+  );
+  assert.match(text, /Подтвердите выход на стажировку/);
+  assert.match(text, /10\.07\.2026/);
+  assert.match(text, /3 часов/);
 });
 
 test('rejects trainee booking when shift has no free seats', () => {
