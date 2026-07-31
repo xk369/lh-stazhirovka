@@ -2977,6 +2977,45 @@
     const candidateActionMessages = new Map();
     const shiftActionMessages = new Map();
     const queueActionMessages = new Map();
+    const queueActionMessageTimers = new Map();
+
+    function confirmAction(message) {
+      const webApp = window.Telegram?.WebApp;
+      if (typeof webApp?.showConfirm === "function") {
+        return new Promise(resolve => {
+          try {
+            webApp.showConfirm(message, confirmed => resolve(Boolean(confirmed)));
+          } catch (error) {
+            console.warn("Telegram confirm failed, fallback to browser confirm", error);
+            resolve(window.confirm(message));
+          }
+        });
+      }
+      return Promise.resolve(window.confirm(message));
+    }
+
+    function clearQueueActionMessage(applicationId, rerender = false) {
+      const key = String(applicationId);
+      const timer = queueActionMessageTimers.get(key);
+      if (timer) clearTimeout(timer);
+      queueActionMessageTimers.delete(key);
+      const hadMessage = queueActionMessages.delete(key);
+      if (rerender && hadMessage) renderQueuePool();
+    }
+
+    function setQueueActionMessage(applicationId, message, options = {}) {
+      const key = String(applicationId);
+      const ttl = Number.isFinite(options.ttl) ? options.ttl : 3600;
+      clearQueueActionMessage(key);
+      if (!message) return;
+      queueActionMessages.set(key, message);
+      if (options.renderNow !== false) renderQueuePool();
+      if (ttl > 0) {
+        queueActionMessageTimers.set(key, setTimeout(() => {
+          clearQueueActionMessage(key, true);
+        }, ttl));
+      }
+    }
     const trainingNames = { passed: "Банкетное обслуживание пройдено", not_passed: "Банкетное обслуживание не пройдено" };
     const attemptNames = { first: "Первая стажировка", repeat: "Повторная" };
     const WORKGROUP_CUSTOM_MANAGER_VALUE = "__custom_manager__";
@@ -5382,10 +5421,9 @@ ${managerLine}
       const input = document.querySelector(`[data-queue-comment-input="${CSS.escape(String(applicationId))}"]`);
       const app = state.applications.find(item => String(item.id) === String(applicationId));
       if (!input || !app) return;
-      queueActionMessages.delete(String(applicationId));
+      clearQueueActionMessage(applicationId);
       await queueBookingCommand("update_queue_comment", { applicationId: Number(applicationId), comment: input.value.trim() });
-      queueActionMessages.set(String(applicationId), "Комментарий сохранён.");
-      renderQueuePool();
+      setQueueActionMessage(applicationId, "Комментарий сохранён.", { ttl: 2200 });
     }
 
     async function requestAssignmentConfirmation(applicationId, shiftId) {
@@ -5396,18 +5434,27 @@ ${managerLine}
         `Отправить «${app.name}» запрос на подтверждение выхода ${formatLongDate(shift.date)}?\n\nЕсли стажёр нажмёт «Да», он автоматически запишется на эту дату. Если «Нет» или не ответит за 3 часа, останется в предварительной записи.`
       );
       if (!confirmed) return;
-      queueActionMessages.delete(String(applicationId));
-      const result = await queueBookingCommand("request_assignment_confirmation", { applicationId, shiftId });
-      const status = result?.assignmentOfferNotification?.status;
-      const message = status === "sent"
-        ? "Запрос отправлен стажёру. Место временно зарезервировано на 3 часа."
-        : status === "skipped"
-          ? "Запрос создан, но Telegram стажёра не подключён."
-          : status === "failed"
-            ? "Запрос создан, но сообщение не доставлено. Проверьте Telegram стажёра."
-            : "Запрос создан.";
-      queueActionMessages.set(String(applicationId), message);
-      render();
+      setQueueActionMessage(applicationId, "Отправляем запрос стажёру...", { ttl: 0 });
+      try {
+        const result = await queueBookingCommand("request_assignment_confirmation", { applicationId, shiftId }, { notify: false });
+        const status = result?.assignmentOfferNotification?.status;
+        const message = status === "sent"
+          ? "Уведомление отправлено. Место зарезервировано на 3 часа."
+          : status === "skipped"
+            ? "Запрос создан, но Telegram стажёра не подключён."
+            : status === "failed"
+              ? `Запрос создан, но Telegram не доставил сообщение${result.assignmentOfferNotification?.error ? `: ${result.assignmentOfferNotification.error}` : "."}`
+              : "Запрос создан. Проверьте статус доставки.";
+        setQueueActionMessage(applicationId, message, { ttl: status === "sent" ? 5200 : 9000, renderNow: false });
+        render();
+      } catch (error) {
+        console.error("Не удалось отправить запрос подтверждения", error);
+        setQueueActionMessage(
+          applicationId,
+          error.message || "Не удалось отправить запрос. Повторите попытку.",
+          { ttl: 9000 }
+        );
+      }
     }
 
     async function editShiftSeats(id) {
