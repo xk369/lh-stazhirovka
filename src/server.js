@@ -1295,6 +1295,9 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
   }
+  if (shouldSuppressTraineeNotifications()) {
+    return suppressedTraineeNotification(application.id);
+  }
   try {
     const message = await sendTelegramMessage({
       botToken: config.botToken,
@@ -1332,6 +1335,9 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
 async function sendAssignmentOfferResponseToTrainee(application, shift, resultStatus) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
+  }
+  if (shouldSuppressTraineeNotifications()) {
+    return suppressedTraineeNotification(application.id);
   }
   try {
     const message = await sendTelegramMessage({

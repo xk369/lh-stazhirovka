@@ -5438,10 +5438,13 @@ ${managerLine}
       try {
         const result = await queueBookingCommand("request_assignment_confirmation", { applicationId, shiftId }, { notify: false });
         const status = result?.assignmentOfferNotification?.status;
+        const skippedReason = result?.assignmentOfferNotification?.skipped || "";
         const message = status === "sent"
           ? "Уведомление отправлено. Место зарезервировано на 3 часа."
           : status === "skipped"
-            ? "Запрос создан, но Telegram стажёра не подключён."
+            ? skippedReason === "trainee_notifications_suppressed"
+              ? "Тестовый режим: запрос создан, но ЛС стажёру не отправлено."
+              : "Запрос создан, но Telegram стажёра не подключён."
             : status === "failed"
               ? `Запрос создан, но Telegram не доставил сообщение${result.assignmentOfferNotification?.error ? `: ${result.assignmentOfferNotification.error}` : "."}`
               : "Запрос создан. Проверьте статус доставки.";

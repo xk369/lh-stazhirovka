@@ -368,6 +368,8 @@ test('queue assignment request has confirm helper and transient feedback', async
   assert.match(requestAssignment, /await confirmAction\(/);
   assert.match(requestAssignment, /Отправляем запрос стажёру/);
   assert.match(requestAssignment, /Уведомление отправлено/);
+  assert.match(requestAssignment, /Тестовый режим: запрос создан, но ЛС стажёру не отправлено/);
+  assert.match(requestAssignment, /trainee_notifications_suppressed/);
   assert.match(requestAssignment, /notify: false/);
   assert.match(saveQueueComment, /setQueueActionMessage\(applicationId, "Комментарий сохранён\.", \{ ttl: 2200 \}\)/);
 });
@@ -444,11 +446,17 @@ test('mentor manual trainee fields appear only after selecting the fallback opti
 test('staging can suppress personal trainee Telegram notifications', async () => {
   const server = await readSourceFile('server.js');
   const env = await readFile(new URL('../.env.example', import.meta.url), 'utf8');
+  const assignmentOfferSender = server.match(/async function sendAssignmentOfferToTrainee\([\s\S]*?\n\}/)?.[0] || '';
+  const assignmentOfferResponseSender = server.match(/async function sendAssignmentOfferResponseToTrainee\([\s\S]*?\n\}/)?.[0] || '';
 
   assert.match(server, /suppressTraineeNotifications: process\.env\.SUPPRESS_TRAINEE_NOTIFICATIONS === 'yes'/);
   assert.match(server, /function shouldSuppressTraineeNotifications\(\) \{/);
   assert.match(server, /trainee_notifications_suppressed/);
   assert.match(server, /sendBookingStageChangedToTrainee/);
+  assert.match(server, /sendAssignmentOfferToTrainee/);
+  assert.match(server, /sendAssignmentOfferResponseToTrainee/);
+  assert.match(assignmentOfferSender, /shouldSuppressTraineeNotifications\(\)/);
+  assert.match(assignmentOfferResponseSender, /shouldSuppressTraineeNotifications\(\)/);
   assert.match(server, /sendShiftCancellationToTrainees/);
   assert.match(server, /sendShiftCapacityChangedToTrainees/);
   assert.match(server, /sendMentorResultToTrainee/);
