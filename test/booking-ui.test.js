@@ -388,6 +388,21 @@ test('new common venues are available across recruiter, mentor and server layers
   assert.match(serverJs, /vishnevy_sad: \{ loft: 'ВИШНЕВЫЙ САД', halls: \['CHEKHOV HALL', 'LEVITAN HALL'\] \}/);
 });
 
+test('queue assignment request has confirm helper and transient feedback', async () => {
+  const html = await readPublicFile('booking.html');
+  const requestAssignment = html.match(/async function requestAssignmentConfirmation\(applicationId, shiftId\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const saveQueueComment = html.match(/async function saveQueueComment\(applicationId\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(html, /function confirmAction\(message\) \{/);
+  assert.match(html, /function setQueueActionMessage\(applicationId, message/);
+  assert.match(html, /function clearQueueActionMessage\(applicationId/);
+  assert.match(requestAssignment, /await confirmAction\(/);
+  assert.match(requestAssignment, /Отправляем запрос стажёру/);
+  assert.match(requestAssignment, /Уведомление отправлено/);
+  assert.match(requestAssignment, /notify: false/);
+  assert.match(saveQueueComment, /setQueueActionMessage\(applicationId, "Комментарий сохранён\.", \{ ttl: 2200 \}\)/);
+});
+
 test('report submission success does not auto-close the mini app', async () => {
   const html = await readPublicFile('index.html');
   const sendSuccessBlock = html.match(/showStatus\(`Отчёт успешно отправлен[\s\S]*?\n        \} catch \(error\)/)?.[0] || '';
