@@ -364,6 +364,27 @@ test('allows attendance status after group invite is sent', () => {
   assert.equal(next.applications[0].status, 'feedback');
 });
 
+test('rejects a recruiter attempt to skip booking stages', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Pending Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'pending'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      { action: 'set_application_status', baseVersion: 2, applicationId: 10, status: 'passed' },
+      recruiterActor
+    ),
+    /Переход заявки/
+  );
+});
+
 test('mentor report closes shift when every assigned trainee has a final result', () => {
   const source = bookingState();
   source.applications = [{

@@ -8,6 +8,8 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY public ./public
+COPY db ./db
+COPY scripts ./scripts
 
 RUN mkdir -p /app/data
 

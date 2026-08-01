@@ -6,15 +6,53 @@ import express from 'express';
 import helmet from 'helmet';
 import {
   TelegramAuthError,
-  sendTelegramMessage,
-  sendTelegramPhoto,
   validateTelegramInitData
 } from './telegram.js';
+import {
+  TELEGRAM_DELIVERY_MODES,
+  createTelegramDelivery,
+  telegramDeliveryMode
+} from './telegram-delivery.js';
 import { normalizeReportText, normalizeRole, resolveChatId } from './report.js';
+import {
+  suppressedTraineeNotification,
+  traineeNotificationsSuppressed
+} from './notification-policy.js';
+import {
+  BOOKING_STATUSES,
+  BOOKING_STATUS_LABELS,
+  BOOKING_STEP_BACK_STATUSES,
+  FINAL_BOOKING_STATUSES,
+  MENTOR_REPORT_TRAINEE_STATUSES,
+  SEAT_HOLDING_STATUSES,
+  SHIFT_CANCELLATION_APPLICATION_STATUSES,
+  TRAINEE_WRITE_STATUSES,
+  bookingStatusFromMentorDecision,
+  canRecruiterSetApplicationStatus,
+  normalizeBookingStatus
+} from './booking-state-machine.js';
+import {
+  normalizeBookingState,
+  normalizeStateVersion,
+  normalizeUpdatedAt,
+  withStateMetadata
+} from './booking-state.js';
+import {
+  BOOKING_STORAGE_MODES,
+  BookingStorageReadOnlyError,
+  bookingStorageMode
+} from './booking-storage-mode.js';
+import {
+  createPostgresReadOnlyBookingStorageAdapter,
+  createPostgresWriteBookingStorageAdapter
+} from './booking-storage/adapter.js';
+import { createPostgresPool } from './postgres/connection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '../public');
+const configuredTelegramDeliveryMode = telegramDeliveryMode();
+const configuredBookingStorageMode = bookingStorageMode();
 
 const config = {
   port: Number(process.env.PORT || 3000),
@@ -24,58 +62,28 @@ const config = {
   mentorChatId: String(process.env.MENTOR_CHAT_ID || '').trim(),
   initDataTtlSeconds: Number(process.env.INIT_DATA_TTL_SECONDS || 86_400),
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
+  bookingStorageMode: configuredBookingStorageMode,
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
-  telegramPollingEnabled: process.env.TELEGRAM_POLLING === 'yes',
+  telegramDeliveryMode: configuredTelegramDeliveryMode,
+  telegramPollingEnabled: (
+    process.env.TELEGRAM_POLLING === 'yes'
+    && configuredTelegramDeliveryMode === TELEGRAM_DELIVERY_MODES.LIVE
+  ),
+  suppressTraineeNotifications: traineeNotificationsSuppressed(),
   recruiterTelegramIds: parseTelegramIdSet(process.env.RECRUITER_TELEGRAM_IDS || '')
 };
+const telegramDelivery = createTelegramDelivery({ mode: config.telegramDeliveryMode });
 
 const dbPath = path.join(config.dataDir, 'db.json');
+let postgresBookingPool = null;
+let postgresBookingStorage = null;
 let telegramOffset = 0;
 
-const BOOKING_STATUSES = new Set([
-  'pending',
-  'queue',
-  'confirmed',
-  'invited',
-  'feedback',
-  'passed',
-  'failed',
-  'noshow'
-]);
-const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
-const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
-const SEAT_HOLDING_STATUSES = new Set([
-  'pending',
-  'confirmed',
-  'invited',
-  'feedback',
-  'passed',
-  'failed',
-  'noshow'
-]);
-const FINAL_BOOKING_STATUSES = new Set(['passed', 'failed', 'noshow']);
-const SHIFT_CANCELLATION_APPLICATION_STATUSES = new Set(['pending', 'confirmed', 'invited']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
 const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const EXPERIENCE_VALUES = new Set(['experienced']);
 const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
-const BOOKING_STATUS_LABELS = {
-  pending: 'Заявка отправлена',
-  queue: 'Предварительная запись',
-  confirmed: 'Выход подтвержден',
-  invited: 'Приглашение отправлено',
-  feedback: 'Ждем отчет',
-  passed: 'Стажировка пройдена',
-  failed: 'Нужна повторная запись',
-  noshow: 'Выход не состоялся'
-};
-const BOOKING_STEP_BACK_STATUSES = {
-  feedback: 'invited',
-  passed: 'feedback',
-  failed: 'feedback',
-  noshow: 'invited'
-};
 const TRAINING_LABELS = {
   passed: 'Банкетное обслуживание пройдено',
   not_passed: 'Банкетное обслуживание не пройдено'
@@ -167,6 +175,15 @@ function assertConfig() {
   if (!config.host) {
     throw new Error('HOST must not be empty.');
   }
+  if (
+    (
+      config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+      || config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES
+    )
+    && !String(process.env.DATABASE_URL || '').trim()
+  ) {
+    throw new Error('DATABASE_URL is required for PostgreSQL booking storage.');
+  }
 }
 
 function validateRequestInitData(initData) {
@@ -191,6 +208,16 @@ function serializeTelegramUser(user) {
 
 function bookingRoleForTelegramUser(user) {
   return config.recruiterTelegramIds.has(String(user.id)) ? 'recruiter' : 'trainee';
+}
+
+function traineeNotificationSuppressionReason() {
+  if (config.telegramDeliveryMode === TELEGRAM_DELIVERY_MODES.DRY_RUN) {
+    return 'telegram_delivery_dry_run';
+  }
+  if (config.suppressTraineeNotifications) {
+    return 'trainee_notifications_suppressed';
+  }
+  return '';
 }
 
 function initDataFromRequest(request) {
@@ -230,6 +257,22 @@ function handleBookingAuthError(response, error) {
     return true;
   }
   return false;
+}
+
+async function handleBookingCommandLayerError(response, error, actor = null) {
+  if (!error || !Number.isInteger(error.status) || !error.code) return false;
+  const payload = {
+    ok: false,
+    error: error.message,
+    code: error.code
+  };
+  if (error.status === 409 && actor) {
+    const state = await readBookingState();
+    payload.role = actor.role;
+    payload.state = bookingStateForActor(state, actor);
+  }
+  response.status(error.status).json(payload);
+  return true;
 }
 
 function nextDate(daysFromNow) {
@@ -300,27 +343,6 @@ function seedBookingState() {
   };
 }
 
-function normalizeStateVersion(value) {
-  const version = Number(value);
-  return Number.isSafeInteger(version) && version > 0 ? version : 1;
-}
-
-function normalizeUpdatedAt(value) {
-  if (typeof value !== 'string' || !value.trim()) return new Date(0).toISOString();
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
-}
-
-function withStateMetadata(state, source = state) {
-  return {
-    version: normalizeStateVersion(source?.version),
-    updatedAt: normalizeUpdatedAt(source?.updatedAt),
-    shifts: Array.isArray(state?.shifts) ? state.shifts : [],
-    applications: Array.isArray(state?.applications) ? state.applications : [],
-    inviteGroups: Array.isArray(state?.inviteGroups) ? state.inviteGroups : []
-  };
-}
-
 function touchBookingState(state, now = new Date()) {
   return {
     ...state,
@@ -330,12 +352,7 @@ function touchBookingState(state, now = new Date()) {
 }
 
 function normalizeLegacyStatus(status) {
-  const map = {
-    new: 'pending',
-    waiting: 'invited',
-    report: 'feedback'
-  };
-  return map[status] || status || 'pending';
+  return normalizeBookingStatus(status);
 }
 
 function normalizeRequiredText(value, field, maxLength) {
@@ -1004,13 +1021,20 @@ async function sendBookingStageChangedToTrainee(application, previousStatus) {
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
+  const suppressionReason = traineeNotificationSuppressionReason();
+  if (suppressionReason) {
+    return suppressedTraineeNotification(application.id, suppressionReason);
+  }
   try {
-    const message = await sendTelegramMessage({
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId: application.telegramChatId,
       text: composeBookingStageChangedMessage(application, previousStatus),
       parseMode: 'HTML',
       disableWebPagePreview: true
+    }, {
+      context: 'booking_stage_changed',
+      chatTarget: 'trainee'
     });
     return { ok: true, status: 'sent', messageId: message.message_id };
   } catch (error) {
@@ -1050,13 +1074,20 @@ async function sendShiftCancellationToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      return suppressedTraineeNotification(application.id, suppressionReason);
+    }
     try {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text: composeShiftCancellationMessage(shift),
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'shift_cancellation',
+        chatTarget: 'trainee'
       });
       return { applicationId: application.id, status: 'sent' };
     } catch (error) {
@@ -1077,13 +1108,20 @@ async function sendShiftCapacityChangedToTrainees(shift, applications) {
     if (!application.telegramChatId) {
       return { applicationId: application.id, status: 'skipped' };
     }
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      return suppressedTraineeNotification(application.id, suppressionReason);
+    }
     try {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text: composeShiftCapacityChangedMessage(shift),
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'shift_capacity_changed',
+        chatTarget: 'trainee'
       });
       return { applicationId: application.id, status: 'sent' };
     } catch (error) {
@@ -1106,14 +1144,24 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing' };
   }
+  const suppressionReason = traineeNotificationSuppressionReason();
+  if (suppressionReason) {
+    return {
+      ...suppressedTraineeNotification(application.id, suppressionReason),
+      sentAt: now.toISOString()
+    };
+  }
 
   try {
-    const message = await sendTelegramMessage({
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId: application.telegramChatId,
       text: composeMentorTraineeResultMessage(application, resultPayload),
       parseMode: 'HTML',
       disableWebPagePreview: true
+    }, {
+      context: 'mentor_result',
+      chatTarget: 'trainee'
     });
     return {
       ok: true,
@@ -1129,13 +1177,6 @@ async function sendMentorResultToTrainee(application, resultPayload, now = new D
       error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
     };
   }
-}
-
-function bookingStatusFromMentorDecision(decision, fallbackStatus) {
-  const cleanDecision = String(decision || '').trim();
-  if (cleanDecision === 'Стажировка пройдена') return 'passed';
-  if (cleanDecision === 'Требуется повторная стажировка') return 'failed';
-  return fallbackStatus;
 }
 
 function applyMentorReportResultToBookingState(state, reportResult, now = new Date()) {
@@ -1293,6 +1334,13 @@ function applySetApplicationStatus(state, command, actor) {
 
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
+  const currentStatus = normalizeLegacyStatus(application.status);
+  if (!canRecruiterSetApplicationStatus(currentStatus, status)) {
+    throw new BookingValidationError(
+      `Переход заявки из статуса «${BOOKING_STATUS_LABELS[currentStatus] || currentStatus}» `
+      + `в «${BOOKING_STATUS_LABELS[status] || status}» недоступен.`
+    );
+  }
   if (status === 'confirmed' && !application.shiftId) {
     throw new BookingValidationError('confirmed application must have shiftId.');
   }
@@ -1672,25 +1720,54 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
   return validateBookingStateForWrite(touchBookingState(nextState, now));
 }
 
-async function ensureDb() {
+function bookingPostgresPool() {
+  if (!postgresBookingPool) postgresBookingPool = createPostgresPool();
+  return postgresBookingPool;
+}
+
+function postgresBookingStorageAdapter() {
+  if (postgresBookingStorage) return postgresBookingStorage;
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY) {
+    postgresBookingStorage = createPostgresReadOnlyBookingStorageAdapter({
+      pool: bookingPostgresPool()
+    });
+    return postgresBookingStorage;
+  }
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES) {
+    postgresBookingStorage = createPostgresWriteBookingStorageAdapter({
+      pool: bookingPostgresPool(),
+      reportChatIds: {
+        mentor: config.mentorChatId,
+        trainee: config.traineeChatId
+      }
+    });
+    return postgresBookingStorage;
+  }
+  throw new Error(`PostgreSQL booking storage is not enabled for mode "${config.bookingStorageMode}".`);
+}
+
+function isPostgresBookingStorageMode() {
+  return (
+    config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES_READONLY
+    || config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES
+  );
+}
+
+function isPostgresWriteBookingStorageMode() {
+  return config.bookingStorageMode === BOOKING_STORAGE_MODES.POSTGRES;
+}
+
+async function ensureJsonDb() {
   await fs.mkdir(config.dataDir, { recursive: true });
   try {
     await fs.access(dbPath);
   } catch {
-    await writeBookingState(seedBookingState());
+    await writeJsonBookingState(seedBookingState());
   }
 }
 
-function normalizeBookingState(state) {
-  return withStateMetadata({
-    shifts: Array.isArray(state?.shifts) ? state.shifts : [],
-    applications: Array.isArray(state?.applications) ? state.applications : [],
-    inviteGroups: Array.isArray(state?.inviteGroups) ? state.inviteGroups : []
-  }, state);
-}
-
-async function readBookingState() {
-  await ensureDb();
+async function readJsonBookingState() {
+  await ensureJsonDb();
   try {
     const raw = await fs.readFile(dbPath, 'utf8');
     return normalizeBookingState(JSON.parse(raw));
@@ -1703,17 +1780,43 @@ async function readBookingState() {
       console.error('Booking state file was corrupted and could not be moved', renameError);
     }
     console.error('Booking state read failed:', error);
-    return writeBookingState(seedBookingState());
+    return writeJsonBookingState(seedBookingState());
   }
 }
 
-async function writeBookingState(state) {
+async function writeJsonBookingState(state) {
   const cleanState = validateBookingStateForWrite(state);
   await fs.mkdir(config.dataDir, { recursive: true });
   const tempPath = `${dbPath}.tmp`;
   await fs.writeFile(tempPath, JSON.stringify(cleanState, null, 2), 'utf8');
   await fs.rename(tempPath, dbPath);
   return cleanState;
+}
+
+async function ensureBookingStorage() {
+  if (config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON) {
+    await ensureJsonDb();
+    return;
+  }
+  await postgresBookingStorageAdapter().readState();
+}
+
+async function readBookingState() {
+  if (isPostgresBookingStorageMode()) {
+    return postgresBookingStorageAdapter().readState();
+  }
+  return readJsonBookingState();
+}
+
+async function writeBookingState(state) {
+  if (isPostgresBookingStorageMode()) {
+    throw new BookingStorageReadOnlyError();
+  }
+  return writeJsonBookingState(state);
+}
+
+async function applyPostgresBookingCommand(command, actor) {
+  return postgresBookingStorageAdapter().applyCommand(command, actor);
 }
 
 function injectBookingState(html, state) {
@@ -1785,12 +1888,15 @@ async function pollTelegram() {
       if (!match || !chatId) continue;
 
       const registered = await registerTelegramChat(match[1], chatId);
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId,
         text: registered
           ? 'Telegram подключен. Теперь сюда будут приходить уведомления по стажировке.'
           : 'Не нашел вашу заявку. Сначала заполните данные и выберите дату в форме записи.'
+      }, {
+        context: 'bot_start_reply',
+        chatTarget: 'trainee'
       });
     }
   } catch (error) {
@@ -1827,7 +1933,16 @@ app.get('/health', (_request, response) => {
 });
 
 app.get('/api/health', (_request, response) => {
-  response.json({ ok: true, service: 'loft-hall-internship-unified' });
+  response.json({
+    ok: true,
+    service: 'loft-hall-internship-unified',
+    telegramDeliveryMode: config.telegramDeliveryMode,
+    bookingStorageMode: config.bookingStorageMode,
+    bookingStorageWritable: (
+      config.bookingStorageMode === BOOKING_STORAGE_MODES.JSON
+      || isPostgresWriteBookingStorageMode()
+    )
+  });
 });
 
 app.get('/api/state', async (request, response, next) => {
@@ -1849,6 +1964,29 @@ app.post('/api/state', async (request, response, next) => {
   let capacityChange = null;
   try {
     actor = bookingActorFromRequest(request);
+    if (isPostgresWriteBookingStorageMode()) {
+      const outcome = await applyPostgresBookingCommand(request.body || {}, actor);
+      const state = outcome.state || await readBookingState();
+      if (actor.role === 'recruiter' && request.body?.action === 'clear_state') {
+        console.info(
+          JSON.stringify({
+            event: 'booking_state_cleared',
+            telegramUserId: actor.telegram.user.id,
+            username: actor.telegram.user.username || '',
+            storageMode: config.bookingStorageMode,
+            timestamp: new Date().toISOString()
+          })
+        );
+      }
+      response.json({
+        ok: true,
+        role: actor.role,
+        state: bookingStateForActor(state, actor),
+        result: outcome.result
+      });
+      return;
+    }
+
     const cleanState = await withBookingMutation(async () => {
       const currentState = await readBookingState();
       const previousApplication = request.body?.action === 'step_back_application'
@@ -1985,6 +2123,7 @@ app.post('/api/state', async (request, response, next) => {
     });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
+    if (await handleBookingCommandLayerError(response, error, actor)) return;
     if (error instanceof BookingConflictError && actor) {
       const state = await readBookingState();
       response.status(409).json({
@@ -2015,24 +2154,40 @@ app.post('/api/notify', async (request, response, next) => {
       response.json({ ok: false, skipped: 'telegram_chat_missing' });
       return;
     }
+    const suppressionReason = traineeNotificationSuppressionReason();
+    if (suppressionReason) {
+      response.json({
+        ok: true,
+        status: 'skipped',
+        skipped: suppressionReason,
+        telegramDeliveryMode: config.telegramDeliveryMode
+      });
+      return;
+    }
 
     const photoUrl = absoluteAssetUrl(request, photo);
     if (photoUrl) {
-      await sendTelegramPhoto({
+      await telegramDelivery.sendPhoto({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         photo: photoUrl,
         caption: photoCaption || '',
         parseMode: 'HTML'
+      }, {
+        context: 'recruiter_notification_photo',
+        chatTarget: 'trainee'
       });
     }
     if (text) {
-      await sendTelegramMessage({
+      await telegramDelivery.sendMessage({
         botToken: config.botToken,
         chatId: application.telegramChatId,
         text,
         parseMode: 'HTML',
         disableWebPagePreview: true
+      }, {
+        context: 'recruiter_notification_text',
+        chatTarget: 'trainee'
       });
     }
 
@@ -2044,6 +2199,7 @@ app.post('/api/notify', async (request, response, next) => {
 });
 
 app.post('/api/telegram/link', async (request, response, next) => {
+  let actor = null;
   try {
     const { applicationId, initData } = request.body || {};
     if (!initData) {
@@ -2068,11 +2224,36 @@ app.post('/api/telegram/link', async (request, response, next) => {
 
     let linkedApplication = null;
     let forbidden = false;
-    const actor = {
+    actor = {
       telegram,
       userId: String(telegram.user.id),
       role: bookingRoleForTelegramUser(telegram.user)
     };
+
+    if (isPostgresWriteBookingStorageMode()) {
+      const outcome = await applyPostgresBookingCommand({
+        action: 'link_telegram_application',
+        applicationId
+      }, actor);
+      const state = outcome.state || await readBookingState();
+      const linkedApplication = state.applications.find(application =>
+        String(application.id) === String(applicationId)
+      );
+      if (!linkedApplication) {
+        response.status(404).json({ ok: false, error: 'application_not_found' });
+        return;
+      }
+
+      response.json({
+        ok: true,
+        role: actor.role,
+        application: linkedApplication,
+        state: bookingStateForActor(state, actor),
+        result: outcome.result
+      });
+      return;
+    }
+
     const cleanState = await withBookingMutation(async () => {
       const state = await readBookingState();
       state.applications = state.applications.map(application => {
@@ -2111,6 +2292,8 @@ app.post('/api/telegram/link', async (request, response, next) => {
       state: bookingStateForActor(cleanState, actor)
     });
   } catch (error) {
+    if (handleBookingAuthError(response, error)) return;
+    if (await handleBookingCommandLayerError(response, error, actor)) return;
     next(error);
   }
 });
@@ -2207,6 +2390,59 @@ app.post('/api/report', async (request, response) => {
       : null;
     let mentorApplication = null;
 
+    if (isPostgresWriteBookingStorageMode()) {
+      const reportActor = {
+        telegram,
+        userId: String(telegram.user.id),
+        role
+      };
+      const command = role === 'mentor'
+        ? {
+            action: 'mentor_report_result',
+            applicationId,
+            mentorTraineeName,
+            mentorDecision,
+            mentorCommentForTrainee,
+            mentorTraineeResult,
+            reportText
+          }
+        : {
+            action: 'trainee_report_submission',
+            reportText
+          };
+      const outcome = await applyPostgresBookingCommand(command, reportActor);
+      const traineeMessage = role === 'mentor'
+        ? {
+            status: outcome.result?.mentorCommentDeliveryStatus || 'pending',
+            queued: true
+          }
+        : null;
+
+      console.info(
+        JSON.stringify({
+          event: 'internship_report_queued',
+          telegramUserId: telegram.user.id,
+          role,
+          applicationId: role === 'mentor' ? applicationId : undefined,
+          chatTarget: role === 'mentor' ? 'MENTOR_CHAT_ID' : 'TRAINEE_CHAT_ID',
+          telegramDeliveryMode: config.telegramDeliveryMode,
+          notifications: outcome.result?.notifications,
+          traineeMessageStatus: traineeMessage?.status,
+          timestamp: new Date().toISOString()
+        })
+      );
+
+      response.json({
+        ok: true,
+        messageId: null,
+        telegramDeliveryMode: config.telegramDeliveryMode,
+        queued: true,
+        result: outcome.result,
+        traineeMessage
+      });
+      return;
+    }
+
     if (role === 'mentor') {
       const state = await readBookingState();
       mentorApplication = requireMentorReportApplication(state, applicationId);
@@ -2234,10 +2470,14 @@ app.post('/api/report', async (request, response) => {
       );
     }
 
-    const message = await sendTelegramMessage({
+    const reportChatTarget = role === 'mentor' ? 'mentor_report_group' : 'trainee_report_group';
+    const message = await telegramDelivery.sendMessage({
       botToken: config.botToken,
       chatId,
       text: reportText
+    }, {
+      context: `${role}_report`,
+      chatTarget: reportChatTarget
     });
     let traineeMessage = null;
 
@@ -2275,13 +2515,23 @@ app.post('/api/report', async (request, response) => {
         applicationId: role === 'mentor' ? applicationId : undefined,
         chatTarget: role === 'mentor' ? 'MENTOR_CHAT_ID' : 'TRAINEE_CHAT_ID',
         telegramMessageId: message.message_id,
+        telegramDeliveryMode: config.telegramDeliveryMode,
         traineeMessageStatus: traineeMessage?.status,
         timestamp: new Date().toISOString()
       })
     );
 
-    response.json({ ok: true, messageId: message.message_id, traineeMessage });
+    response.json({
+      ok: true,
+      messageId: message.message_id,
+      telegramDeliveryMode: config.telegramDeliveryMode,
+      traineeMessage
+    });
   } catch (error) {
+    if (error instanceof BookingStorageReadOnlyError) {
+      response.status(error.status).json({ ok: false, error: error.message, code: error.code });
+      return;
+    }
     if (error instanceof TelegramAuthError) {
       response.status(401).json({ ok: false, error: error.message, code: error.code });
       return;
@@ -2296,6 +2546,8 @@ app.post('/api/report', async (request, response) => {
       response.status(409).json({ ok: false, error: error.message, code: error.code });
       return;
     }
+
+    if (await handleBookingCommandLayerError(response, error)) return;
 
     const knownClientError = [
       'Неизвестная роль отчёта.',
@@ -2353,6 +2605,10 @@ app.get(/.*/, (_request, response) => {
 });
 
 app.use((error, _request, response, _next) => {
+  if (error instanceof BookingStorageReadOnlyError) {
+    response.status(error.status).json({ ok: false, error: error.message, code: error.code });
+    return;
+  }
   if (error instanceof BookingConflictError) {
     response.status(409).json({ ok: false, error: error.message, code: error.code });
     return;
@@ -2388,7 +2644,7 @@ const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __file
 
 if (isMainModule) {
   assertConfig();
-  await ensureDb();
+  await ensureBookingStorage();
 
   const server = app.listen(config.port, config.host, error => {
     if (error) {

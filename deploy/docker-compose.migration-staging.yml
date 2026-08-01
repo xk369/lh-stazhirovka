@@ -1,0 +1,50 @@
+name: loft-hall-internship-migration-staging
+
+services:
+  postgres-migration-staging:
+    image: postgres:17-alpine
+    container_name: loft-internship-postgres-migration-staging
+    restart: unless-stopped
+    env_file:
+      - ../.env.migration-staging
+    volumes:
+      - loft-internship-postgres-migration-staging-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - migration-staging
+
+  app-migration-staging:
+    build:
+      context: ..
+    container_name: loft-internship-app-migration-staging
+    restart: unless-stopped
+    env_file:
+      - ../.env.migration-staging
+    environment:
+      BOOKING_STORAGE_MODE: postgres
+      TELEGRAM_DELIVERY_MODE: dry_run
+      TELEGRAM_POLLING: "no"
+      SUPPRESS_TRAINEE_NOTIFICATIONS: "yes"
+      HOST: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      postgres-migration-staging:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3502:3000"
+    networks:
+      - migration-staging
+
+networks:
+  migration-staging:
+    name: loft-internship-migration-staging
+
+volumes:
+  loft-internship-postgres-migration-staging-data:
+    name: loft-internship-postgres-migration-staging-data

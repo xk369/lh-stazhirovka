@@ -1,0 +1,63 @@
+{
+  "version": 7,
+  "updatedAt": "2026-07-26T18:00:00.000Z",
+  "shifts": [
+    {
+      "id": 100,
+      "date": "2026-07-26",
+      "seats": 4,
+      "open": false,
+      "canceled": false
+    }
+  ],
+  "applications": [
+    {
+      "id": 200,
+      "shiftId": 100,
+      "inviteGroupId": 300,
+      "name": "Passed Trainee",
+      "phone": "+7 999 111-22-33",
+      "training": "passed",
+      "trainingDate": "2026-07-20",
+      "attempt": "first",
+      "limits": "",
+      "status": "passed",
+      "venueId": "loft5_small",
+      "groupLink": "https://t.me/+group",
+      "telegramUserId": "900",
+      "telegramChatId": "900",
+      "telegramUsername": "passed_trainee",
+      "mentorReport": true,
+      "mentorReportAt": "2026-07-26T18:00:00.000Z",
+      "mentorReporterTelegramUserId": "800",
+      "mentorDecision": "Стажировка пройдена",
+      "mentorCommentDeliveryStatus": "sent"
+    },
+    {
+      "id": 201,
+      "shiftId": 100,
+      "inviteGroupId": 300,
+      "name": "Waiting Trainee",
+      "phone": "+7 999 444-55-66",
+      "training": "not_passed",
+      "attempt": "repeat",
+      "limits": "",
+      "status": "feedback",
+      "venueId": "loft5_small",
+      "groupLink": "https://t.me/+group",
+      "telegramUserId": "901",
+      "telegramChatId": "901",
+      "telegramUsername": "waiting_trainee"
+    }
+  ],
+  "inviteGroups": [
+    {
+      "id": 300,
+      "shiftId": 100,
+      "venueId": "loft5_small",
+      "link": "https://t.me/+group",
+      "memberIds": [200, 201],
+      "sentAt": "2026-07-26T12:00:00.000Z"
+    }
+  ]
+}
