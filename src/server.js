@@ -44,6 +44,8 @@ const BOOKING_STATUSES = new Set([
 ]);
 const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
 const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
+const ACTIVE_TRAINEE_APPLICATION_STATUSES = new Set(['pending', 'queue', 'confirmed', 'invited', 'feedback']);
+const TRAINEE_REAPPLY_SOURCE_STATUSES = new Set(['failed', 'noshow']);
 const SEAT_HOLDING_STATUSES = new Set([
   'pending',
   'confirmed',
@@ -1242,12 +1244,35 @@ function mutableStateCopy(state) {
 
 function applyUpsertTraineeApplication(state, command, actor) {
   const shiftsById = new Map(state.shifts.map(shift => [shift.id, shift]));
-  const incoming = attachActorToApplication(
+  let incoming = attachActorToApplication(
     normalizeApplicationForWrite(command.application, shiftsById, { role: 'trainee' }),
     actor
   );
   const next = mutableStateCopy(state);
   const index = findApplicationIndex(next, incoming.id);
+
+  if (actor.role === 'trainee') {
+    const ownApplications = next.applications.filter(application => applicationBelongsToActor(application, actor));
+    if (index < 0) {
+      const activeApplication = ownApplications.find(application =>
+        ACTIVE_TRAINEE_APPLICATION_STATUSES.has(normalizeLegacyStatus(application.status))
+      );
+      if (activeApplication) {
+        throw new BookingValidationError('У вас уже есть активная заявка на стажировку.');
+      }
+
+      const latestApplication = [...ownApplications]
+        .sort((left, right) => Number(right.id || 0) - Number(left.id || 0))[0] || null;
+      const latestStatus = normalizeLegacyStatus(latestApplication?.status);
+      if (latestApplication) {
+        if (!TRAINEE_REAPPLY_SOURCE_STATUSES.has(latestStatus)) {
+          throw new BookingValidationError('Повторная запись доступна только после завершенной неудачной попытки.');
+        }
+        incoming = { ...incoming, attempt: 'repeat' };
+      }
+    }
+  }
+
   if (incoming.shiftId !== null) {
     ensureShiftHasFreeSeat(next, incoming.shiftId, incoming.id);
   }
@@ -1263,6 +1288,9 @@ function applyUpsertTraineeApplication(state, command, actor) {
   }
   if (!['pending', 'queue', 'failed', 'noshow'].includes(existing.status)) {
     throw new BookingValidationError('application cannot be changed in current status.');
+  }
+  if (actor.role === 'trainee' && TRAINEE_REAPPLY_SOURCE_STATUSES.has(normalizeLegacyStatus(existing.status))) {
+    throw new BookingValidationError('Для повторной стажировки создайте новую заявку.');
   }
 
   next.applications[index] = {

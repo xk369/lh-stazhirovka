@@ -1073,6 +1073,10 @@
     .step.done .dot { background: var(--accent); color: #fff; }
     .step span { display: block; color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 2px; }
     .status-message { font-weight: 800; }
+    .reapply-notice { display: grid; gap: 10px; }
+    .reapply-notice > span { color: var(--muted); font-weight: 700; line-height: 1.35; }
+    .reapply-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .reapply-actions button { min-width: 0; white-space: normal; }
     .stage-track {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2861,8 +2865,8 @@
       },
       failed: {
         label: "Нужна повторная запись",
-        lead: "Стажировка завершена без продолжения.",
-        text: "По итогам стажировки сейчас не продолжаем работу. При желании можно записаться повторно."
+        lead: "Для продолжения нужна повторная стажировка.",
+        text: "По итогам наставника нужна повторная стажировка. Выберите новую дату выше или встаньте в предварительную запись."
       },
       noshow: {
         label: "Выход не состоялся",
@@ -3651,8 +3655,9 @@
     function renderTrainee() {
       const current = currentApplication();
       const currentCanChangeDate = current && ["pending", "queue"].includes(current.status);
+      const currentCanReapply = current && ["failed", "noshow"].includes(current.status);
       const dates = openShifts().filter(shift => {
-        if (!current || currentCanChangeDate) return true;
+        if (!current || currentCanChangeDate || currentCanReapply) return true;
         return String(shift.id) !== String(current.shiftId);
       });
       const openCount = dates.length;
@@ -3661,12 +3666,13 @@
       document.getElementById("openDatesCount").textContent = `${openCount} открыто`;
       document.getElementById("publicDates").innerHTML = dates.length ? dates.map(shift => {
         const isCurrentShift = current && current.shiftId === shift.id;
-        const selected = isCurrentShift && current.status !== "queue";
-        const locked = current && !["pending", "queue"].includes(current.status);
+        const selected = isCurrentShift && current.status !== "queue" && !currentCanReapply;
+        const locked = current && !["pending", "queue"].includes(current.status) && !currentCanReapply;
         const canChange = current && ["pending", "queue"].includes(current.status);
         const buttonText = selected
           ? ["passed", "failed", "noshow"].includes(current.status) ? "Стажировка по этой дате завершена" : current.status === "pending" ? "Заявка отправлена на эту дату" : "Вы записаны на эту дату"
-          : locked ? "У вас уже есть запись" : canChange ? "Перезаписаться сюда" : "Выбрать дату";
+          : currentCanReapply ? (current.status === "failed" ? "Записаться повторно" : "Выбрать дату заново")
+            : locked ? "У вас уже есть запись" : canChange ? "Перезаписаться сюда" : "Выбрать дату";
         return `
           <article class="date-card ${selected ? "selected" : locked ? "locked" : ""}">
             <div class="date-head">
@@ -3891,7 +3897,16 @@
           ${renderTraineeHistory(app)}
           ${renderMentorReportNotice(app)}
           ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
-          ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись заново</button>` : ""}
+          ${["failed", "noshow"].includes(app.status) ? `
+            <div class="notice reapply-notice">
+              <b>${app.status === "failed" ? "Повторная стажировка" : "Новая запись"}</b>
+              <span>Старая попытка останется в истории. Новая заявка будет создана отдельно как повторная.</span>
+              <div class="reapply-actions">
+                <button class="secondary" data-scroll-dates type="button">Выбрать дату</button>
+                <button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись</button>
+              </div>
+            </div>
+          ` : ""}
         </article>
       `;
     }
@@ -5064,7 +5079,7 @@ ${managerLine}
         phone: state.profile.phone,
         training: state.profile.training,
         trainingDate: state.profile.trainingDate,
-        attempt: state.profile.attempt,
+        attempt: canReapply ? "repeat" : state.profile.attempt,
         limits: state.profile.limits,
         telegramCode: getTelegramCode(),
         status: type === "queue" ? "queue" : "pending",
@@ -5434,6 +5449,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       const reapplyQueue = event.target.closest("[data-reapply-queue]");
       if (reapplyQueue) {
         await createApplication("queue", null);
+        return;
+      }
+      if (event.target.closest("[data-scroll-dates]")) {
+        document.getElementById("publicDates")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
       const cancelInternship = event.target.closest("[data-cancel-internship]");

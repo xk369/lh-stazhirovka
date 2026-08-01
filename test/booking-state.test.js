@@ -217,6 +217,124 @@ test('does not require training date when banquet training is not completed', ()
   assert.equal(next.applications[0].trainingDate, '');
 });
 
+test('failed trainees can create a separate repeat application without rewriting history', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Repeat Trainee',
+    phone: '+7 999 111-22-33',
+    training: 'passed',
+    trainingDate: '2026-07-01',
+    attempt: 'first',
+    status: 'failed',
+    telegramUserId: '999',
+    mentorReport: true,
+    mentorDecision: 'Требуется повторная стажировка'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 2,
+      application: {
+        id: 20,
+        shiftId: 1,
+        name: 'Repeat Trainee',
+        phone: '+7 999 111-22-33',
+        training: 'passed',
+        trainingDate: '2026-07-01',
+        attempt: 'first',
+        status: 'pending'
+      }
+    },
+    traineeActor
+  );
+
+  assert.equal(next.applications.length, 2);
+  assert.equal(next.applications[0].status, 'failed');
+  assert.equal(next.applications[0].mentorDecision, 'Требуется повторная стажировка');
+  assert.equal(next.applications[1].status, 'pending');
+  assert.equal(next.applications[1].attempt, 'repeat');
+});
+
+test('trainees cannot create another application while an active one exists', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Active Trainee',
+    phone: '+7 999 111-22-33',
+    training: 'passed',
+    trainingDate: '2026-07-01',
+    attempt: 'first',
+    status: 'confirmed',
+    telegramUserId: '999'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      {
+        action: 'upsert_trainee_application',
+        baseVersion: 2,
+        application: {
+          id: 20,
+          shiftId: 1,
+          name: 'Active Trainee',
+          phone: '+7 999 111-22-33',
+          training: 'passed',
+          trainingDate: '2026-07-01',
+          attempt: 'repeat',
+          status: 'pending'
+        }
+      },
+      traineeActor
+    ),
+    /активная заявка/
+  );
+});
+
+test('trainees cannot rewrite a failed application instead of creating a repeat one', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: 1,
+    name: 'Repeat Trainee',
+    phone: '+7 999 111-22-33',
+    training: 'passed',
+    trainingDate: '2026-07-01',
+    attempt: 'first',
+    status: 'failed',
+    telegramUserId: '999',
+    mentorReport: true,
+    mentorDecision: 'Требуется повторная стажировка'
+  }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      source,
+      {
+        action: 'upsert_trainee_application',
+        baseVersion: 2,
+        application: {
+          id: 10,
+          shiftId: null,
+          name: 'Repeat Trainee',
+          phone: '+7 999 111-22-33',
+          training: 'passed',
+          trainingDate: '2026-07-01',
+          attempt: 'repeat',
+          status: 'queue'
+        }
+      },
+      traineeActor
+    ),
+    /новую заявку/
+  );
+});
+
 test('rejects duplicate invite for already invited application', () => {
   assert.throws(
     () =>

@@ -291,9 +291,24 @@ test('trainee available dates stay clean after an active application is locked',
   const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
 
   assert.match(renderTrainee, /currentCanChangeDate = current && \["pending", "queue"\]\.includes\(current\.status\)/);
+  assert.match(renderTrainee, /currentCanReapply = current && \["failed", "noshow"\]\.includes\(current\.status\)/);
   assert.match(renderTrainee, /openShifts\(\)\.filter/);
+  assert.match(renderTrainee, /currentCanChangeDate \|\| currentCanReapply/);
   assert.match(renderTrainee, /String\(shift\.id\) !== String\(current\.shiftId\)/);
   assert.match(renderTrainee, /if \(currentCanChangeDate && currentShift/);
+});
+
+test('failed trainees get an explicit repeat booking path', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderMyStatus = html.match(/function renderMyStatus\(app\) \{[\s\S]*?\n    \}\n\n    function traineeApplicationHistory/)?.[0] || '';
+  const createApplication = html.match(/async function createApplication\(type, shiftId\) \{[\s\S]*?\n    \}\n\n    async function setStatus/)?.[0] || '';
+  const clickHandler = html.match(/document\.addEventListener\("click", async event => \{[\s\S]*?\n    \}\);/)?.[0] || '';
+
+  assert.match(renderMyStatus, /Повторная стажировка/);
+  assert.match(renderMyStatus, /data-scroll-dates/);
+  assert.match(renderMyStatus, /data-reapply-queue/);
+  assert.match(createApplication, /canReapply \? "repeat" : state\.profile\.attempt/);
+  assert.match(clickHandler, /data-scroll-dates/);
 });
 
 test('trainee status hydrates from server-owned applications without a local profile name', async () => {
