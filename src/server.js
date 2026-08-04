@@ -27,6 +27,8 @@ const config = {
   dataDir: String(process.env.DATA_DIR || path.resolve(__dirname, '../data')),
   telegramBotUsername: String(process.env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').trim(),
   telegramPollingEnabled: process.env.TELEGRAM_POLLING === 'yes',
+  suppressTraineeNotifications: process.env.SUPPRESS_TRAINEE_NOTIFICATIONS === 'yes',
+  recruiterWithdrawalChatId: String(process.env.RECRUITER_WITHDRAWAL_CHAT_ID || '5950662713').trim(),
   recruiterTelegramIds: parseTelegramIdSet(process.env.RECRUITER_TELEGRAM_IDS || '')
 };
 
@@ -43,7 +45,7 @@ const BOOKING_STATUSES = new Set([
   'failed',
   'noshow'
 ]);
-const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
+const TRAINEE_WRITE_STATUSES = new Set(['queue']);
 const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
 const ACTIVE_TRAINEE_APPLICATION_STATUSES = new Set(['pending', 'queue', 'confirmed', 'invited', 'feedback']);
 const TRAINEE_REAPPLY_SOURCE_STATUSES = new Set(['failed', 'noshow']);
@@ -63,7 +65,7 @@ const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const EXPERIENCE_VALUES = new Set(['experienced']);
 const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
-const ASSIGNMENT_OFFER_TTL_MS = 3 * 60 * 60 * 1000;
+const ASSIGNMENT_OFFER_TTL_MS = 60 * 60 * 1000;
 const BOOKING_STATUS_LABELS = {
   pending: 'Заявка отправлена',
   queue: 'Предварительная запись',
@@ -509,10 +511,9 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
   if (shiftId !== null && !shiftsById.has(shiftId)) {
     throw new BookingValidationError('application.shiftId references an unknown shift.');
   }
-  if (role === 'trainee' && shiftId !== null && !shiftsById.get(shiftId)?.open) {
-    throw new BookingValidationError('trainee cannot book a closed shift.');
+  if (role === 'trainee' && shiftId !== null) {
+    throw new BookingValidationError('Дату стажировки назначает рекрут. Встаньте в предварительную запись.');
   }
-
   const training = String(app?.training || 'passed').trim();
   const attempt = String(app?.attempt || 'first').trim();
   if (!TRAINING_VALUES.has(training)) throw new BookingValidationError('application.training is invalid.');
@@ -1124,7 +1125,7 @@ function composeAssignmentOfferMessage(application, shift) {
     'Нажмите <b>Да</b>, если готовы выйти на эту дату.',
     'Нажмите <b>Нет</b>, если дата не подходит — заявка останется в предварительной записи.',
     '',
-    'Ответ доступен в течение <b>3 часов</b>.'
+    'Ответ доступен в течение <b>1 часа</b>.'
   ].join('\n');
 }
 
@@ -1174,6 +1175,38 @@ function composeAssignmentOfferResponseMessage(application, shift, resultStatus)
   ].join('\n');
 }
 
+function traineeTelegramTag(application) {
+  const username = String(application?.telegramUsername || '').trim();
+  if (username) return username.startsWith('@') ? username : `@${username}`;
+  const code = String(application?.telegramCode || '').trim();
+  if (code) return code.startsWith('@') ? code : `@${code.replace(/^@/, '')}`;
+  const userId = String(application?.telegramUserId || application?.telegramChatId || '').trim();
+  return userId ? `ID ${userId}` : 'Telegram не указан';
+}
+
+function composeAssignmentWithdrawalRecruiterMessage(application, shift) {
+  const name = escapeTelegramHtml(application?.name || 'Стажёр');
+  const tag = escapeTelegramHtml(traineeTelegramTag(application));
+  const date = escapeTelegramHtml(formatRuDate(shift?.date));
+  const phone = escapeTelegramHtml(application?.phone || 'не указан');
+  const venue = escapeTelegramHtml(application?.venue || application?.mentorReportVenue || '');
+  const groupLink = escapeTelegramHtml(application?.groupLink || '');
+  const status = normalizeLegacyStatus(application?.status);
+  const stageText = status === 'invited' ? 'после отправки рабочей группы' : 'после подтверждения даты';
+  return [
+    '⚠️ <b>Стажёр отказался от выхода</b>',
+    '',
+    `<b>${name}</b> (${tag}) слился с ивента.`,
+    `Этап: <b>${escapeTelegramHtml(stageText)}</b>`,
+    `Дата: <b>${date}</b>`,
+    venue ? `Площадка: <b>${venue}</b>` : '',
+    groupLink ? `Группа: ${groupLink}` : '',
+    `Телефон: <b>${phone}</b>`,
+    '',
+    'Заявка возвращена в предварительную запись, место на дату освобождено.'
+  ].filter(Boolean).join('\n');
+}
+
 function assignmentOfferActionUrl(request, application, decision) {
   const offer = application.assignmentOffer;
   const params = new URLSearchParams({
@@ -1182,6 +1215,30 @@ function assignmentOfferActionUrl(request, application, decision) {
     token: offer.token
   });
   return absoluteAssetUrl(request, `/booking?${params.toString()}`);
+}
+
+async function sendAssignmentWithdrawalToRecruiter(application, shift) {
+  if (!config.recruiterWithdrawalChatId) {
+    return { ok: false, status: 'skipped', skipped: 'recruiter_chat_missing', applicationId: application?.id };
+  }
+  try {
+    const message = await sendTelegramMessage({
+      botToken: config.botToken,
+      chatId: config.recruiterWithdrawalChatId,
+      text: composeAssignmentWithdrawalRecruiterMessage(application, shift),
+      parseMode: 'HTML',
+      disableWebPagePreview: true
+    });
+    return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
+  } catch (error) {
+    console.error('Assignment withdrawal recruiter notification error:', error);
+    return {
+      ok: false,
+      status: 'failed',
+      applicationId: application?.id,
+      error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
+    };
+  }
 }
 
 async function sendAssignmentOfferToTrainee(request, application, shift) {
@@ -1751,6 +1808,32 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
   };
 }
 
+function applyWithdrawConfirmedAssignment(state, command, actor) {
+  const applicationId = normalizeId(command.applicationId, 'applicationId');
+  const next = mutableStateCopy(state);
+  const { index, application } = requireApplication(next, applicationId);
+  if (!applicationBelongsToActor(application, actor)) {
+    throw new BookingAuthorizationError('Нельзя изменить чужую заявку.');
+  }
+  const status = normalizeLegacyStatus(application.status);
+  if (!['confirmed', 'invited'].includes(status) || !application.shiftId) {
+    throw new BookingValidationError('Отказаться от выхода можно только после подтверждения даты или отправки рабочей группы.');
+  }
+
+  next.applications[index] = {
+    ...application,
+    shiftId: null,
+    status: 'queue',
+    inviteGroupId: null,
+    venueId: null,
+    groupLink: '',
+    candidateReport: false,
+    assignmentOffer: null,
+    recruiterQueueComment: ''
+  };
+  return next;
+}
+
 function applicationsAffectedByShiftCancellation(state, shiftId) {
   return state.applications.filter(application => (
     String(application.shiftId) === String(shiftId)
@@ -1989,6 +2072,9 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
     case 'request_assignment_confirmation':
       nextState = applyRequestAssignmentConfirmation(state, command, actor, now);
       break;
+    case 'withdraw_confirmed_assignment':
+      nextState = applyWithdrawConfirmedAssignment(state, command, actor);
+      break;
     case 'cancel_shift':
       nextState = applyCancelShift(state, command, actor, now);
       break;
@@ -2202,6 +2288,7 @@ app.post('/api/state', async (request, response, next) => {
   let internshipCancellation = null;
   let capacityChange = null;
   let assignmentOfferTarget = null;
+  let assignmentWithdrawalTarget = null;
   try {
     actor = bookingActorFromRequest(request);
     const cleanState = await withBookingMutation(async () => {
@@ -2223,6 +2310,12 @@ app.post('/api/state', async (request, response, next) => {
         : null;
       const capacityShiftId = request.body?.action === 'update_shift_capacity'
         ? request.body?.shiftId
+        : null;
+      const withdrawnApplication = request.body?.action === 'withdraw_confirmed_assignment'
+        ? currentState.applications.find(item => String(item.id) === String(request.body?.applicationId))
+        : null;
+      const withdrawnShift = withdrawnApplication?.shiftId
+        ? currentState.shifts.find(item => String(item.id) === String(withdrawnApplication.shiftId))
         : null;
       const nextState = applyBookingCommand(currentState, request.body || {}, actor);
       if (request.body?.action === 'request_assignment_confirmation') {
@@ -2259,6 +2352,12 @@ app.post('/api/state', async (request, response, next) => {
       }
       if (capacityShiftId !== null) {
         capacityChange = shiftCapacityChangeNotificationPlan(currentState, nextState, capacityShiftId);
+      }
+      if (withdrawnApplication && withdrawnShift) {
+        assignmentWithdrawalTarget = {
+          application: withdrawnApplication,
+          shift: withdrawnShift
+        };
       }
       return writeBookingState(nextState);
     });
@@ -2357,6 +2456,23 @@ app.post('/api/state', async (request, response, next) => {
         timestamp: new Date().toISOString()
       }));
     }
+    const assignmentWithdrawalNotification = assignmentWithdrawalTarget
+      ? await sendAssignmentWithdrawalToRecruiter(
+        assignmentWithdrawalTarget.application,
+        assignmentWithdrawalTarget.shift
+      )
+      : null;
+    if (assignmentWithdrawalTarget) {
+      console.info(JSON.stringify({
+        event: 'booking_assignment_withdrawn_by_trainee',
+        applicationId: assignmentWithdrawalTarget.application.id,
+        shiftId: assignmentWithdrawalTarget.shift.id,
+        date: assignmentWithdrawalTarget.shift.date,
+        traineeTelegramUserId: actor.telegram.user.id,
+        recruiterNotificationStatus: assignmentWithdrawalNotification?.status || 'unknown',
+        timestamp: new Date().toISOString()
+      }));
+    }
     response.json({
       ok: true,
       role: actor.role,
@@ -2364,7 +2480,8 @@ app.post('/api/state', async (request, response, next) => {
       ...(notification ? { notification } : {}),
       ...(cancellationNotifications ? { cancellationNotifications } : {}),
       ...(capacityNotifications ? { capacityNotifications } : {}),
-      ...(assignmentOfferNotification ? { assignmentOfferNotification } : {})
+      ...(assignmentOfferNotification ? { assignmentOfferNotification } : {}),
+      ...(assignmentWithdrawalNotification ? { assignmentWithdrawalNotification } : {})
     });
   } catch (error) {
     if (handleBookingAuthError(response, error)) return;
@@ -2815,6 +2932,7 @@ export {
   bookingStateForActor,
   composeAssignmentOfferMessage,
   composeAssignmentOfferResponseMessage,
+  composeAssignmentWithdrawalRecruiterMessage,
   composeBookingStageChangedMessage,
   composeMentorTraineeResultMessage,
   composeShiftCancellationMessage,

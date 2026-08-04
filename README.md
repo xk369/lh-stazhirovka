@@ -28,6 +28,7 @@ TRAINEE_CHAT_ID=-100...
 MENTOR_CHAT_ID=-100...        # в тестовой копии поставить ID тестовой группы
 TELEGRAM_BOT_USERNAME=LOFT_HELPER_V2_BOT
 RECRUITER_TELEGRAM_IDS=1294774551,6774493976,1711587497,5950662713
+RECRUITER_WITHDRAWAL_CHAT_ID=5950662713
 DATA_DIR=./data
 TELEGRAM_POLLING=no
 INIT_DATA_TTL_SECONDS=86400
@@ -36,6 +37,8 @@ PORT=3000
 ```
 
 `RECRUITER_TELEGRAM_IDS` — Telegram user ID пользователей, которым разрешён полный кабинет рекрута и запись общего state.
+
+`RECRUITER_WITHDRAWAL_CHAT_ID` — Telegram chat/user ID рекрутера, которому приходит служебное уведомление, если стажёр отказался от уже подтверждённой даты или после отправки рабочей группы. По умолчанию используется ID Жени `5950662713`.
 
 `TELEGRAM_POLLING=no` оставляем, если бот подключён к PuzzleBot. Для Web App-привязки Telegram кандидата polling не нужен.
 

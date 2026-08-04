@@ -14,6 +14,19 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - To check the currently deployed commit: `cd /opt/loft-hall-internship-unified && git rev-parse --short HEAD`
 - Last verified deployed commit before this handoff was added: `2e07a4d`
 
+## Staging / Manual Copy
+
+Use the server copy for non-urgent product changes before touching production.
+
+- Staging URL: `https://stazhirovka-manual.151.244.243.164.sslip.io`
+- Server path: `/opt/loft-hall-internship-unified-manual`
+- Docker container: `loft-internship-unified-manual`
+- Host port: `127.0.0.1:3501 -> 3000`
+- Preferred flow: create a feature branch locally, push it to GitHub, switch the staging copy to that branch, rebuild staging, test there, then merge/deploy production only after user approval.
+- Keep staging data close to production for realistic checks: before testing, back up `/opt/loft-hall-internship-unified-manual/data/db.json` and copy `/opt/loft-hall-internship-unified/data/db.json` into the manual copy.
+- Keep `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` in the staging `.env` when using real production trainee data. This allows recruiter/mentor flow testing without sending personal Telegram notifications to trainees.
+- Queue assignment flow: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 1-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, while `Нет`/timeout keeps it in `queue`. A trainee can withdraw back to `queue` before or after workgroup invite; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
+
 ## Report Routing
 
 Report routing is server-side only. Do not hardcode chat ids in HTML.
