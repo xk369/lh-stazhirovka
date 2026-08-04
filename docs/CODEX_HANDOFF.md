@@ -26,7 +26,7 @@ Use the server copy for non-urgent product changes before touching production.
 - Keep staging data close to production for realistic checks: before testing, back up `/opt/loft-hall-internship-unified-manual/data/db.json` and copy `/opt/loft-hall-internship-unified/data/db.json` into the manual copy.
 - Keep `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` in the staging `.env` when using real production trainee data. This allows recruiter/mentor flow testing without sending personal Telegram notifications to trainees.
 - Current staging branch should include the mentor fallback: `Нет нужного стажёра в списке` opens manual trainee FIO/Telegram fields. Backend then tries to safely bind the report to one matching booking application by FIO, Telegram, and date; ambiguous/manual-only reports remain unlinked.
-- Current staging queue experiment: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 3-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, while `Нет`/timeout keeps it in `queue`. Before workgroup invite, a confirmed trainee can withdraw back to `queue`; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
+- Current staging queue experiment: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 1-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, while `Нет`/timeout keeps it in `queue`. Before workgroup invite, a confirmed trainee can withdraw back to `queue`; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
 
 ## Report Routing
 

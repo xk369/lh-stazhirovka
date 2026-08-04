@@ -63,7 +63,7 @@ const TRAINING_VALUES = new Set(['passed', 'not_passed']);
 const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const EXPERIENCE_VALUES = new Set(['experienced']);
 const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
-const ASSIGNMENT_OFFER_TTL_MS = 3 * 60 * 60 * 1000;
+const ASSIGNMENT_OFFER_TTL_MS = 60 * 60 * 1000;
 const BOOKING_STATUS_LABELS = {
   pending: 'Заявка отправлена',
   queue: 'Предварительная запись',
@@ -1231,7 +1231,7 @@ function composeAssignmentOfferMessage(application, shift) {
     'Нажмите <b>Да</b>, если готовы выйти на эту дату.',
     'Нажмите <b>Нет</b>, если дата не подходит — заявка останется в предварительной записи.',
     '',
-    'Ответ доступен в течение <b>3 часов</b>.'
+    'Ответ доступен в течение <b>1 часа</b>.'
   ].join('\n');
 }
 

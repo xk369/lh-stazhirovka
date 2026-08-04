@@ -221,14 +221,14 @@ test('assignment offer response accepts or declines without baseVersion', () => 
   assert.equal(expired.state.applications[0].assignmentOffer, null);
 });
 
-test('assignment offer message explains the three hour confirmation window', () => {
+test('assignment offer message explains the one hour confirmation window', () => {
   const text = composeAssignmentOfferMessage(
     { name: 'Виктория Неудахина' },
     { date: '2026-07-10' }
   );
   assert.match(text, /Подтвердите выход на стажировку/);
   assert.match(text, /10\.07\.2026/);
-  assert.match(text, /3 часов/);
+  assert.match(text, /1 часа/);
 });
 
 test('assignment offer response messages confirm booking or queue status', () => {

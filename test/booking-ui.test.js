@@ -218,6 +218,10 @@ test('registry hides limitations and lets recruiters copy Telegram', async () =>
   const renderRegistryTelegram = html.match(/function renderRegistryTelegram\(row\) \{[\s\S]*?\n    \}\n\n    function renderRegistryStatus/)?.[0] || '';
   const copyHandler = html.match(/const copyTelegram = event\.target\.closest\("\[data-copy-telegram\]"\);[\s\S]*?return;\n        \}/)?.[0] || '';
 
+  assert.match(html, /\.panel \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(html, /body\.view-registry \.app \{[\s\S]*?width: min\(100%, 1080px\);/);
+  assert.match(html, /document\.body\.classList\.toggle\("view-registry", role === "recruiter" && unlocked && section === "registry"\)/);
+  assert.match(html, /\.registry-table-wrap \{[\s\S]*?overflow: auto;[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
   assert.match(html, /function renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTable, /renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTelegram, /class="registry-telegram"/);
@@ -369,11 +373,14 @@ test('queue assignment request has confirm helper and transient feedback', async
   assert.match(html, /function setQueueActionMessage\(applicationId, message/);
   assert.match(html, /function clearQueueActionMessage\(applicationId/);
   assert.match(requestAssignment, /await confirmAction\(/);
+  assert.match(requestAssignment, /не ответит за 1 час/);
   assert.match(requestAssignment, /Отправляем запрос стажёру/);
   assert.match(requestAssignment, /Уведомление отправлено/);
+  assert.match(requestAssignment, /Место зарезервировано на 1 час/);
   assert.match(requestAssignment, /Тестовый режим: запрос создан, но ЛС стажёру не отправлено/);
   assert.match(requestAssignment, /trainee_notifications_suppressed/);
   assert.match(requestAssignment, /notify: false/);
+  assert.doesNotMatch(requestAssignment, /3 часа/);
   assert.match(saveQueueComment, /setQueueActionMessage\(applicationId, "Комментарий сохранён\.", \{ ttl: 2200 \}\)/);
 });
 
