@@ -315,9 +315,10 @@ test('expired assignment offers leave the queue and release held seats', () => {
 
 test('assignment offer message explains the one hour confirmation window', () => {
   const text = composeAssignmentOfferMessage(
-    { name: 'Виктория Неудахина' },
+    { name: 'Виктория Неудахина', telegramUsername: 'k0ktya' },
     { date: '2026-07-10' }
   );
+  assert.match(text, /^👤 <b>@k0ktya<\/b>/);
   assert.match(text, /Подтвердите выход на стажировку/);
   assert.match(text, /10\.07\.2026/);
   assert.match(text, /1 часа/);

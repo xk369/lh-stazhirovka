@@ -1123,7 +1123,10 @@ function composeShiftCapacityChangedMessage(shift) {
 }
 
 function composeAssignmentOfferMessage(application, shift) {
+  const traineeTag = escapeTelegramHtml(traineeTelegramTag(application));
   return [
+    `👤 <b>${traineeTag}</b>`,
+    '',
     '📅 <b>Подтвердите выход на стажировку</b>',
     '',
     `${escapeTelegramHtml(application.name || 'Стажёр')}, рекрут предлагает вам дату: <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b>.`,
