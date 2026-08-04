@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   BookingConflictError,
   BookingValidationError,
+  applyExpireAssignmentOffers,
   applyBookingCommand,
   applyMentorReportResultToBookingState,
   applyRespondAssignmentOffer,
@@ -179,7 +180,9 @@ test('assignment offer response accepts or declines without baseVersion', () => 
           shiftId: 1,
           requestedAt: '2026-07-03T09:00:00.000Z',
           expiresAt: '2026-07-03T12:00:00.000Z',
-          requestedByTelegramUserId: '1294774551'
+          requestedByTelegramUserId: '1294774551',
+          messageChatId: '999',
+          messageId: 1001
         }
       }
     ],
@@ -216,9 +219,98 @@ test('assignment offer response accepts or declines without baseVersion', () => 
     new Date('2026-07-03T12:00:01.000Z')
   );
   assert.equal(expired.result.status, 'expired');
-  assert.equal(expired.state.applications[0].status, 'queue');
+  assert.equal(expired.state.applications[0].status, 'queue_expired');
   assert.equal(expired.state.applications[0].shiftId, null);
+  assert.equal(expired.state.applications[0].recruiterQueueComment, '');
   assert.equal(expired.state.applications[0].assignmentOffer, null);
+});
+
+test('legacy assignment offers without Telegram message refs remain answerable', () => {
+  const offeredState = {
+    version: 4,
+    updatedAt: '2026-07-03T09:00:00.000Z',
+    shifts: [{ id: 1, date: '2026-07-10', seats: 2, open: true }],
+    applications: [
+      {
+        id: 20,
+        shiftId: null,
+        name: 'Очередь Тест',
+        phone: '+79990000000',
+        training: 'passed',
+        trainingDate: '2026-07-01',
+        attempt: 'first',
+        limits: '',
+        status: 'queue',
+        telegramUserId: '999',
+        telegramChatId: '999',
+        assignmentOffer: {
+          token: 'legacy-offer-token',
+          shiftId: 1,
+          requestedAt: '2026-07-03T09:00:00.000Z',
+          expiresAt: '2026-07-03T12:00:00.000Z',
+          requestedByTelegramUserId: '1294774551'
+        }
+      }
+    ],
+    inviteGroups: []
+  };
+
+  const accepted = applyRespondAssignmentOffer(
+    offeredState,
+    { applicationId: 20, token: 'legacy-offer-token', decision: 'accept' },
+    traineeActor,
+    new Date('2026-07-03T10:00:00.000Z')
+  );
+
+  assert.equal(accepted.result.status, 'accepted');
+  assert.equal(accepted.state.applications[0].status, 'confirmed');
+  assert.equal(accepted.state.applications[0].shiftId, 1);
+  assert.equal(accepted.state.applications[0].assignmentOffer, null);
+});
+
+test('expired assignment offers leave the queue and release held seats', () => {
+  const state = {
+    version: 4,
+    updatedAt: '2099-07-03T09:00:00.000Z',
+    shifts: [{ id: 1, date: '2099-07-10', seats: 1, open: true }],
+    applications: [
+      {
+        id: 20,
+        shiftId: null,
+        name: 'Очередь Тест',
+        phone: '+79990000000',
+        training: 'passed',
+        trainingDate: '2099-07-01',
+        attempt: 'first',
+        limits: '',
+        status: 'queue',
+        telegramUserId: '999',
+        telegramChatId: '999',
+        recruiterQueueComment: 'Созвониться вечером',
+        assignmentOffer: {
+          token: 'offer-token',
+          shiftId: 1,
+          requestedAt: '2099-07-03T09:00:00.000Z',
+          expiresAt: '2099-07-03T12:00:00.000Z',
+          requestedByTelegramUserId: '1294774551',
+          messageChatId: '999',
+          messageId: 1001
+        }
+      }
+    ],
+    inviteGroups: []
+  };
+
+  assert.equal(bookingStateForActor(state, recruiterActor).shifts[0].remainingSeats, 0);
+
+  const result = applyExpireAssignmentOffers(state, new Date('2099-07-03T12:00:01.000Z'));
+
+  assert.equal(result.expired.length, 1);
+  assert.equal(result.expired[0].offer.messageId, 1001);
+  assert.equal(result.state.applications[0].status, 'queue_expired');
+  assert.equal(result.state.applications[0].assignmentOffer, null);
+  assert.equal(result.state.applications[0].recruiterQueueComment, '');
+  assert.equal(bookingStateForActor(result.state, recruiterActor).shifts[0].remainingSeats, 1);
 });
 
 test('assignment offer message explains the one hour confirmation window', () => {
@@ -241,12 +333,12 @@ test('assignment offer response messages confirm booking or queue status', () =>
   assert.match(accepted, /рабочую группу/);
 
   const declined = composeAssignmentOfferResponseMessage(application, shift, 'declined');
-  assert.match(declined, /остались в предварительной записи/);
-  assert.match(declined, /предварительной очереди/);
+  assert.match(declined, /остались в очереди/);
+  assert.match(declined, /другую дату/);
 
   const expired = composeAssignmentOfferResponseMessage(application, shift, 'expired');
   assert.match(expired, /Время ответа истекло/);
-  assert.match(expired, /предварительной записи/);
+  assert.match(expired, /Центр стажировки/);
 });
 
 test('trainee can withdraw a confirmed assignment', () => {
@@ -545,6 +637,45 @@ test('failed trainees can create a separate repeat application without rewriting
   assert.equal(next.applications[1].status, 'queue');
   assert.equal(next.applications[1].shiftId, null);
   assert.equal(next.applications[1].attempt, 'repeat');
+});
+
+test('expired queue offers can rejoin the queue without forcing repeat attempt', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 10,
+    shiftId: null,
+    name: 'Queue Timeout Trainee',
+    phone: '+7 999 111-22-33',
+    training: 'passed',
+    trainingDate: '2026-07-01',
+    attempt: 'first',
+    status: 'queue_expired',
+    telegramUserId: '999'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 2,
+      application: {
+        id: 20,
+        shiftId: null,
+        name: 'Queue Timeout Trainee',
+        phone: '+7 999 111-22-33',
+        training: 'passed',
+        trainingDate: '2026-07-01',
+        attempt: 'first',
+        status: 'queue'
+      }
+    },
+    traineeActor
+  );
+
+  assert.equal(next.applications.length, 2);
+  assert.equal(next.applications[0].status, 'queue_expired');
+  assert.equal(next.applications[1].status, 'queue');
+  assert.equal(next.applications[1].attempt, 'first');
 });
 
 test('trainees cannot create another application while an active one exists', () => {
@@ -1219,7 +1350,7 @@ test('formats the shift cancellation message with a new-date instruction', () =>
 
   assert.match(message, /Стажировка отменена/);
   assert.match(message, /11\.07\.2026/);
-  assert.match(message, /выберите другую доступную дату/);
+  assert.match(message, /возвращена в <b>очередь<\/b>/);
 });
 
 test('keeps a canceled trainee in queue-only mode until recruiter sends an offer', () => {

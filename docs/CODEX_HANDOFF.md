@@ -25,7 +25,7 @@ Use the server copy for non-urgent product changes before touching production.
 - Preferred flow: create a feature branch locally, push it to GitHub, switch the staging copy to that branch, rebuild staging, test there, then merge/deploy production only after user approval.
 - Keep staging data close to production for realistic checks: before testing, back up `/opt/loft-hall-internship-unified-manual/data/db.json` and copy `/opt/loft-hall-internship-unified/data/db.json` into the manual copy.
 - Keep `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` in the staging `.env` when using real production trainee data. This allows recruiter/mentor flow testing without sending personal Telegram notifications to trainees.
-- Queue assignment flow: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 1-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, while `Нет`/timeout keeps it in `queue`. A trainee can withdraw back to `queue` before or after workgroup invite; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
+- Queue assignment flow: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 1-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, `Нет` keeps it in `queue`, and timeout moves it to `queue_expired` so the active queue seat hold is released. A trainee can withdraw back to `queue` before or after workgroup invite; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
 
 ## Report Routing
 

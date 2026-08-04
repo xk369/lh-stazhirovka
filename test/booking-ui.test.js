@@ -302,9 +302,9 @@ test('trainee booking screen is queue-only and does not render public date choic
   const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
   const renderMyStatus = html.match(/function renderMyStatus\(app\) \{[\s\S]*?\n    \}\n\n    function traineeApplicationHistory/)?.[0] || '';
 
-  assert.match(html, /<h2>Предварительная запись<\/h2>/);
+  assert.match(html, /<h2>Очередь<\/h2>/);
   assert.match(renderTrainee, /Дату назначает рекрут/);
-  assert.match(renderTrainee, /queueLocked = current && !\["queue", "failed", "noshow"\]\.includes\(current\.status\)/);
+  assert.match(renderTrainee, /queueLocked = current && !\["queue", "queue_expired", "failed", "noshow"\]\.includes\(current\.status\)/);
   assert.match(renderMyStatus, /\["confirmed", "invited"\]\.includes\(app\.status\)/);
   assert.match(renderMyStatus, /data-withdraw-assignment="\$\{app\.id\}"/);
   assert.doesNotMatch(renderTrainee, /data-book="\$\{shift\.id\}"/);

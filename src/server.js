@@ -7,6 +7,7 @@ import express from 'express';
 import helmet from 'helmet';
 import {
   TelegramAuthError,
+  editTelegramMessageText,
   sendTelegramMessage,
   sendTelegramPhoto,
   validateTelegramInitData
@@ -38,6 +39,7 @@ let telegramOffset = 0;
 const BOOKING_STATUSES = new Set([
   'pending',
   'queue',
+  'queue_expired',
   'confirmed',
   'invited',
   'feedback',
@@ -49,6 +51,7 @@ const TRAINEE_WRITE_STATUSES = new Set(['queue']);
 const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
 const ACTIVE_TRAINEE_APPLICATION_STATUSES = new Set(['pending', 'queue', 'confirmed', 'invited', 'feedback']);
 const TRAINEE_REAPPLY_SOURCE_STATUSES = new Set(['failed', 'noshow']);
+const TRAINEE_QUEUE_REJOIN_SOURCE_STATUSES = new Set(['queue_expired']);
 const SEAT_HOLDING_STATUSES = new Set([
   'pending',
   'confirmed',
@@ -68,7 +71,8 @@ const LEGACY_EXPERIENCE_VALUES = new Set(['yes', 'no']);
 const ASSIGNMENT_OFFER_TTL_MS = 60 * 60 * 1000;
 const BOOKING_STATUS_LABELS = {
   pending: 'Заявка отправлена',
-  queue: 'Предварительная запись',
+  queue: 'Очередь',
+  queue_expired: 'Запрос истёк',
   confirmed: 'Выход подтвержден',
   invited: 'Приглашение отправлено',
   feedback: 'Ждем отчет',
@@ -452,7 +456,9 @@ function normalizeAssignmentOffer(value, shiftsById) {
     requestedByTelegramUserId: normalizeTelegramId(
       value.requestedByTelegramUserId,
       'application.assignmentOffer.requestedByTelegramUserId'
-    )
+    ),
+    messageChatId: normalizeTelegramId(value.messageChatId, 'application.assignmentOffer.messageChatId'),
+    messageId: normalizeId(value.messageId, 'application.assignmentOffer.messageId', { nullable: true })
   };
 }
 
@@ -512,7 +518,7 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
     throw new BookingValidationError('application.shiftId references an unknown shift.');
   }
   if (role === 'trainee' && shiftId !== null) {
-    throw new BookingValidationError('Дату стажировки назначает рекрут. Встаньте в предварительную запись.');
+    throw new BookingValidationError('Дату стажировки назначает рекрут. Встаньте в очередь.');
   }
   const training = String(app?.training || 'passed').trim();
   const attempt = String(app?.attempt || 'first').trim();
@@ -1100,9 +1106,9 @@ function composeShiftCancellationMessage(shift) {
     '',
     `К сожалению, стажировка на <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b> не состоится.`,
     '',
-    'Ваша заявка возвращена в <b>предварительную запись</b>. Откройте мини-приложение и выберите другую доступную дату.',
+    'Ваша заявка возвращена в <b>очередь</b>. Откройте мини-приложение и дождитесь новой даты от рекрута.',
     '',
-    'Если подходящей даты пока нет, заявка останется в предварительной записи — рекрут сможет назначить новую дату позже.'
+    'Если подходящей даты пока нет, рекрут сможет назначить новую дату позже.'
   ].join('\n');
 }
 
@@ -1123,7 +1129,7 @@ function composeAssignmentOfferMessage(application, shift) {
     `${escapeTelegramHtml(application.name || 'Стажёр')}, рекрут предлагает вам дату: <b>${escapeTelegramHtml(formatRuDate(shift?.date))}</b>.`,
     '',
     'Нажмите <b>Да</b>, если готовы выйти на эту дату.',
-    'Нажмите <b>Нет</b>, если дата не подходит — заявка останется в предварительной записи.',
+    'Нажмите <b>Нет</b>, если дата не подходит — заявка останется в очереди.',
     '',
     'Ответ доступен в течение <b>1 часа</b>.'
   ].join('\n');
@@ -1143,11 +1149,11 @@ function composeAssignmentOfferResponseMessage(application, shift, resultStatus)
   }
   if (resultStatus === 'declined') {
     return [
-      '↩️ <b>Вы остались в предварительной записи</b>',
+      '↩️ <b>Вы остались в очереди</b>',
       '',
       `${name}, вы отказались от предложенной даты <b>${dateText}</b>.`,
       '',
-      'Заявка остаётся в предварительной очереди. Рекрут сможет предложить другую дату.'
+      'Рекрут сможет предложить другую дату.'
     ].join('\n');
   }
   if (resultStatus === 'expired') {
@@ -1156,7 +1162,7 @@ function composeAssignmentOfferResponseMessage(application, shift, resultStatus)
       '',
       `Запрос на дату <b>${dateText}</b> больше неактуален.`,
       '',
-      'Вы остались в предварительной записи.'
+      'Чтобы снова встать в очередь, откройте Центр стажировки в боте.'
     ].join('\n');
   }
   if (resultStatus === 'unavailable') {
@@ -1165,13 +1171,52 @@ function composeAssignmentOfferResponseMessage(application, shift, resultStatus)
       '',
       `Запись на <b>${dateText}</b> сейчас недоступна.`,
       '',
-      'Вы остались в предварительной записи. Рекрут сможет предложить другую дату.'
+      'Вы остались в очереди. Рекрут сможет предложить другую дату.'
     ].join('\n');
   }
   return [
     'ℹ️ <b>Ответ по стажировке обработан</b>',
     '',
     'Актуальный статус можно посмотреть в мини-приложении.'
+  ].join('\n');
+}
+
+function composeAssignmentOfferClosedMessage(application, shift, resultStatus) {
+  const dateText = escapeTelegramHtml(formatRuDate(shift?.date));
+  const name = escapeTelegramHtml(application?.name || 'Стажёр');
+  const title = {
+    accepted: '✅ <b>Вы ответили: Да</b>',
+    declined: '↩️ <b>Вы ответили: Нет</b>',
+    expired: '⏱️ <b>Запрос истёк</b>',
+    unavailable: '⚠️ <b>Дата уже недоступна</b>'
+  }[resultStatus] || 'ℹ️ <b>Запрос обработан</b>';
+
+  const details = {
+    accepted: `${name}, вы подтвердили выход на <b>${dateText}</b>.`,
+    declined: `${name}, дата <b>${dateText}</b> вам не подошла.`,
+    expired: `Ответ на дату <b>${dateText}</b> больше не принимается.`,
+    unavailable: `Дата <b>${dateText}</b> сейчас недоступна.`
+  }[resultStatus] || 'Актуальный статус можно посмотреть в мини-приложении.';
+
+  return [
+    title,
+    '',
+    details,
+    '',
+    'Кнопки в этом сообщении отключены.'
+  ].join('\n');
+}
+
+function composeAssignmentOfferExpiredQueueMessage(application, shift) {
+  const dateText = escapeTelegramHtml(formatRuDate(shift?.date));
+  const name = escapeTelegramHtml(application?.name || 'Стажёр');
+  return [
+    '⏱️ <b>Запрос на стажировку истёк</b>',
+    '',
+    `${name}, вы не ответили на запрос по дате <b>${dateText}</b> в течение 1 часа.`,
+    '',
+    'Мы убрали заявку из очереди по этому запросу.',
+    'Чтобы снова встать в очередь, откройте <b>Центр стажировки</b> в боте.'
   ].join('\n');
 }
 
@@ -1203,7 +1248,7 @@ function composeAssignmentWithdrawalRecruiterMessage(application, shift) {
     groupLink ? `Группа: ${groupLink}` : '',
     `Телефон: <b>${phone}</b>`,
     '',
-    'Заявка возвращена в предварительную запись, место на дату освобождено.'
+    'Заявка возвращена в очередь, место на дату освобождено.'
   ].filter(Boolean).join('\n');
 }
 
@@ -1270,7 +1315,13 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
         ]
       }
     });
-    return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
+    return {
+      ok: true,
+      status: 'sent',
+      applicationId: application.id,
+      chatId: String(application.telegramChatId),
+      messageId: message.message_id
+    };
   } catch (error) {
     console.error('Assignment offer delivery error:', error);
     return {
@@ -1278,6 +1329,41 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
       status: 'failed',
       applicationId: application.id,
       error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
+    };
+  }
+}
+
+async function closeAssignmentOfferMessage(application, shift, offer, resultStatus) {
+  if (!offer?.messageChatId || !offer?.messageId) {
+    return { ok: false, status: 'skipped', skipped: 'message_reference_missing', applicationId: application?.id };
+  }
+  if (config.suppressTraineeNotifications) {
+    return { ok: false, status: 'skipped', skipped: 'trainee_notifications_suppressed', applicationId: application?.id };
+  }
+  try {
+    const message = await editTelegramMessageText({
+      botToken: config.botToken,
+      chatId: offer.messageChatId,
+      messageId: offer.messageId,
+      text: composeAssignmentOfferClosedMessage(application, shift, resultStatus),
+      parseMode: 'HTML',
+      disableWebPagePreview: true,
+      replyMarkup: { inline_keyboard: [] }
+    });
+    return {
+      ok: true,
+      status: 'edited',
+      applicationId: application?.id,
+      chatId: offer.messageChatId,
+      messageId: message.message_id || offer.messageId
+    };
+  } catch (error) {
+    console.error('Assignment offer message close error:', error);
+    return {
+      ok: false,
+      status: 'failed',
+      applicationId: application?.id,
+      error: String(error?.message || 'telegram_edit_failed').slice(0, 240)
     };
   }
 }
@@ -1300,6 +1386,33 @@ async function sendAssignmentOfferResponseToTrainee(application, shift, resultSt
     return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
   } catch (error) {
     console.error('Assignment offer response delivery error:', error);
+    return {
+      ok: false,
+      status: 'failed',
+      applicationId: application.id,
+      error: String(error?.message || 'telegram_delivery_failed').slice(0, 240)
+    };
+  }
+}
+
+async function sendExpiredAssignmentOfferToTrainee(application, shift) {
+  if (config.suppressTraineeNotifications) {
+    return { ok: false, status: 'skipped', skipped: 'trainee_notifications_suppressed', applicationId: application?.id };
+  }
+  if (!application?.telegramChatId) {
+    return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
+  }
+  try {
+    const message = await sendTelegramMessage({
+      botToken: config.botToken,
+      chatId: application.telegramChatId,
+      text: composeAssignmentOfferExpiredQueueMessage(application, shift),
+      parseMode: 'HTML',
+      disableWebPagePreview: true
+    });
+    return { ok: true, status: 'sent', applicationId: application.id, messageId: message.message_id };
+  } catch (error) {
+    console.error('Expired assignment offer delivery error:', error);
     return {
       ok: false,
       status: 'failed',
@@ -1527,10 +1640,11 @@ function applyUpsertTraineeApplication(state, command, actor) {
         .sort((left, right) => Number(right.id || 0) - Number(left.id || 0))[0] || null;
       const latestStatus = normalizeLegacyStatus(latestApplication?.status);
       if (latestApplication) {
-        if (!TRAINEE_REAPPLY_SOURCE_STATUSES.has(latestStatus)) {
+        if (TRAINEE_REAPPLY_SOURCE_STATUSES.has(latestStatus)) {
+          incoming = { ...incoming, attempt: 'repeat' };
+        } else if (!TRAINEE_QUEUE_REJOIN_SOURCE_STATUSES.has(latestStatus)) {
           throw new BookingValidationError('Повторная запись доступна только после завершенной неудачной попытки.');
         }
-        incoming = { ...incoming, attempt: 'repeat' };
       }
     }
   }
@@ -1713,7 +1827,7 @@ function applyUpdateQueueComment(state, command, actor) {
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
   if (normalizeLegacyStatus(application.status) !== 'queue') {
-    throw new BookingValidationError('Комментарий можно сохранить только для предварительной записи.');
+    throw new BookingValidationError('Комментарий можно сохранить только для очереди.');
   }
   next.applications[index] = {
     ...application,
@@ -1732,6 +1846,26 @@ function createAssignmentOffer(shiftId, actor, now = new Date()) {
   };
 }
 
+function applyRecordAssignmentOfferMessage(state, command, now = new Date()) {
+  const next = mutableStateCopy(normalizeBookingState(state));
+  const applicationId = normalizeId(command.applicationId, 'applicationId');
+  const token = normalizeRequiredText(command.token, 'assignmentOffer.token', 80);
+  const messageId = normalizeId(command.messageId, 'assignmentOffer.messageId');
+  const messageChatId = normalizeTelegramId(command.messageChatId, 'assignmentOffer.messageChatId');
+  const { index, application } = requireApplication(next, applicationId);
+  if (normalizeLegacyStatus(application.status) !== 'queue') return normalizeBookingState(state);
+  if (!application.assignmentOffer || application.assignmentOffer.token !== token) return normalizeBookingState(state);
+  next.applications[index] = {
+    ...application,
+    assignmentOffer: {
+      ...application.assignmentOffer,
+      messageChatId,
+      messageId
+    }
+  };
+  return validateBookingStateForWrite(touchBookingState(next, now));
+}
+
 function applyRequestAssignmentConfirmation(state, command, actor, now = new Date()) {
   requireRecruiterRole(actor);
   const shiftId = normalizeId(command.shiftId, 'shiftId');
@@ -1739,7 +1873,7 @@ function applyRequestAssignmentConfirmation(state, command, actor, now = new Dat
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
   if (normalizeLegacyStatus(application.status) !== 'queue') {
-    throw new BookingValidationError('Подтверждение даты можно запросить только у стажёра в предварительной записи.');
+    throw new BookingValidationError('Подтверждение даты можно запросить только у стажёра в очереди.');
   }
   if (!application.telegramChatId) {
     throw new BookingValidationError('У стажёра ещё не подключен Telegram. Сначала он должен открыть мини-приложение.');
@@ -1752,6 +1886,39 @@ function applyRequestAssignmentConfirmation(state, command, actor, now = new Dat
     assignmentOffer: createAssignmentOffer(shiftId, actor, now)
   };
   return next;
+}
+
+function applyExpireAssignmentOffers(currentState, now = new Date()) {
+  const state = normalizeBookingState(currentState);
+  const next = mutableStateCopy(state);
+  const expired = [];
+
+  next.applications = next.applications.map(application => {
+    if (normalizeLegacyStatus(application.status) !== 'queue') return application;
+    if (!application.assignmentOffer) return application;
+    if (isAssignmentOfferActive(application, now)) return application;
+    const shift = next.shifts.find(item => String(item.id) === String(application.assignmentOffer.shiftId)) || null;
+    const expiredApplication = {
+      ...application,
+      status: 'queue_expired',
+      recruiterQueueComment: '',
+      assignmentOffer: null
+    };
+    expired.push({
+      application,
+      shift,
+      offer: application.assignmentOffer
+    });
+    return expiredApplication;
+  });
+
+  if (!expired.length) {
+    return { state, expired };
+  }
+  return {
+    state: validateBookingStateForWrite(touchBookingState(next, now)),
+    expired
+  };
 }
 
 function applyRespondAssignmentOffer(currentState, command, actor, now = new Date()) {
@@ -1777,7 +1944,12 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
   const shift = requireShift(next, offer.shiftId);
   const expired = !isAssignmentOfferActive(application, now);
   if (expired) {
-    next.applications[index] = { ...application, assignmentOffer: null };
+    next.applications[index] = {
+      ...application,
+      status: 'queue_expired',
+      recruiterQueueComment: '',
+      assignmentOffer: null
+    };
     return {
       state: validateBookingStateForWrite(touchBookingState(next, now)),
       result: { status: 'expired', shift }
@@ -2162,6 +2334,43 @@ async function writeBookingState(state) {
   return cleanState;
 }
 
+async function processExpiredAssignmentOffers(now = new Date()) {
+  let expiredRecords = [];
+  const state = await withBookingMutation(async () => {
+    const currentState = await readBookingState();
+    const result = applyExpireAssignmentOffers(currentState, now);
+    expiredRecords = result.expired;
+    if (!expiredRecords.length) return currentState;
+    return writeBookingState(result.state);
+  });
+
+  if (!expiredRecords.length) {
+    return { state, expired: [], notifications: [] };
+  }
+
+  const notifications = await Promise.all(expiredRecords.map(async record => {
+    const [closedMessage, traineeMessage] = await Promise.all([
+      closeAssignmentOfferMessage(record.application, record.shift, record.offer, 'expired'),
+      sendExpiredAssignmentOfferToTrainee(record.application, record.shift)
+    ]);
+    return {
+      applicationId: record.application.id,
+      shiftId: record.shift?.id || record.offer?.shiftId || null,
+      closedMessageStatus: closedMessage.status,
+      traineeMessageStatus: traineeMessage.status
+    };
+  }));
+
+  console.info(JSON.stringify({
+    event: 'booking_assignment_offers_expired',
+    count: expiredRecords.length,
+    notifications,
+    timestamp: now.toISOString()
+  }));
+
+  return { state, expired: expiredRecords, notifications };
+}
+
 function injectBookingState(html, state) {
   const payload = JSON.stringify(publicBookingState(state)).replace(/</g, '\\u003c');
   const botPayload = JSON.stringify(config.telegramBotUsername).replace(/</g, '\\u003c');
@@ -2297,7 +2506,7 @@ app.post('/api/state', async (request, response, next) => {
   let assignmentWithdrawalTarget = null;
   try {
     actor = bookingActorFromRequest(request);
-    const cleanState = await withBookingMutation(async () => {
+    let cleanState = await withBookingMutation(async () => {
       const currentState = await readBookingState();
       const previousApplication = request.body?.action === 'step_back_application'
         ? currentState.applications.find(item => String(item.id) === String(request.body?.applicationId))
@@ -2451,6 +2660,25 @@ app.post('/api/state', async (request, response, next) => {
         assignmentOfferTarget.shift
       )
       : null;
+    if (
+      assignmentOfferTarget &&
+      assignmentOfferNotification?.status === 'sent' &&
+      assignmentOfferNotification.messageId
+    ) {
+      cleanState = await withBookingMutation(async () => {
+        const currentState = await readBookingState();
+        const nextState = applyRecordAssignmentOfferMessage(
+          currentState,
+          {
+            applicationId: assignmentOfferTarget.application.id,
+            token: assignmentOfferTarget.application.assignmentOffer.token,
+            messageChatId: assignmentOfferNotification.chatId,
+            messageId: assignmentOfferNotification.messageId
+          }
+        );
+        return writeBookingState(nextState);
+      });
+    }
     if (assignmentOfferTarget) {
       console.info(JSON.stringify({
         event: 'booking_assignment_offer_requested',
@@ -2516,13 +2744,27 @@ app.post('/api/assignment-offer/respond', async (request, response, next) => {
     actor = bookingActorFromRequest(request);
     const outcome = await withBookingMutation(async () => {
       const currentState = await readBookingState();
+      const requestedApplication = currentState.applications.find(
+        application => String(application.id) === String(request.body?.applicationId)
+      );
+      const previousOffer = requestedApplication?.assignmentOffer
+        ? { ...requestedApplication.assignmentOffer }
+        : null;
       const result = applyRespondAssignmentOffer(currentState, request.body || {}, actor);
       await writeBookingState(result.state);
-      return result;
+      return { ...result, previousOffer };
     });
     const responseApplication = outcome.state.applications.find(
       application => String(application.id) === String(request.body?.applicationId)
     );
+    const closedOfferMessage = responseApplication
+      ? await closeAssignmentOfferMessage(
+        responseApplication,
+        outcome.result.shift,
+        outcome.previousOffer,
+        outcome.result.status
+      )
+      : null;
     const responseNotification = responseApplication
       ? await sendAssignmentOfferResponseToTrainee(
         responseApplication,
@@ -2536,6 +2778,7 @@ app.post('/api/assignment-offer/respond', async (request, response, next) => {
       applicationId: request.body?.applicationId,
       result: outcome.result.status,
       telegramUserId: actor.telegram.user.id,
+      offerMessageStatus: closedOfferMessage?.status || 'unknown',
       notificationStatus: responseNotification?.status || 'unknown',
       timestamp: new Date().toISOString()
     }));
@@ -2544,6 +2787,7 @@ app.post('/api/assignment-offer/respond', async (request, response, next) => {
       ok: true,
       role: actor.role,
       result: outcome.result,
+      ...(closedOfferMessage ? { assignmentOfferMessage: closedOfferMessage } : {}),
       ...(responseNotification ? { assignmentOfferResponseNotification: responseNotification } : {}),
       state: bookingStateForActor(outcome.state, actor)
     });
@@ -2932,10 +3176,13 @@ app.use((error, _request, response, _next) => {
 export {
   BookingConflictError,
   BookingValidationError,
+  applyExpireAssignmentOffers,
   applyRespondAssignmentOffer,
   applyMentorReportResultToBookingState,
   applyBookingCommand,
   bookingStateForActor,
+  composeAssignmentOfferClosedMessage,
+  composeAssignmentOfferExpiredQueueMessage,
   composeAssignmentOfferMessage,
   composeAssignmentOfferResponseMessage,
   composeAssignmentWithdrawalRecruiterMessage,
@@ -2967,6 +3214,14 @@ if (isMainModule) {
       pollTelegram();
       setInterval(pollTelegram, 5000);
     }
+    processExpiredAssignmentOffers().catch(error => {
+      console.error('Initial assignment offer expiry check failed:', error);
+    });
+    setInterval(() => {
+      processExpiredAssignmentOffers().catch(error => {
+        console.error('Assignment offer expiry check failed:', error);
+      });
+    }, 60_000);
     console.log(`LOFT HALL unified internship Mini App is listening on ${config.host}:${config.port}`);
   });
 
