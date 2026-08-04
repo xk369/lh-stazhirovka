@@ -222,6 +222,9 @@ test('registry hides limitations and lets recruiters copy Telegram', async () =>
   assert.match(html, /body\.view-registry \.app \{[\s\S]*?width: min\(100%, 1080px\);/);
   assert.match(html, /document\.body\.classList\.toggle\("view-registry", role === "recruiter" && unlocked && section === "registry"\)/);
   assert.match(html, /\.registry-table-wrap \{[\s\S]*?overflow: auto;[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
+  assert.match(html, /\.registry-table \{[\s\S]*?table-layout: fixed;/);
+  assert.match(html, /<colgroup>[\s\S]*?registry-col-group[\s\S]*?<\/colgroup>/);
+  assert.match(html, /\.registry-link \{[\s\S]*?white-space: nowrap;/);
   assert.match(html, /function renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTable, /renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTelegram, /class="registry-telegram"/);
