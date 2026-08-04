@@ -1242,6 +1242,9 @@ async function sendAssignmentWithdrawalToRecruiter(application, shift) {
 }
 
 async function sendAssignmentOfferToTrainee(request, application, shift) {
+  if (config.suppressTraineeNotifications) {
+    return { ok: false, status: 'skipped', skipped: 'trainee_notifications_suppressed', applicationId: application?.id };
+  }
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
   }
@@ -1280,6 +1283,9 @@ async function sendAssignmentOfferToTrainee(request, application, shift) {
 }
 
 async function sendAssignmentOfferResponseToTrainee(application, shift, resultStatus) {
+  if (config.suppressTraineeNotifications) {
+    return { ok: false, status: 'skipped', skipped: 'trainee_notifications_suppressed', applicationId: application?.id };
+  }
   if (!application?.telegramChatId) {
     return { ok: false, status: 'skipped', skipped: 'telegram_chat_missing', applicationId: application?.id };
   }

@@ -62,7 +62,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
     }
-    .panel { padding: 14px; margin-bottom: 12px; display: grid; gap: 12px; }
+    .panel { padding: 14px; margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
     .card, .date-card { padding: 12px; display: grid; gap: 10px; }
     .date-card.selected {
       border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
@@ -1657,12 +1657,15 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 14px;
       align-items: start;
+      width: 100%;
+      min-width: 0;
     }
     .registry-actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       justify-content: flex-end;
+      min-width: 0;
     }
     .registry-actions .secondary,
     .registry-actions .quiet {
@@ -1676,6 +1679,8 @@
       grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
       gap: 12px;
       align-items: end;
+      width: 100%;
+      min-width: 0;
     }
     .registry-controls input,
     .registry-controls select {
@@ -1687,6 +1692,8 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
       gap: 10px;
+      width: 100%;
+      min-width: 0;
     }
     .registry-summary .metric {
       min-height: 66px;
@@ -1695,10 +1702,14 @@
     }
     .registry-table-wrap {
       overflow: auto;
+      width: 100%;
+      min-width: 0;
       max-width: 100%;
       border: 1px solid var(--line);
       border-radius: 20px;
       background: var(--surface);
+      overscroll-behavior-x: contain;
+      -webkit-overflow-scrolling: touch;
     }
     .registry-table {
       width: 100%;
@@ -2074,6 +2085,11 @@
       position: relative;
       width: min(100%, 760px);
       padding: max(18px, env(safe-area-inset-top)) 16px calc(34px + env(safe-area-inset-bottom));
+    }
+    @media (min-width: 940px) {
+      body.view-registry .app {
+        width: min(100%, 1080px);
+      }
     }
     .top { margin-bottom: 16px; }
     .top .head {
@@ -3766,6 +3782,7 @@
 
     function render() {
       if (activeStageInfoId) hideStagePopovers();
+      document.body.classList.toggle("view-registry", role === "recruiter" && unlocked && section === "registry");
       document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.role === role));
       document.getElementById("traineeView").classList.toggle("hidden", role !== "trainee");
       document.getElementById("recruiterView").classList.toggle("hidden", role !== "recruiter");
@@ -5450,10 +5467,13 @@ ${managerLine}
       try {
         const result = await queueBookingCommand("request_assignment_confirmation", { applicationId, shiftId }, { notify: false });
         const status = result?.assignmentOfferNotification?.status;
+        const skippedReason = result?.assignmentOfferNotification?.skipped || "";
         const message = status === "sent"
           ? "Уведомление отправлено. Место зарезервировано на 1 час."
           : status === "skipped"
-            ? "Запрос создан, но Telegram стажёра не подключён."
+            ? skippedReason === "trainee_notifications_suppressed"
+              ? "Тестовый режим: запрос создан, но ЛС стажёру не отправлено."
+              : "Запрос создан, но Telegram стажёра не подключён."
             : status === "failed"
               ? `Запрос создан, но Telegram не доставил сообщение${result.assignmentOfferNotification?.error ? `: ${result.assignmentOfferNotification.error}` : "."}`
               : "Запрос создан. Проверьте статус доставки.";
