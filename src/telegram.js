@@ -100,7 +100,8 @@ export async function sendTelegramMessage({
   chatId,
   text,
   parseMode = '',
-  disableWebPagePreview = false
+  disableWebPagePreview = false,
+  replyMarkup = null
 }) {
   const body = {
     chat_id: chatId,
@@ -109,6 +110,7 @@ export async function sendTelegramMessage({
 
   if (parseMode) body.parse_mode = parseMode;
   if (disableWebPagePreview) body.disable_web_page_preview = true;
+  if (replyMarkup) body.reply_markup = replyMarkup;
 
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
