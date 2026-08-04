@@ -2679,7 +2679,7 @@
         <h2>Перед записью</h2>
         <div class="notice">
           <b>Стажировка длится 6-8 часов, оплата 1000 руб.</b><br>
-          Расписание может меняться, поэтому дату подтверждает рекрут. Если ни одна дата не подходит, можно встать в предварительную запись.
+          Расписание распределяет рекрут: заполните анкету и встаньте в предварительную запись. Когда появится подходящая дата, рекрут отправит запрос на подтверждение выхода.
         </div>
       </section>
 
@@ -2732,8 +2732,8 @@
 
       <section class="panel">
         <div class="head">
-          <h2>Доступные даты</h2>
-          <span class="pill ok" id="openDatesCount">0 открыто</span>
+          <h2>Предварительная запись</h2>
+          <span class="pill ok" id="openDatesCount">через рекрутера</span>
         </div>
         <div class="date-list" id="publicDates"></div>
         <button class="secondary" id="queueBtn" type="button">Встать в предварительную запись</button>
@@ -3869,57 +3869,25 @@
 
     function renderTrainee() {
       const current = currentApplication();
-      const currentCanChangeDate = current && ["pending", "queue"].includes(current.status);
-      const dates = openShifts().filter(shift => {
-        if (!current || currentCanChangeDate) return true;
-        return String(shift.id) !== String(current.shiftId);
-      });
-      const openCount = dates.length;
-      const currentShift = current?.shiftId ? state.shifts.find(shift => shift.id === current.shiftId) : null;
-      if (currentCanChangeDate && currentShift && !dates.some(shift => shift.id === currentShift.id)) dates.unshift(currentShift);
-      document.getElementById("openDatesCount").textContent = `${openCount} открыто`;
-      document.getElementById("publicDates").innerHTML = dates.length ? dates.map(shift => {
-        const isCurrentShift = current && current.shiftId === shift.id;
-        const selected = isCurrentShift && current.status !== "queue";
-        const locked = current && !["pending", "queue"].includes(current.status);
-        const canChange = current && ["pending", "queue"].includes(current.status);
-        const buttonText = selected
-          ? ["passed", "failed", "noshow"].includes(current.status) ? "Стажировка по этой дате завершена" : current.status === "pending" ? "Заявка отправлена на эту дату" : "Вы записаны на эту дату"
-          : locked ? "У вас уже есть запись" : canChange ? "Перезаписаться сюда" : "Выбрать дату";
-        return `
-          <article class="date-card ${selected ? "selected" : locked ? "locked" : ""}">
-            <div class="date-head">
-              <div>
-                <div class="date-title">${formatDate(shift.date)}</div>
-                <p class="meta">Свободно мест: <b>${freeSeats(shift)}</b></p>
-              </div>
-              <span class="pill ${selected ? "ok" : "ok"}">${selected ? "Ваша дата" : "Доступно"}</span>
-            </div>
-            ${selected ? `
-              <div class="date-summary">
-                <div class="date-mark">✓</div>
-                <div>
-                  <b>${current.status === "pending" ? "Вы выбрали эту дату" : "Вы записаны на эту дату"}</b>
-                  <span>${statusNames[current.status]}. Подробности ниже в блоке “Мой статус”.</span>
-                </div>
-              </div>
-            ` : ""}
-            <button class="primary" data-book="${shift.id}" type="button" ${selected || locked ? "disabled aria-disabled=\"true\"" : ""}>${buttonText}</button>
-          </article>
-        `;
-      }).join("") : `<div class="empty">Открытых дат пока нет.</div>`;
+      document.getElementById("openDatesCount").textContent = "через рекрутера";
+      document.getElementById("publicDates").innerHTML = `
+        <div class="notice">
+          <b>Дату назначает рекрут.</b><br>
+          Заполните данные и встаньте в предварительную запись. Когда рекрут подберёт дату, вам придёт запрос с кнопками «Да» и «Нет».
+        </div>
+      `;
 
       const queueBtn = document.getElementById("queueBtn");
-      const queueLocked = current && !["pending", "queue", "failed", "noshow"].includes(current.status);
+      const queueLocked = current && !["queue", "failed", "noshow"].includes(current.status);
       const isQueue = current?.status === "queue";
       queueBtn.disabled = Boolean(queueLocked || isQueue);
       queueBtn.setAttribute("aria-disabled", queueBtn.disabled ? "true" : "false");
       queueBtn.textContent = isQueue
         ? "Вы уже в предварительной записи"
-        : queueLocked ? "У вас уже есть запись" : ["failed", "noshow"].includes(current?.status) ? "Встать в предварительную запись заново" : "Встать в предварительную запись";
+        : queueLocked ? "У вас уже есть назначенная стажировка" : ["failed", "noshow"].includes(current?.status) ? "Встать в предварительную запись заново" : "Встать в предварительную запись";
 
       document.getElementById("myStatus").innerHTML = current ? renderMyStatus(current) : `
-        <div class="notice">Заполните данные и выберите дату. Если даты не подходят, встаньте в предварительную запись.</div>
+        <div class="notice">Заполните данные и встаньте в предварительную запись. Дату предложит рекрут.</div>
       `;
       renderTelegramConnect(current);
     }
@@ -4124,6 +4092,7 @@
           ${app.status === "invited" ? renderTraineeInvite(app) : ""}
           ${renderTraineeHistory(app)}
           ${renderMentorReportNotice(app)}
+          ${app.status === "confirmed" && shift ? `<button class="danger" data-withdraw-assignment="${app.id}" type="button">Не смогу выйти на эту дату</button>` : ""}
           ${["pending", "queue"].includes(app.status) ? `<button class="danger" data-cancel="${app.id}" type="button">Отменить заявку</button>` : ""}
           ${["failed", "noshow"].includes(app.status) ? `<button class="secondary" data-reapply-queue="${app.id}" type="button">Встать в предварительную запись заново</button>` : ""}
         </article>
@@ -5317,11 +5286,11 @@ ${managerLine}
       syncProfile({ persist: false });
       if (!validateTraineeProfile()) return;
       const current = currentApplication();
-      const canUpdateCurrent = current && ["pending", "queue"].includes(current.status);
+      const canUpdateCurrent = current && current.status === "queue";
       const canReapply = current && ["failed", "noshow"].includes(current.status);
       if (current && !canUpdateCurrent && !canReapply) return;
       const payload = {
-        shiftId: type === "queue" ? null : shiftId,
+        shiftId: null,
         name: state.profile.name,
         phone: state.profile.phone,
         training: state.profile.training,
@@ -5329,7 +5298,7 @@ ${managerLine}
         attempt: state.profile.attempt,
         limits: state.profile.limits,
         telegramCode: getTelegramCode(),
-        status: type === "queue" ? "queue" : "pending",
+        status: "queue",
         comment: ""
       };
       if (canUpdateCurrent) {
@@ -5415,6 +5384,35 @@ ${managerLine}
         : `Стажировка для «${app.name}» отменена.`;
       shiftActionMessages.set(String(shift.id), statusText);
       render();
+    }
+
+    async function withdrawConfirmedAssignment(id) {
+      const app = state.applications.find(item => String(item.id) === String(id));
+      const shift = app?.shiftId ? state.shifts.find(item => String(item.id) === String(app.shiftId)) : null;
+      if (!app || app.status !== "confirmed" || !shift) return;
+      const confirmed = await confirmAction(
+        `Отказаться от выхода ${formatLongDate(shift.date)}?\n\nВы вернётесь в предварительную запись, место на дату освободится, а рекрут получит уведомление.`
+      );
+      if (!confirmed) return;
+      setTraineeFormStatus("Возвращаем вас в предварительную запись...");
+      try {
+        const result = await queueBookingCommand(
+          "withdraw_confirmed_assignment",
+          { applicationId: Number(app.id) },
+          { notify: false }
+        );
+        const delivery = result?.assignmentWithdrawalNotification;
+        const suffix = delivery?.status === "sent"
+          ? " Рекрут уведомлён."
+          : delivery?.status === "failed"
+            ? " Рекрут увидит изменение в кабинете, но личное уведомление не доставилось."
+            : "";
+        setTraineeFormStatus(`Вы вернулись в предварительную запись.${suffix}`);
+        render();
+      } catch (error) {
+        console.error("Не удалось отказаться от подтверждённой даты", error);
+        setTraineeFormStatus(error.message || "Не удалось отказаться от даты. Попробуйте ещё раз.");
+      }
     }
 
     async function saveQueueComment(applicationId) {
@@ -5734,6 +5732,11 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         if (String(state.profile.activeAppId) === String(cancel.dataset.cancel)) state.profile.activeAppId = null;
         saveLocalSnapshot();
         render();
+        return;
+      }
+      const withdrawAssignment = event.target.closest("[data-withdraw-assignment]");
+      if (withdrawAssignment) {
+        await withdrawConfirmedAssignment(withdrawAssignment.dataset.withdrawAssignment);
         return;
       }
       const reapplyQueue = event.target.closest("[data-reapply-queue]");

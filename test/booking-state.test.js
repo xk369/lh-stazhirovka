@@ -9,6 +9,7 @@ import {
   bookingStateForActor,
   composeAssignmentOfferMessage,
   composeAssignmentOfferResponseMessage,
+  composeAssignmentWithdrawalRecruiterMessage,
   composeBookingStageChangedMessage,
   composeShiftCancellationMessage,
   composeShiftCapacityChangedMessage,
@@ -248,6 +249,96 @@ test('assignment offer response messages confirm booking or queue status', () =>
   assert.match(expired, /предварительной записи/);
 });
 
+test('trainee can withdraw a confirmed assignment before workgroup invite', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 20,
+    shiftId: 1,
+    name: 'Виктория Неудахина',
+    phone: '+7 999 123-45-67',
+    training: 'passed',
+    trainingDate: '2026-07-01',
+    attempt: 'first',
+    status: 'confirmed',
+    telegramUserId: '999',
+    telegramUsername: 'k0ktya',
+    recruiterQueueComment: ''
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    { action: 'withdraw_confirmed_assignment', baseVersion: 2, applicationId: 20 },
+    traineeActor
+  );
+
+  assert.equal(next.applications[0].status, 'queue');
+  assert.equal(next.applications[0].shiftId, null);
+  assert.equal(next.applications[0].assignmentOffer, null);
+  assert.equal(next.shifts[0].seats, 3);
+});
+
+test('trainee cannot withdraw someone else assignment or an invited application', () => {
+  const other = bookingState();
+  other.applications = [{
+    id: 20,
+    shiftId: 1,
+    name: 'Other Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'confirmed',
+    telegramUserId: '111'
+  }];
+  assert.throws(
+    () => applyBookingCommand(
+      other,
+      { action: 'withdraw_confirmed_assignment', baseVersion: 2, applicationId: 20 },
+      traineeActor
+    ),
+    /чужую заявку/
+  );
+
+  const invited = bookingState();
+  invited.applications = [{
+    id: 20,
+    shiftId: 1,
+    name: 'Own Invited Trainee',
+    training: 'passed',
+    attempt: 'first',
+    status: 'invited',
+    telegramUserId: '999',
+    inviteGroupId: 1,
+    venueId: 'loft1',
+    groupLink: 'https://t.me/+group'
+  }];
+  invited.inviteGroups = [{ id: 1, shiftId: 1, venueId: 'loft1', link: 'https://t.me/+group', memberIds: [20] }];
+
+  assert.throws(
+    () => applyBookingCommand(
+      invited,
+      { action: 'withdraw_confirmed_assignment', baseVersion: 2, applicationId: 20 },
+      traineeActor
+    ),
+    BookingValidationError
+  );
+});
+
+test('recruiter withdrawal notification includes trainee identity and date', () => {
+  const message = composeAssignmentWithdrawalRecruiterMessage(
+    {
+      name: 'Виктория Неудахина',
+      phone: '+7 999 123-45-67',
+      telegramUsername: 'k0ktya'
+    },
+    { date: '2026-07-10' }
+  );
+
+  assert.match(message, /Стажёр отказался от выхода/);
+  assert.match(message, /Виктория Неудахина/);
+  assert.match(message, /@k0ktya/);
+  assert.match(message, /10\.07\.2026/);
+  assert.match(message, /слился с ивента/);
+});
+
 test('rejects trainee booking when shift has no free seats', () => {
   assert.throws(
     () =>
@@ -344,12 +435,12 @@ test('does not require training date when banquet training is not completed', ()
       baseVersion: 2,
       application: {
         id: 20,
-        shiftId: 1,
+        shiftId: null,
         name: 'New Trainee',
         phone: '+7 999 123-45-67',
         training: 'not_passed',
         attempt: 'first',
-        status: 'pending'
+        status: 'queue'
       }
     },
     traineeActor
@@ -357,6 +448,34 @@ test('does not require training date when banquet training is not completed', ()
 
   assert.equal(next.applications[0].training, 'not_passed');
   assert.equal(next.applications[0].trainingDate, '');
+  assert.equal(next.applications[0].status, 'queue');
+  assert.equal(next.applications[0].shiftId, null);
+});
+
+test('rejects trainee direct date booking because recruiter assigns dates from queue', () => {
+  assert.throws(
+    () =>
+      applyBookingCommand(
+        bookingState(),
+        {
+          action: 'upsert_trainee_application',
+          baseVersion: 2,
+          application: {
+            id: 20,
+            shiftId: 1,
+            name: 'New Trainee',
+            phone: '+7 999 123-45-67',
+            training: 'not_passed',
+            attempt: 'first',
+            status: 'queue'
+          }
+        },
+        traineeActor
+      ),
+    error =>
+      error instanceof BookingValidationError &&
+      /Дату стажировки назначает рекрут/.test(error.message)
+  );
 });
 
 test('rejects duplicate invite for already invited application', () => {
@@ -958,7 +1077,7 @@ test('formats the shift cancellation message with a new-date instruction', () =>
   assert.match(message, /выберите другую доступную дату/);
 });
 
-test('allows a canceled trainee returned to queue to choose another shift', () => {
+test('keeps a canceled trainee in queue-only mode until recruiter sends an offer', () => {
   const source = bookingState();
   source.applications = [{
     id: 10,
@@ -977,20 +1096,20 @@ test('allows a canceled trainee returned to queue to choose another shift', () =
       baseVersion: 2,
       application: {
         id: 10,
-        shiftId: 1,
+        shiftId: null,
         name: 'Queued Trainee',
         phone: '+7 999 000-11-22',
         training: 'passed',
         trainingDate: '2026-07-01',
         attempt: 'first',
-        status: 'pending'
+        status: 'queue'
       }
     },
     traineeActor
   );
 
-  assert.equal(next.applications[0].shiftId, 1);
-  assert.equal(next.applications[0].status, 'pending');
+  assert.equal(next.applications[0].shiftId, null);
+  assert.equal(next.applications[0].status, 'queue');
 });
 
 test('exports trainee table as excel-friendly csv', () => {

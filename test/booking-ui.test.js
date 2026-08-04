@@ -290,14 +290,17 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 
-test('trainee available dates stay clean after an active application is locked', async () => {
+test('trainee booking screen is queue-only and does not render public date choices', async () => {
   const html = await readPublicFile('booking.html');
   const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
+  const renderMyStatus = html.match(/function renderMyStatus\(app\) \{[\s\S]*?\n    \}\n\n    function traineeApplicationHistory/)?.[0] || '';
 
-  assert.match(renderTrainee, /currentCanChangeDate = current && \["pending", "queue"\]\.includes\(current\.status\)/);
-  assert.match(renderTrainee, /openShifts\(\)\.filter/);
-  assert.match(renderTrainee, /String\(shift\.id\) !== String\(current\.shiftId\)/);
-  assert.match(renderTrainee, /if \(currentCanChangeDate && currentShift/);
+  assert.match(html, /<h2>Предварительная запись<\/h2>/);
+  assert.match(renderTrainee, /Дату назначает рекрут/);
+  assert.match(renderTrainee, /queueLocked = current && !\["queue", "failed", "noshow"\]\.includes\(current\.status\)/);
+  assert.match(renderMyStatus, /data-withdraw-assignment="\$\{app\.id\}"/);
+  assert.doesNotMatch(renderTrainee, /data-book="\$\{shift\.id\}"/);
+  assert.doesNotMatch(renderTrainee, /openShifts\(\)\.filter/);
 });
 
 test('trainee status hydrates from server-owned applications without a local profile name', async () => {
