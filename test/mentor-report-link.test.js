@@ -6,6 +6,7 @@ import {
   ensureMentorReportTargetMatches,
   ensureMentorReportVenueMatches,
   findMentorReportApplicationForLookup,
+  mentorAnalyticsFromState,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -157,11 +158,13 @@ test('mentor trainee list includes only invited group members waiting for report
 test('mentor report result marks application as passed and stores delivery status', () => {
   const next = applyMentorReportResultToBookingState(
     stateWithApplications(),
-    {
-      applicationId: 1,
-      reporterTelegramUserId: '1294774551',
-      mentorDecision: 'Стажировка пройдена',
-      mentorCommentForTrainee: 'Потренировать сервировку и подачу напитков.',
+      {
+        applicationId: 1,
+        reporterTelegramUserId: '1294774551',
+        reporterName: 'Софья Сучкова',
+        reporterUsername: 'user6319642',
+        mentorDecision: 'Стажировка пройдена',
+        mentorCommentForTrainee: 'Потренировать сервировку и подачу напитков.',
       mentorTraineeResult: {
         venueId: 'loft1',
         venue: 'LOFT #1 · AVANTAGE',
@@ -181,6 +184,8 @@ test('mentor report result marks application as passed and stores delivery statu
   assert.equal(application.status, 'passed');
   assert.equal(application.mentorReport, true);
   assert.equal(application.mentorReportAt, '2026-07-03T03:00:00.000Z');
+  assert.equal(application.mentorReporterName, 'Софья Сучкова');
+  assert.equal(application.mentorReporterTelegramUsername, 'user6319642');
   assert.equal(application.mentorCommentDeliveryStatus, 'sent');
   assert.equal(application.mentorCommentForTrainee, 'Потренировать сервировку и подачу напитков.');
   assert.equal(application.mentorReportVenueId, 'loft1');
@@ -254,6 +259,37 @@ test('mentor report result marks application as failed when repeat internship is
   const application = next.applications.find(item => item.id === 1);
   assert.equal(application.status, 'failed');
   assert.equal(application.mentorReport, true);
+});
+
+test('mentor analytics counts old linked reports by stored mentor id', () => {
+  const state = stateWithApplications();
+  state.applications[0] = {
+    ...state.applications[0],
+    status: 'passed',
+    mentorReport: true,
+    mentorDecision: 'Стажировка пройдена',
+    mentorReporterTelegramUserId: '777',
+    mentorReportAt: '2026-07-10T20:00:00.000Z'
+  };
+  state.applications[1] = {
+    ...state.applications[1],
+    status: 'failed',
+    mentorReport: true,
+    mentorDecision: 'Требуется повторная стажировка',
+    mentorReporterTelegramUserId: '777',
+    mentorReportAt: '2026-07-10T21:00:00.000Z'
+  };
+
+  const analytics = mentorAnalyticsFromState(state);
+
+  assert.equal(analytics.totals.mentors, 1);
+  assert.equal(analytics.totals.reports, 2);
+  assert.equal(analytics.totals.passed, 1);
+  assert.equal(analytics.totals.failed, 1);
+  assert.equal(analytics.totals.waiting, 1);
+  assert.equal(analytics.mentors[0].name, 'Наставник ID 777');
+  assert.deepEqual(analytics.mentors[0].trainees.map(item => item.applicationId).sort(), [1, 2]);
+  assert.deepEqual(analytics.waiting.map(item => item.applicationId), [6]);
 });
 
 test('manual mentor report lookup links the matching booking application by trainee data', () => {

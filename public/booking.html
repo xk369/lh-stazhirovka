@@ -1831,6 +1831,11 @@
       border-color: color-mix(in srgb, var(--ok) 32%, var(--line));
       background: color-mix(in srgb, var(--ok) 10%, var(--surface));
     }
+    .registry-tag.warn {
+      color: var(--bad);
+      border-color: color-mix(in srgb, var(--bad) 28%, var(--line));
+      background: color-mix(in srgb, var(--bad) 8%, var(--surface));
+    }
     .registry-details {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1931,6 +1936,138 @@
       color: var(--muted);
       padding: 24px 12px;
       text-align: center;
+    }
+    .mentor-analytics {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .mentor-list {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .mentor-card,
+    .mentor-waiting {
+      border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
+      border-radius: 22px;
+      background: var(--surface);
+      overflow: hidden;
+      box-shadow: 0 14px 32px rgba(17,24,32,.06);
+    }
+    .mentor-card summary,
+    .mentor-waiting summary {
+      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-width: 0;
+      padding: 15px;
+      cursor: pointer;
+    }
+    .mentor-card summary::-webkit-details-marker,
+    .mentor-waiting summary::-webkit-details-marker {
+      display: none;
+    }
+    .mentor-card summary::after,
+    .mentor-waiting summary::after {
+      content: "⌄";
+      width: 36px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--surface-2);
+      font-size: 18px;
+      line-height: 1;
+      transition: transform .18s ease;
+    }
+    .mentor-card[open] summary::after,
+    .mentor-waiting[open] summary::after {
+      transform: rotate(180deg);
+    }
+    .mentor-card-title {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .mentor-card-title b {
+      min-width: 0;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 950;
+      line-height: 1.12;
+      overflow-wrap: anywhere;
+    }
+    .mentor-card-title span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      line-height: 1.28;
+      overflow-wrap: anywhere;
+    }
+    .mentor-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      padding: 0 15px 14px;
+    }
+    .mentor-counts .registry-tag {
+      min-height: 28px;
+      font-size: 11.5px;
+    }
+    .mentor-trainees {
+      display: grid;
+      gap: 8px;
+      padding: 0 15px 15px;
+      min-width: 0;
+    }
+    .mentor-trainee-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(98px, auto);
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface-2);
+      padding: 10px 11px;
+    }
+    .mentor-trainee-main {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .mentor-trainee-main b {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 950;
+      line-height: 1.22;
+      overflow-wrap: anywhere;
+    }
+    .mentor-trainee-main span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 820;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .mentor-trainee-row .pill {
+      justify-self: end;
+      max-width: 136px;
+      min-width: 0;
+      white-space: normal;
+      text-align: center;
+      font-size: 11px;
+      padding-inline: 9px;
+    }
+    .mentor-waiting {
+      border-style: dashed;
+      background: color-mix(in srgb, var(--surface) 82%, var(--field));
     }
     .closed-dates {
       border: 1px solid var(--line);
@@ -2648,6 +2785,25 @@
       .registry-row { min-height: 66px; }
       .registry-row.full { min-height: 0; }
       .registry-card-grid { grid-template-columns: 1fr; }
+      .mentor-card summary,
+      .mentor-waiting summary {
+        padding: 13px;
+      }
+      .mentor-card-title b {
+        font-size: 18px;
+      }
+      .mentor-counts,
+      .mentor-trainees {
+        padding-inline: 13px;
+      }
+      .mentor-trainee-row {
+        grid-template-columns: 1fr;
+        gap: 7px;
+      }
+      .mentor-trainee-row .pill {
+        justify-self: start;
+        max-width: 100%;
+      }
       .timeline { grid-template-columns: 1fr; }
       .step-arrow { display: none; }
       .step + .step { border-top: 1px solid var(--line); }
@@ -2795,6 +2951,7 @@
                 <div class="stat"><b id="statQueue">0</b><span>предзапись</span></div>
               </section>
               <div class="recruiter-extra-actions">
+                <button class="quiet mentor-tool hidden" id="mentorAnalyticsBtn" type="button">Наставники</button>
                 <button class="quiet registry-tool hidden" id="exportTraineesBtn" type="button">Реестр стажеров</button>
                 <button class="quiet danger-tool hidden" id="clearBtn" type="button">Очистить все</button>
               </div>
@@ -2882,6 +3039,34 @@
               </label>
             </div>
             <div id="traineeRegistry"></div>
+          </section>
+        </section>
+
+        <section id="mentorsSection" class="hidden">
+          <section class="panel">
+            <div class="registry-head">
+              <div>
+                <h2>Наставники</h2>
+                <p class="meta">Список наставников по связанным отчетам: кто вел стажеров, кто прошел, кто не прошел и по кому еще ждём отчет.</p>
+              </div>
+              <div class="registry-actions">
+                <button class="quiet" data-section="candidates" type="button">К кандидатам</button>
+              </div>
+            </div>
+            <div class="registry-controls">
+              <label>Поиск
+                <input id="mentorSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="Наставник, стажер, Telegram">
+              </label>
+              <label>Итог
+                <select id="mentorStatusFilter">
+                  <option value="all">Все итоги</option>
+                  <option value="passed">Прошли</option>
+                  <option value="failed">Не прошли</option>
+                  <option value="waiting">Ждут отчет</option>
+                </select>
+              </label>
+            </div>
+            <div id="mentorAnalytics" class="mentor-analytics"></div>
           </section>
         </section>
 
@@ -3109,9 +3294,12 @@
     let state = load();
     let registrySearch = "";
     let registryStatusFilter = "all";
+    let mentorSearch = "";
+    let mentorStatusFilter = "all";
     let queueSearch = "";
     let candidateSearch = "";
     let registryRenderFrame = 0;
+    let mentorRenderFrame = 0;
     let lastStateRefreshAt = 0;
     let assignmentOfferResponseHandled = false;
     const expandedShiftIds = new Set();
@@ -4323,9 +4511,12 @@
     function renderRecruiter() {
       if (!unlocked) return;
       document.querySelectorAll(".subtab").forEach(tab => tab.classList.toggle("active", tab.dataset.section === section));
-      ["dates", "candidates", "groups", "registry"].forEach(id => {
+      ["dates", "candidates", "groups", "registry", "mentors"].forEach(id => {
         document.getElementById(`${id}Section`).classList.toggle("hidden", id !== section);
       });
+      document.querySelector(".recruiter-more")?.classList.toggle("active", ["registry", "mentors"].includes(section));
+      document.getElementById("mentorAnalyticsBtn")?.classList.toggle("active", section === "mentors");
+      document.getElementById("exportTraineesBtn")?.classList.toggle("active", section === "registry");
       document.getElementById("statPending").textContent = state.applications.filter(app => app.status === "pending").length;
       document.getElementById("statConfirmed").textContent = state.applications.filter(app => ["confirmed", "invited"].includes(app.status)).length;
       document.getElementById("statFeedback").textContent = state.applications.filter(app => app.status === "feedback").length;
@@ -4335,6 +4526,7 @@
       renderCandidates();
       renderInviteGroups();
       renderRegistry();
+      renderMentorAnalytics();
       renderQuickDates();
     }
 
@@ -5316,6 +5508,238 @@ ${managerLine}
       });
     }
 
+    function mentorReportOutcomeFromApplication(app) {
+      const status = String(app?.status || "");
+      const decision = String(app?.mentorDecision || "").toLowerCase();
+      if (status === "passed" || decision.includes("стажировка пройдена")) {
+        return { status: "passed", label: "Прошел" };
+      }
+      if (status === "failed" || decision.includes("требуется повторная") || decision.includes("не пройдена")) {
+        return { status: "failed", label: "Не прошел" };
+      }
+      return { status: "unknown", label: "Итог не указан" };
+    }
+
+    function mentorReporterIdentityFromApplication(app) {
+      const username = String(app?.mentorReporterTelegramUsername || "").trim().replace(/^@/, "");
+      const telegramUserId = String(app?.mentorReporterTelegramUserId || "").trim();
+      const name = String(app?.mentorReporterName || "").trim();
+      const key = telegramUserId || (username ? `username:${username.toLowerCase()}` : (name ? `name:${name.toLowerCase()}` : "unknown"));
+      return {
+        key,
+        name: name || (username ? `@${username}` : (telegramUserId ? `Наставник ID ${telegramUserId}` : "Наставник не указан")),
+        telegram: username ? `@${username}` : "",
+        telegramUserId
+      };
+    }
+
+    function mentorAnalyticsTraineeRow(app) {
+      const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+      const group = state.inviteGroups.find(item => String(item.id) === String(app.inviteGroupId));
+      const venue = venueById(app.venueId || group?.venueId);
+      const result = mentorReportOutcomeFromApplication(app);
+      return {
+        app,
+        id: app.id,
+        name: app.name || "Без имени",
+        telegram: traineeTelegramTag(app),
+        date: shift?.date || "",
+        dateText: shift ? formatDate(shift.date) : "Без даты",
+        venue: venue?.name || app.mentorReportVenue || app.venueId || "Площадка не указана",
+        result: result.status,
+        resultLabel: result.label,
+        reportAt: app.mentorReportAt || "",
+        statusLabel: statusNames[app.status] || app.status || "Статус не указан"
+      };
+    }
+
+    function mentorAnalyticsData() {
+      const mentorsByKey = new Map();
+      const waiting = [];
+
+      state.applications.forEach(app => {
+        if (app.mentorReport) {
+          const identity = mentorReporterIdentityFromApplication(app);
+          if (!mentorsByKey.has(identity.key)) {
+            mentorsByKey.set(identity.key, {
+              ...identity,
+              total: 0,
+              passed: 0,
+              failed: 0,
+              unknown: 0,
+              trainees: []
+            });
+          }
+          const trainee = mentorAnalyticsTraineeRow(app);
+          const mentor = mentorsByKey.get(identity.key);
+          mentor.total += 1;
+          if (trainee.result === "passed") mentor.passed += 1;
+          else if (trainee.result === "failed") mentor.failed += 1;
+          else mentor.unknown += 1;
+          mentor.trainees.push(trainee);
+          return;
+        }
+        if (app.status === "feedback") {
+          waiting.push(mentorAnalyticsTraineeRow(app));
+        }
+      });
+
+      const sortRows = (left, right) => {
+        const leftDate = left.date || "9999-12-31";
+        const rightDate = right.date || "9999-12-31";
+        if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+        return left.name.localeCompare(right.name, "ru");
+      };
+
+      return {
+        mentors: [...mentorsByKey.values()]
+          .map(mentor => ({ ...mentor, trainees: mentor.trainees.sort(sortRows) }))
+          .sort((left, right) => {
+            if (right.total !== left.total) return right.total - left.total;
+            return left.name.localeCompare(right.name, "ru");
+          }),
+        waiting: waiting.sort(sortRows)
+      };
+    }
+
+    function mentorSearchMatchesMentor(mentor, query) {
+      if (!query) return true;
+      return [
+        mentor.name,
+        mentor.telegram,
+        mentor.telegramUserId,
+        ...mentor.trainees.flatMap(row => [row.name, row.telegram, row.dateText, row.venue, row.resultLabel, row.statusLabel])
+      ].join(" ").toLowerCase().includes(query);
+    }
+
+    function mentorSearchMatchesRow(row, query) {
+      if (!query) return true;
+      return [row.name, row.telegram, row.dateText, row.venue, row.resultLabel, row.statusLabel].join(" ").toLowerCase().includes(query);
+    }
+
+    function filteredMentorAnalytics() {
+      const query = mentorSearch.trim().toLowerCase();
+      const data = mentorAnalyticsData();
+      const resultFilter = mentorStatusFilter;
+      const mentors = resultFilter === "waiting" ? [] : data.mentors
+        .map(mentor => {
+          const trainees = mentor.trainees.filter(row => {
+            const matchesResult = resultFilter === "all" || row.result === resultFilter;
+            return matchesResult && mentorSearchMatchesRow(row, query);
+          });
+          return {
+            ...mentor,
+            total: trainees.length,
+            passed: trainees.filter(row => row.result === "passed").length,
+            failed: trainees.filter(row => row.result === "failed").length,
+            unknown: trainees.filter(row => row.result === "unknown").length,
+            trainees
+          };
+        })
+        .filter(mentor => mentor.trainees.length || mentorSearchMatchesMentor(mentor, query));
+      const waiting = ["all", "waiting"].includes(resultFilter)
+        ? data.waiting.filter(row => mentorSearchMatchesRow(row, query))
+        : [];
+      return { mentors, waiting, source: data };
+    }
+
+    function renderMentorTraineeRow(row) {
+      return `
+        <div class="mentor-trainee-row">
+          <div class="mentor-trainee-main">
+            <b>${escapeHtml(row.name)}</b>
+            <span>${escapeHtml(row.dateText)} · ${escapeHtml(row.venue)}</span>
+            ${row.telegram ? `<span>${escapeHtml(row.telegram)}</span>` : ""}
+          </div>
+          <span class="pill ${row.result === "failed" ? "bad" : row.result === "passed" ? "ok" : "wait"}">${escapeHtml(row.resultLabel)}</span>
+        </div>
+      `;
+    }
+
+    function renderMentorCard(mentor) {
+      const telegramLine = [mentor.telegram, mentor.telegramUserId ? `ID ${mentor.telegramUserId}` : ""].filter(Boolean).join(" · ");
+      return `
+        <details class="mentor-card">
+          <summary>
+            <span class="mentor-card-title">
+              <b>${escapeHtml(mentor.name)}</b>
+              <span>${escapeHtml(telegramLine || "Telegram не указан")} · ${mentor.total} отч.</span>
+            </span>
+          </summary>
+          <div class="mentor-counts">
+            <span class="registry-tag">Всего: ${mentor.total}</span>
+            <span class="registry-tag ok">Прошли: ${mentor.passed}</span>
+            <span class="registry-tag ${mentor.failed ? "warn" : ""}">Не прошли: ${mentor.failed}</span>
+            ${mentor.unknown ? `<span class="registry-tag">Итог не указан: ${mentor.unknown}</span>` : ""}
+          </div>
+          <div class="mentor-trainees">
+            ${mentor.trainees.map(renderMentorTraineeRow).join("")}
+          </div>
+        </details>
+      `;
+    }
+
+    function renderMentorWaiting(rows) {
+      if (!rows.length) return "";
+      return `
+        <details class="mentor-waiting">
+          <summary>
+            <span class="mentor-card-title">
+              <b>Ждут отчет наставника</b>
+              <span>${rows.length} стаж.</span>
+            </span>
+          </summary>
+          <div class="mentor-trainees">
+            ${rows.map(row => `
+              <div class="mentor-trainee-row">
+                <div class="mentor-trainee-main">
+                  <b>${escapeHtml(row.name)}</b>
+                  <span>${escapeHtml(row.dateText)} · ${escapeHtml(row.venue)}</span>
+                  ${row.telegram ? `<span>${escapeHtml(row.telegram)}</span>` : ""}
+                </div>
+                <span class="pill wait">${escapeHtml(row.statusLabel)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </details>
+      `;
+    }
+
+    function renderMentorAnalytics() {
+      const search = document.getElementById("mentorSearch");
+      const status = document.getElementById("mentorStatusFilter");
+      if (search && search.value !== mentorSearch) search.value = mentorSearch;
+      if (status && status.value !== mentorStatusFilter) status.value = mentorStatusFilter;
+      const target = document.getElementById("mentorAnalytics");
+      if (!target) return;
+      const { mentors, waiting, source } = filteredMentorAnalytics();
+      const visibleReports = mentors.reduce((total, mentor) => total + mentor.total, 0);
+      const sourceReports = source.mentors.reduce((total, mentor) => total + mentor.total, 0);
+      const empty = !mentors.length && !waiting.length;
+      target.innerHTML = `
+        <div class="registry-summary">
+          <div class="metric"><b>${source.mentors.length}</b><span>наставники</span></div>
+          <div class="metric"><b>${sourceReports}</b><span>отчеты</span></div>
+          <div class="metric"><b>${source.waiting.length}</b><span>ждут отчет</span></div>
+        </div>
+        ${visibleReports !== sourceReports || waiting.length !== source.waiting.length ? `<p class="meta">Показано: ${visibleReports} отч. и ${waiting.length} ожидают отчет.</p>` : ""}
+        ${empty ? `<div class="registry-empty">По таким условиям данных нет.</div>` : `
+          <div class="mentor-list">
+            ${mentors.map(renderMentorCard).join("")}
+            ${renderMentorWaiting(waiting)}
+          </div>
+        `}
+      `;
+    }
+
+    function scheduleMentorRender() {
+      cancelAnimationFrame(mentorRenderFrame);
+      mentorRenderFrame = requestAnimationFrame(() => {
+        mentorRenderFrame = 0;
+        renderMentorAnalytics();
+      });
+    }
+
     async function createApplication(type, shiftId) {
       clearTimeout(profileSaveTimer);
       syncProfile({ persist: false });
@@ -5999,6 +6423,14 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         document.getElementById("registrySection")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
+      if (event.target.id === "mentorAnalyticsBtn") {
+        role = "recruiter";
+        section = "mentors";
+        event.target.closest(".recruiter-more")?.removeAttribute("open");
+        render();
+        document.getElementById("mentorsSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
       if (event.target.id === "downloadTraineesCsvBtn") {
         await downloadTraineesCsv();
         return;
@@ -6097,6 +6529,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         registrySearch = event.target.value;
         scheduleRegistryRender();
       }
+      if (event.target.id === "mentorSearch") {
+        mentorSearch = event.target.value;
+        scheduleMentorRender();
+      }
       if (event.target.id === "queueSearch") {
         queueSearch = event.target.value;
         renderQueuePool();
@@ -6123,6 +6559,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target.id === "registryStatusFilter") {
         registryStatusFilter = event.target.value;
         renderRegistry();
+      }
+      if (event.target.id === "mentorStatusFilter") {
+        mentorStatusFilter = event.target.value;
+        renderMentorAnalytics();
       }
     });
 

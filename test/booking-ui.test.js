@@ -44,6 +44,26 @@ test('registry search updates results asynchronously without replacing its input
   assert.doesNotMatch(inputHandler, /render\(\)|renderRegistry\(\)/);
 });
 
+test('recruiter has compact mentor analytics for linked reports', async () => {
+  const html = await readPublicFile('booking.html');
+  const nav = html.match(/<nav class="recruiter-nav"[\s\S]*?<\/nav>/)?.[0] || '';
+  const mentorsSection = html.match(/<section id="mentorsSection"[\s\S]*?<section id="groupsSection"/)?.[0] || '';
+  const renderRecruiter = html.match(/function renderRecruiter\(\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const inputHandler = html.match(/if \(event\.target\.id === "mentorSearch"\) \{[\s\S]*?\n      \}/)?.[0] || '';
+  const changeHandler = html.match(/if \(event\.target\.id === "mentorStatusFilter"\) \{[\s\S]*?\n      \}/)?.[0] || '';
+
+  assert.match(nav, /id="mentorAnalyticsBtn"[^>]*>Наставники<\/button>/);
+  assert.match(mentorsSection, /id="mentorSearch"[^>]*type="search"/);
+  assert.match(mentorsSection, /id="mentorStatusFilter"/);
+  assert.match(mentorsSection, />Ждут отчет<\/option>/);
+  assert.match(html, /function mentorAnalyticsData\(\)/);
+  assert.match(html, /function renderMentorAnalytics\(\)/);
+  assert.match(renderRecruiter, /\["dates", "candidates", "groups", "registry", "mentors"\]/);
+  assert.match(renderRecruiter, /renderMentorAnalytics\(\)/);
+  assert.match(inputHandler, /scheduleMentorRender\(\)/);
+  assert.match(changeHandler, /renderMentorAnalytics\(\)/);
+});
+
 test('trainee booking form requires phone and sends it with applications', async () => {
   const html = await readPublicFile('booking.html');
   const traineeView = html.match(/<section id="traineeView">[\s\S]*?<section id="recruiterView"/)?.[0] || '';

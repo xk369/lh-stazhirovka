@@ -189,6 +189,13 @@ function serializeTelegramUser(user) {
   };
 }
 
+function telegramUserDisplayName(user) {
+  return [user?.first_name, user?.last_name]
+    .map(part => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
 function bookingRoleForTelegramUser(user) {
   return config.recruiterTelegramIds.has(String(user.id)) ? 'recruiter' : 'trainee';
 }
@@ -546,6 +553,8 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
       app?.mentorReporterTelegramUserId,
       'application.mentorReporterTelegramUserId'
     ),
+    mentorReporterName: normalizeOptionalText(app?.mentorReporterName, 'application.mentorReporterName', 160),
+    mentorReporterTelegramUsername: normalizeUsername(app?.mentorReporterTelegramUsername),
     mentorDecision: normalizeOptionalText(app?.mentorDecision, 'application.mentorDecision', 120),
     mentorReportVenueId: normalizeOptionalText(app?.mentorReportVenueId, 'application.mentorReportVenueId', 80),
     mentorReportVenue: normalizeOptionalText(app?.mentorReportVenue, 'application.mentorReportVenue', 120),
@@ -1290,6 +1299,123 @@ function traineeTelegramTag(application) {
   return userId ? `ID ${userId}` : 'Telegram не указан';
 }
 
+function mentorReportOutcome(application) {
+  const status = normalizeLegacyStatus(application?.status);
+  const decision = String(application?.mentorDecision || '').toLowerCase();
+  if (status === 'passed' || decision.includes('стажировка пройдена')) {
+    return { status: 'passed', label: 'Прошел' };
+  }
+  if (
+    status === 'failed' ||
+    decision.includes('требуется повторная') ||
+    decision.includes('не пройдена')
+  ) {
+    return { status: 'failed', label: 'Не прошел' };
+  }
+  return { status: 'unknown', label: 'Итог не указан' };
+}
+
+function mentorReporterIdentity(application) {
+  const username = normalizeUsername(application?.mentorReporterTelegramUsername);
+  const id = normalizeOptionalText(application?.mentorReporterTelegramUserId, 'mentorReporterTelegramUserId', 32);
+  const name = normalizeOptionalText(application?.mentorReporterName, 'mentorReporterName', 160);
+  const key = id || (username ? `username:${username}` : (name ? `name:${name.toLowerCase()}` : 'unknown'));
+  return {
+    key,
+    name: name || (username ? `@${username}` : (id ? `Наставник ID ${id}` : 'Наставник не указан')),
+    telegram: username ? `@${username}` : '',
+    telegramUserId: id
+  };
+}
+
+function mentorAnalyticsTraineeFromApplication(state, application) {
+  const shift = applicationShift(state, application);
+  const group = applicationInviteGroup(state, application);
+  const outcome = mentorReportOutcome(application);
+  return {
+    applicationId: application.id,
+    name: application.name,
+    telegram: traineeTelegramTag(application),
+    date: shift?.date || '',
+    status: normalizeLegacyStatus(application.status),
+    statusLabel: BOOKING_STATUS_LABELS[normalizeLegacyStatus(application.status)] || normalizeLegacyStatus(application.status),
+    venue: applicationVenueLabel(application, group) || '',
+    mentorReportAt: application.mentorReportAt || '',
+    result: outcome.status,
+    resultLabel: outcome.label
+  };
+}
+
+function mentorAnalyticsFromState(state) {
+  const cleanState = normalizeBookingState(state);
+  const mentorsByKey = new Map();
+  const waiting = [];
+
+  cleanState.applications.forEach(application => {
+    const status = normalizeLegacyStatus(application.status);
+    if (application.mentorReport) {
+      const identity = mentorReporterIdentity(application);
+      const trainee = mentorAnalyticsTraineeFromApplication(cleanState, application);
+      if (!mentorsByKey.has(identity.key)) {
+        mentorsByKey.set(identity.key, {
+          ...identity,
+          total: 0,
+          passed: 0,
+          failed: 0,
+          unknown: 0,
+          trainees: []
+        });
+      }
+      const mentor = mentorsByKey.get(identity.key);
+      mentor.total += 1;
+      if (trainee.result === 'passed') mentor.passed += 1;
+      else if (trainee.result === 'failed') mentor.failed += 1;
+      else mentor.unknown += 1;
+      mentor.trainees.push(trainee);
+      return;
+    }
+
+    if (status === 'feedback') {
+      waiting.push(mentorAnalyticsTraineeFromApplication(cleanState, application));
+    }
+  });
+
+  const sortTrainees = (left, right) => {
+    const leftDate = left.date || '9999-12-31';
+    const rightDate = right.date || '9999-12-31';
+    if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+    return String(left.name || '').localeCompare(String(right.name || ''), 'ru');
+  };
+
+  const mentors = [...mentorsByKey.values()]
+    .map(mentor => ({
+      ...mentor,
+      trainees: mentor.trainees.sort(sortTrainees)
+    }))
+    .sort((left, right) => {
+      if (right.total !== left.total) return right.total - left.total;
+      return String(left.name || '').localeCompare(String(right.name || ''), 'ru');
+    });
+
+  const totals = mentors.reduce(
+    (result, mentor) => {
+      result.reports += mentor.total;
+      result.passed += mentor.passed;
+      result.failed += mentor.failed;
+      result.unknown += mentor.unknown;
+      return result;
+    },
+    { mentors: mentors.length, reports: 0, passed: 0, failed: 0, unknown: 0, waiting: waiting.length }
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totals,
+    mentors,
+    waiting: waiting.sort(sortTrainees)
+  };
+}
+
 function composeAssignmentWithdrawalRecruiterMessage(application, shift) {
   const name = escapeTelegramHtml(application?.name || 'Стажёр');
   const tag = escapeTelegramHtml(traineeTelegramTag(application));
@@ -1538,6 +1664,8 @@ function applyMentorReportResultToBookingState(state, reportResult, now = new Da
       reportResult.reporterTelegramUserId,
       'mentorReporterTelegramUserId'
     ),
+    mentorReporterName: normalizeOptionalText(reportResult.reporterName, 'mentorReporterName', 160),
+    mentorReporterTelegramUsername: normalizeUsername(reportResult.reporterUsername),
     mentorDecision: normalizeOptionalText(reportResult.mentorDecision, 'mentorDecision', 120),
     mentorReportVenueId: mentorTraineeResult.venueId,
     mentorReportVenue: mentorTraineeResult.venue,
@@ -2819,6 +2947,18 @@ app.get('/api/trainees/export.csv', async (request, response, next) => {
   }
 });
 
+app.get('/api/mentor-analytics', async (request, response, next) => {
+  try {
+    requireRecruiterActor(request);
+    const state = await readBookingState();
+    response.setHeader('Cache-Control', 'no-store');
+    response.json({ ok: true, analytics: mentorAnalyticsFromState(state) });
+  } catch (error) {
+    if (handleBookingAuthError(response, error)) return;
+    next(error);
+  }
+});
+
 app.get('/api/report/trainees', async (request, response) => {
   try {
     validateRequestInitData(initDataFromRequest(request));
@@ -2887,6 +3027,8 @@ app.post('/api/report', async (request, response) => {
           {
             applicationId,
             reporterTelegramUserId: telegram.user.id,
+            reporterName: telegramUserDisplayName(telegram.user),
+            reporterUsername: telegram.user.username || '',
             mentorDecision,
             mentorCommentForTrainee,
             mentorTraineeResult,
@@ -2922,6 +3064,8 @@ app.post('/api/report', async (request, response) => {
           {
             applicationId,
             reporterTelegramUserId: telegram.user.id,
+            reporterName: telegramUserDisplayName(telegram.user),
+            reporterUsername: telegram.user.username || '',
             mentorDecision,
             mentorCommentForTrainee,
             mentorTraineeResult,
@@ -3049,6 +3193,7 @@ export {
   ensureMentorReportTargetMatches,
   ensureMentorReportVenueMatches,
   findMentorReportApplicationForLookup,
+  mentorAnalyticsFromState,
   mentorTraineesFromState,
   normalizeBookingState,
   shiftCapacityChangeNotificationPlan,
