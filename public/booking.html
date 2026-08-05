@@ -3993,7 +3993,9 @@
       const recruiterToolsVisible = unlocked && serverRole === "recruiter";
       document.getElementById("clearBtn").classList.toggle("hidden", !recruiterToolsVisible);
       document.getElementById("exportTraineesBtn").classList.toggle("hidden", !recruiterToolsVisible);
-      document.querySelector(".recruiter-more")?.classList.toggle("active", section === "registry");
+      document.getElementById("mentorAnalyticsBtn").classList.toggle("hidden", !recruiterToolsVisible);
+      document.querySelector(".recruiter-more")?.classList.toggle("active", ["registry", "mentors"].includes(section));
+      document.getElementById("mentorAnalyticsBtn")?.classList.toggle("active", section === "mentors");
       document.getElementById("exportTraineesBtn")?.classList.toggle("active", section === "registry");
       renderTrainee();
       renderRecruiter();
