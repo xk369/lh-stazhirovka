@@ -7,9 +7,13 @@ import {
   cancelShiftInPostgres,
   clearStateInPostgres,
   createShiftInPostgres,
+  expireAssignmentOffersInPostgres,
   linkTelegramApplicationInPostgres,
   markExperiencedInPostgres,
   mentorReportResultInPostgres,
+  recordAssignmentOfferMessageInPostgres,
+  requestAssignmentConfirmationInPostgres,
+  respondAssignmentOfferInPostgres,
   returnToQueueInPostgres,
   resetDemoStateInPostgres,
   sendInvitesInPostgres,
@@ -18,8 +22,10 @@ import {
   traineeReportSubmissionInPostgres,
   toggleShiftInPostgres,
   updateCommentInPostgres,
+  updateQueueCommentInPostgres,
   updateShiftCapacityInPostgres,
-  upsertTraineeApplicationInPostgres
+  upsertTraineeApplicationInPostgres,
+  withdrawConfirmedAssignmentInPostgres
 } from '../postgres/write-booking-command.js';
 
 export class BookingCommandNotImplementedError extends Error {
@@ -107,6 +113,11 @@ export function createPostgresWriteBookingStorageAdapter({
       const state = await readFreshState();
       return { state, result };
     },
+    async update_queue_comment(command, actor) {
+      const result = await updateQueueCommentInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
     async set_application_status(command, actor) {
       const result = await setApplicationStatusInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
@@ -114,6 +125,26 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async assign_shift(command, actor) {
       const result = await assignShiftInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async request_assignment_confirmation(command, actor) {
+      const result = await requestAssignmentConfirmationInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async record_assignment_offer_message(command, actor) {
+      const result = await recordAssignmentOfferMessageInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async respond_assignment_offer(command, actor) {
+      const result = await respondAssignmentOfferInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async expire_assignment_offers(command, actor) {
+      const result = await expireAssignmentOffersInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     },
@@ -165,6 +196,11 @@ export function createPostgresWriteBookingStorageAdapter({
     },
     async return_to_queue(command, actor) {
       const result = await returnToQueueInPostgres({ pool, actor, command, now: now() });
+      const state = await readFreshState();
+      return { state, result };
+    },
+    async withdraw_confirmed_assignment(command, actor) {
+      const result = await withdrawConfirmedAssignmentInPostgres({ pool, actor, command, now: now() });
       const state = await readFreshState();
       return { state, result };
     }

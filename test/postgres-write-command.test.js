@@ -10,9 +10,13 @@ import {
   cancelShiftInPostgres,
   clearStateInPostgres,
   createShiftInPostgres,
+  expireAssignmentOffersInPostgres,
   linkTelegramApplicationInPostgres,
   markExperiencedInPostgres,
   mentorReportResultInPostgres,
+  recordAssignmentOfferMessageInPostgres,
+  requestAssignmentConfirmationInPostgres,
+  respondAssignmentOfferInPostgres,
   returnToQueueInPostgres,
   resetDemoStateInPostgres,
   sendInvitesInPostgres,
@@ -21,8 +25,10 @@ import {
   traineeReportSubmissionInPostgres,
   toggleShiftInPostgres,
   updateCommentInPostgres,
+  updateQueueCommentInPostgres,
   updateShiftCapacityInPostgres,
-  upsertTraineeApplicationInPostgres
+  upsertTraineeApplicationInPostgres,
+  withdrawConfirmedAssignmentInPostgres
 } from '../src/postgres/write-booking-command.js';
 
 const DEFAULT_META_UPDATED_AT = '2026-07-01T00:00:00.000Z';
@@ -36,6 +42,7 @@ function fakePool({
   existingInviteGroupMembers = [],
   existingMentorReports = [],
   existingMentorReportTopics = [],
+  existingAssignmentOffers = [],
   existingNotifications = [],
   eventInsertThrows = false,
   notificationInsertThrows = false,
@@ -46,6 +53,7 @@ function fakePool({
   const apps = existingApplications.map(row => ({ ...row }));
   const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
   const notifications = existingNotifications.map(row => ({ ...row }));
+  const assignmentOffers = existingAssignmentOffers.map(row => ({ ...row }));
   const inviteGroupMembers = existingInviteGroupMembers.map(row => ({ ...row }));
   const mentorReports = existingMentorReports.map(row => ({ ...row }));
   const mentorReportTopics = existingMentorReportTopics.map(row => ({ ...row }));
@@ -60,6 +68,9 @@ function fakePool({
   }
   function findInviteGroupByUuid(uuid) {
     return inviteGroups.find(row => String(row.id) === String(uuid));
+  }
+  function findOfferByUuid(uuid) {
+    return assignmentOffers.find(row => String(row.id) === String(uuid));
   }
 
   const client = {
@@ -80,6 +91,7 @@ function fakePool({
           rows: [{
             shifts: shifts.length,
             applications: apps.length,
+            application_assignment_offers: assignmentOffers.length,
             invite_groups: inviteGroups.length,
             invite_group_members: inviteGroupMembers.length,
             active_mentor_reports: mentorReports.filter(row => !row.voided_at).length,
@@ -150,6 +162,134 @@ function fakePool({
           telegram_username: row.telegram_username ?? ''
         }] : [] };
       }
+      if (/SELECT legacy_id, status\s+FROM applications\s+WHERE trainee_telegram_user_id = \$1/is.test(sql)) {
+        const telegramUserId = String(params[0] || '');
+        const rows = apps
+          .filter(app => (
+            String(app.trainee_telegram_user_id || '') === telegramUserId
+            || String(app.trainee_telegram_chat_id || '') === telegramUserId
+          ))
+          .map(app => ({
+            legacy_id: app.legacy_id,
+            status: app.status
+          }))
+          .sort((left, right) => Number(right.legacy_id) - Number(left.legacy_id));
+        return { rowCount: rows.length, rows };
+      }
+      if (/SELECT id,\s+legacy_id,\s+status,\s+shift_id,\s+trainee_telegram_user_id/is.test(sql)
+        && /recruiter_queue_comment/is.test(sql)
+        && /FROM applications\s+WHERE legacy_id = \$1/is.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          status: row.status,
+          shift_id: row.shift_id ?? null,
+          trainee_telegram_user_id: row.trainee_telegram_user_id ?? row.telegram_user_id ?? null,
+          trainee_telegram_chat_id: row.trainee_telegram_chat_id ?? row.telegram_chat_id ?? null,
+          telegram_username: row.telegram_username ?? '',
+          telegram_code: row.telegram_code ?? '',
+          name: row.name ?? '',
+          phone: row.phone ?? '',
+          recruiter_queue_comment: row.recruiter_queue_comment ?? ''
+        }] : [] };
+      }
+      if (/SELECT id,\s+legacy_id,\s+status,\s+recruiter_queue_comment\s+FROM applications/is.test(sql)) {
+        const row = findAppByLegacyId(params[0]);
+        return { rowCount: row ? 1 : 0, rows: row ? [{
+          id: row.id,
+          legacy_id: row.legacy_id,
+          status: row.status,
+          recruiter_queue_comment: row.recruiter_queue_comment ?? ''
+        }] : [] };
+      }
+      if (/FROM application_assignment_offers/is.test(sql)
+        && /application_assignment_offers\.token = \$2/is.test(sql)) {
+        const app = findAppByLegacyId(params[0]);
+        const offer = app
+          ? assignmentOffers.find(row => (
+            String(row.application_id) === String(app.id)
+            && String(row.token) === String(params[1])
+            && String(row.status) === 'active'
+          ))
+          : null;
+        const shift = offer ? findShiftByUuid(offer.shift_id) : null;
+        const row = app && offer && shift ? {
+          legacy_id: app.legacy_id,
+          status: app.status,
+          shift_id: app.shift_id ?? null,
+          trainee_telegram_user_id: app.trainee_telegram_user_id ?? app.telegram_user_id ?? null,
+          trainee_telegram_chat_id: app.trainee_telegram_chat_id ?? app.telegram_chat_id ?? null,
+          telegram_username: app.telegram_username ?? '',
+          telegram_code: app.telegram_code ?? '',
+          name: app.name ?? '',
+          phone: app.phone ?? '',
+          recruiter_queue_comment: app.recruiter_queue_comment ?? '',
+          venue_id: app.venue_id ?? null,
+          group_link: app.group_link ?? '',
+          application_id: app.id,
+          id: /applications\.id AS application_id/i.test(sql) ? offer.id : app.id,
+          offer_id: offer.id,
+          token: offer.token,
+          requested_at: offer.requested_at ?? null,
+          expires_at: offer.expires_at ?? null,
+          requested_by_telegram_user_id: offer.requested_by_telegram_user_id ?? '',
+          message_chat_id: offer.message_chat_id ?? null,
+          message_id: offer.message_id ?? null,
+          offer_shift_id: shift.id,
+          offer_shift_legacy_id: shift.legacy_id,
+          shift_legacy_id: shift.legacy_id,
+          offer_shift_date: shift.date,
+          offer_shift_seats: shift.seats,
+          offer_shift_open: shift.open,
+          offer_shift_canceled: shift.canceled
+        } : null;
+        return { rowCount: row ? 1 : 0, rows: row ? [row] : [] };
+      }
+      if (/FROM application_assignment_offers/is.test(sql)
+        && /application_assignment_offers\.expires_at <= \$1::timestamptz/is.test(sql)) {
+        const nowMs = new Date(params[0]).getTime();
+        const rows = assignmentOffers
+          .filter(offer => String(offer.status) === 'active' && new Date(offer.expires_at).getTime() <= nowMs)
+          .map(offer => {
+            const app = apps.find(item => String(item.id) === String(offer.application_id));
+            const shift = findShiftByUuid(offer.shift_id);
+            if (!app || !shift || String(app.status) !== 'queue') return null;
+            return {
+              id: app.id,
+              legacy_id: app.legacy_id,
+              status: app.status,
+              shift_id: app.shift_id ?? null,
+              trainee_telegram_user_id: app.trainee_telegram_user_id ?? app.telegram_user_id ?? null,
+              trainee_telegram_chat_id: app.trainee_telegram_chat_id ?? app.telegram_chat_id ?? null,
+              telegram_username: app.telegram_username ?? '',
+              telegram_code: app.telegram_code ?? '',
+              name: app.name ?? '',
+              phone: app.phone ?? '',
+              recruiter_queue_comment: app.recruiter_queue_comment ?? '',
+              venue_id: app.venue_id ?? null,
+              group_link: app.group_link ?? '',
+              application_id: app.id,
+              offer_id: offer.id,
+              token: offer.token,
+              requested_at: offer.requested_at ?? null,
+              expires_at: offer.expires_at ?? null,
+              requested_by_telegram_user_id: offer.requested_by_telegram_user_id ?? '',
+              message_chat_id: offer.message_chat_id ?? null,
+              message_id: offer.message_id ?? null,
+              offer_shift_id: shift.id,
+              offer_shift_legacy_id: shift.legacy_id,
+              shift_legacy_id: shift.legacy_id,
+              offer_shift_date: shift.date,
+              offer_shift_seats: shift.seats,
+              offer_shift_open: shift.open,
+              offer_shift_canceled: shift.canceled
+            };
+          })
+          .filter(Boolean)
+          .sort((left, right) => Number(left.legacy_id) - Number(right.legacy_id));
+        return { rowCount: rows.length, rows };
+      }
       if (/FROM applications\s+LEFT JOIN invite_groups ON invite_groups\.id = applications\.invite_group_id/is.test(sql)) {
         const shiftUuid = String(params[0]);
         const allowedStatuses = new Set((params[1] || []).map(String));
@@ -201,6 +341,7 @@ function fakePool({
           attempt: row.attempt ?? 'first',
           limits: row.limits ?? '',
           recruiter_comment: row.recruiter_comment ?? '',
+          recruiter_queue_comment: row.recruiter_queue_comment ?? '',
           experience: row.experience ?? null,
           mentor_report_received: Boolean(row.mentor_report_received)
         }] : [] };
@@ -341,8 +482,28 @@ function fakePool({
         )).length;
         return { rowCount: 1, rows: [{ used }] };
       }
+      if (/AS assigned/is.test(sql) && /application_assignment_offers/is.test(sql)) {
+        const shiftUuid = String(params[0]);
+        const allowedStatuses = new Set((params[1] || []).map(String));
+        const excludedApplicationUuid = params[2] === null || params[2] === undefined
+          ? null
+          : String(params[2]);
+        const nowMs = new Date(params[3]).getTime();
+        const assigned = apps.filter(app => (
+          String(app.shift_id) === shiftUuid
+          && allowedStatuses.has(String(app.status))
+          && (excludedApplicationUuid === null || String(app.id) !== excludedApplicationUuid)
+        )).length;
+        const offered = assignmentOffers.filter(offer => (
+          String(offer.shift_id) === shiftUuid
+          && String(offer.status) === 'active'
+          && new Date(offer.expires_at).getTime() > nowMs
+          && (excludedApplicationUuid === null || String(offer.application_id) !== excludedApplicationUuid)
+        )).length;
+        return { rowCount: 1, rows: [{ assigned, offered }] };
+      }
       if (/INSERT INTO applications/i.test(sql)) {
-        if (params.length >= 34) {
+        if (params.length >= 35) {
           apps.push({
             id: params[0],
             legacy_id: params[1],
@@ -360,24 +521,25 @@ function fakePool({
             limits: params[13],
             status: params[14],
             recruiter_comment: params[15],
-            venue_id: params[16],
-            group_link: params[17],
-            candidate_report: params[18],
-            experience: params[19],
-            mentor_report_received: params[20],
-            mentor_report_at: params[21],
-            mentor_reporter_telegram_user_id: params[22],
-            mentor_decision: params[23],
-            mentor_report_venue_id: params[24],
-            mentor_report_venue: params[25],
-            mentor_report_loft: params[26],
-            mentor_report_hall: params[27],
-            mentor_comment_for_trainee: params[28],
-            mentor_comment_sent_at: params[29],
-            mentor_comment_delivery_status: params[30],
-            mentor_comment_delivery_error: params[31],
-            created_at: params[32],
-            updated_at: params[33],
+            recruiter_queue_comment: params[16],
+            venue_id: params[17],
+            group_link: params[18],
+            candidate_report: params[19],
+            experience: params[20],
+            mentor_report_received: params[21],
+            mentor_report_at: params[22],
+            mentor_reporter_telegram_user_id: params[23],
+            mentor_decision: params[24],
+            mentor_report_venue_id: params[25],
+            mentor_report_venue: params[26],
+            mentor_report_loft: params[27],
+            mentor_report_hall: params[28],
+            mentor_comment_for_trainee: params[29],
+            mentor_comment_sent_at: params[30],
+            mentor_comment_delivery_status: params[31],
+            mentor_comment_delivery_error: params[32],
+            created_at: params[33],
+            updated_at: params[34],
             row_version: 1
           });
         } else {
@@ -398,6 +560,7 @@ function fakePool({
             limits: params[12],
             status: params[13],
             recruiter_comment: params[14],
+            recruiter_queue_comment: '',
             venue_id: null,
             group_link: '',
             candidate_report: false,
@@ -419,6 +582,24 @@ function fakePool({
             row_version: 1
           });
         }
+        return { rowCount: 1, rows: [] };
+      }
+      if (/INSERT INTO application_assignment_offers/i.test(sql)) {
+        assignmentOffers.push({
+          id: params[0],
+          application_id: params[1],
+          shift_id: params[2],
+          token: params[3],
+          status: /'active'/.test(sql) ? 'active' : params[4],
+          requested_by_telegram_user_id: /'active'/.test(sql) ? params[4] : params[5],
+          requested_at: /'active'/.test(sql) ? params[5] : params[6],
+          expires_at: /'active'/.test(sql) ? params[6] : params[7],
+          message_chat_id: /'active'/.test(sql) ? null : params[8],
+          message_id: /'active'/.test(sql) ? null : params[9],
+          responded_at: null,
+          created_at: /'active'/.test(sql) ? params[5] : params[10],
+          updated_at: /'active'/.test(sql) ? params[5] : params[11]
+        });
         return { rowCount: 1, rows: [] };
       }
       if (/INSERT INTO shifts/.test(sql)) {
@@ -507,6 +688,17 @@ function fakePool({
         const target = apps.find(app => String(app.id) === appUuid);
         if (target) {
           target.recruiter_comment = comment;
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET recruiter_queue_comment/i.test(sql)) {
+        const comment = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[2]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.recruiter_queue_comment = comment;
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -616,6 +808,7 @@ function fakePool({
           target.venue_id = null;
           target.group_link = '';
           target.candidate_report = false;
+          target.recruiter_queue_comment = '';
           target.mentor_report_received = false;
           target.mentor_report_at = null;
           target.mentor_reporter_telegram_user_id = null;
@@ -631,6 +824,66 @@ function fakePool({
           target.updated_at = nowIso;
           count += 1;
         }
+        return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE application_assignment_offers\s+SET status = 'canceled'/i.test(sql)) {
+        const nowIso = params[0];
+        const targets = Array.isArray(params[1])
+          ? new Set(params[1].map(String))
+          : new Set([String(params[1])]);
+        let count = 0;
+        for (const offer of assignmentOffers) {
+          if (String(offer.status) !== 'active') continue;
+          const field = Array.isArray(params[1]) ? offer.application_id : offer.application_id;
+          if (!targets.has(String(field))) continue;
+          offer.status = 'canceled';
+          offer.updated_at = nowIso;
+          count += 1;
+        }
+        return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE application_assignment_offers\s+SET status = 'unavailable'/i.test(sql)
+        && /WHERE shift_id = \$2/i.test(sql)) {
+        const nowIso = params[0];
+        const shiftUuid = String(params[1]);
+        let count = 0;
+        for (const offer of assignmentOffers) {
+          if (String(offer.shift_id) !== shiftUuid || String(offer.status) !== 'active') continue;
+          offer.status = 'unavailable';
+          offer.updated_at = nowIso;
+          count += 1;
+        }
+        return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE application_assignment_offers\s+SET message_chat_id/i.test(sql)) {
+        const target = findOfferByUuid(params[3]);
+        if (target) {
+          target.message_chat_id = params[0];
+          target.message_id = params[1];
+          target.updated_at = params[2];
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE application_assignment_offers\s+SET status = '(accepted|declined|expired|unavailable)'/i.test(sql)) {
+        const status = sql.match(/SET status = '([^']+)'/i)?.[1] || '';
+        const nowIso = params[0];
+        const targetParam = params[1];
+        const targetIds = Array.isArray(targetParam)
+          ? new Set(targetParam.map(String))
+          : new Set([String(targetParam)]);
+        let count = 0;
+        for (const offer of assignmentOffers) {
+          if (!targetIds.has(String(offer.id))) continue;
+          offer.status = status;
+          offer.responded_at = nowIso;
+          offer.updated_at = nowIso;
+          count += 1;
+        }
+        return { rowCount: count, rows: [] };
+      }
+      if (/DELETE FROM application_assignment_offers$/i.test(sql.trim())) {
+        const count = assignmentOffers.length;
+        assignmentOffers.length = 0;
         return { rowCount: count, rows: [] };
       }
       if (/DELETE FROM notifications$/i.test(sql.trim())) {
@@ -832,6 +1085,42 @@ function fakePool({
         }
         return { rowCount: target ? 1 : 0, rows: [] };
       }
+      if (/UPDATE applications\s+SET shift_id = \$1,\s+status = 'confirmed'/is.test(sql)) {
+        const shiftUuid = params[0];
+        const nowIso = params[1];
+        const appUuid = String(params[2]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) {
+          target.shift_id = shiftUuid;
+          target.status = 'confirmed';
+          target.recruiter_queue_comment = '';
+          target.updated_at = nowIso;
+        }
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
+      if (/UPDATE applications\s+SET status = 'queue_expired'/is.test(sql)) {
+        const nowIso = params[0];
+        const targetParam = params[1];
+        const targetIds = Array.isArray(targetParam)
+          ? new Set(targetParam.map(String))
+          : new Set([String(targetParam)]);
+        let count = 0;
+        for (const target of apps) {
+          if (!targetIds.has(String(target.id))) continue;
+          target.status = 'queue_expired';
+          target.recruiter_queue_comment = '';
+          target.updated_at = nowIso;
+          count += 1;
+        }
+        return { rowCount: count, rows: [] };
+      }
+      if (/UPDATE applications\s+SET updated_at = \$1,\s+row_version = row_version \+ 1\s+WHERE id = \$2/is.test(sql)) {
+        const nowIso = params[0];
+        const appUuid = String(params[1]);
+        const target = apps.find(app => String(app.id) === appUuid);
+        if (target) target.updated_at = nowIso;
+        return { rowCount: target ? 1 : 0, rows: [] };
+      }
       if (/UPDATE applications\s+SET status/i.test(sql)) {
         const nextStatus = params[0];
         const nextExperience = params[1];
@@ -854,6 +1143,7 @@ function fakePool({
         if (target) {
           target.shift_id = shiftUuid;
           target.status = nextStatus;
+          target.recruiter_queue_comment = '';
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -902,6 +1192,7 @@ function fakePool({
     getMentorReports: () => mentorReports,
     getMentorReportTopics: () => mentorReportTopics,
     getNotifications: () => notifications,
+    getAssignmentOffers: () => assignmentOffers,
     getShifts: () => shifts,
     getApplications: () => apps,
     async connect() {
@@ -928,7 +1219,7 @@ const mentor = {
 function traineeApplication(overrides = {}) {
   return {
     id: 501,
-    shiftId: 88,
+    shiftId: null,
     name: 'Иван Иванов',
     phone: '+7 999 123-45-67',
     training: 'passed',
@@ -936,7 +1227,7 @@ function traineeApplication(overrides = {}) {
     attempt: 'first',
     limits: 'Нет',
     telegramCode: '@manual_note',
-    status: 'pending',
+    status: 'queue',
     comment: '',
     ...overrides
   };
@@ -967,18 +1258,8 @@ function mentorReportCommand(overrides = {}) {
   };
 }
 
-test('upsertTraineeApplicationInPostgres creates pending application, event and version bump', async () => {
-  const pool = fakePool({
-    currentVersion: 10,
-    existingShifts: [{
-      id: 'shift-uuid-88',
-      legacy_id: 88,
-      date: '2026-08-01',
-      seats: 2,
-      open: true,
-      canceled: false
-    }]
-  });
+test('upsertTraineeApplicationInPostgres creates queue application, event and version bump', async () => {
+  const pool = fakePool({ currentVersion: 10 });
   const now = new Date('2026-07-29T12:00:00.000Z');
 
   const result = await upsertTraineeApplicationInPostgres({
@@ -995,13 +1276,13 @@ test('upsertTraineeApplicationInPostgres creates pending application, event and 
   assert.equal(result.version, 11);
   assert.equal(result.previousVersion, 10);
   assert.equal(result.applicationLegacyId, 501);
-  assert.equal(result.nextStatus, 'pending');
-  assert.equal(result.shiftLegacyId, 88);
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(result.shiftLegacyId, null);
   assert.equal(result.created, true);
   assert.equal(result.updated, false);
   const [app] = pool.getApplications();
   assert.equal(app.legacy_id, 501);
-  assert.equal(app.shift_id, 'shift-uuid-88');
+  assert.equal(app.shift_id, null);
   assert.equal(app.trainee_telegram_user_id, '222');
   assert.equal(app.trainee_telegram_chat_id, '222');
   assert.equal(app.telegram_username, 'trainee_user');
@@ -1036,17 +1317,9 @@ test('upsertTraineeApplicationInPostgres creates queue application without locki
   );
 });
 
-test('upsertTraineeApplicationInPostgres updates own queue app into pending and audits transition', async () => {
+test('upsertTraineeApplicationInPostgres updates own queue app profile and audits changed fields', async () => {
   const pool = fakePool({
     currentVersion: 10,
-    existingShifts: [{
-      id: 'shift-uuid-88',
-      legacy_id: 88,
-      date: '2026-08-01',
-      seats: 2,
-      open: true,
-      canceled: false
-    }],
     existingApplications: [{
       id: 'app-uuid-501',
       legacy_id: 501,
@@ -1080,18 +1353,14 @@ test('upsertTraineeApplicationInPostgres updates own queue app into pending and 
   assert.equal(result.created, false);
   assert.equal(result.updated, true);
   assert.equal(result.previousStatus, 'queue');
-  assert.equal(result.nextStatus, 'pending');
-  assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-88');
-  assert.equal(pool.getApplications()[0].status, 'pending');
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(pool.getApplications()[0].status, 'queue');
   assert.equal(pool.getApplications()[0].telegram_username, 'trainee_user');
   const eventTypes = pool.calls
     .filter(call => /INSERT INTO application_events/.test(call.sql))
     .map(call => call.params[3]);
-  assert.deepEqual(eventTypes, [
-    'application_status_changed',
-    'application_updated',
-    'application_assigned_to_shift'
-  ]);
+  assert.deepEqual(eventTypes, ['application_updated']);
 });
 
 test('upsertTraineeApplicationInPostgres updates own pending app back to queue', async () => {
@@ -1161,51 +1430,18 @@ test('upsertTraineeApplicationInPostgres rejects stale version before data write
   assert.ok(pool.calls.some(call => /^ROLLBACK$/i.test(call.sql)));
 });
 
-test('upsertTraineeApplicationInPostgres rejects unknown, closed, canceled and full shifts', async () => {
+test('upsertTraineeApplicationInPostgres rejects direct trainee shift selection', async () => {
   await assert.rejects(
     () => upsertTraineeApplicationInPostgres({
       pool: fakePool({ currentVersion: 10 }),
       actor: trainee,
-      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
+      command: {
+        action: 'upsert_trainee_application',
+        baseVersion: 10,
+        application: traineeApplication({ shiftId: 88 })
+      }
     }),
-    /unknown shift/
-  );
-
-  await assert.rejects(
-    () => upsertTraineeApplicationInPostgres({
-      pool: fakePool({
-        currentVersion: 10,
-        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 2, open: false, canceled: false }]
-      }),
-      actor: trainee,
-      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
-    }),
-    /closed shift/
-  );
-
-  await assert.rejects(
-    () => upsertTraineeApplicationInPostgres({
-      pool: fakePool({
-        currentVersion: 10,
-        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 2, open: true, canceled: true }]
-      }),
-      actor: trainee,
-      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
-    }),
-    /canceled shift/
-  );
-
-  await assert.rejects(
-    () => upsertTraineeApplicationInPostgres({
-      pool: fakePool({
-        currentVersion: 10,
-        existingShifts: [{ id: 'shift-uuid-88', legacy_id: 88, date: '2026-08-01', seats: 1, open: true, canceled: false }],
-        existingApplications: [{ id: 'other-app', legacy_id: 999, shift_id: 'shift-uuid-88', status: 'pending' }]
-      }),
-      actor: trainee,
-      command: { action: 'upsert_trainee_application', baseVersion: 10, application: traineeApplication() }
-    }),
-    /нет свободных мест/
+    /queue application must not have shiftId/
   );
 });
 
@@ -1678,6 +1914,14 @@ test('clearStateInPostgres deletes booking rows, notifications and writes audit 
     existingInviteGroups: [{ id: 'group-uuid-1', legacy_id: 301, shift_id: 'shift-uuid-88', venue_id: 'loft1', link: 'https://t.me/+group' }],
     existingInviteGroupMembers: [{ invite_group_id: 'group-uuid-1', application_id: 'app-uuid-501' }],
     existingMentorReports: [{ id: 'report-uuid-1', application_id: 'app-uuid-501' }],
+    existingAssignmentOffers: [{
+      id: 'offer-uuid-1',
+      application_id: 'app-uuid-501',
+      shift_id: 'shift-uuid-88',
+      token: 'token-1',
+      status: 'active',
+      expires_at: '2026-07-29T13:40:00.000Z'
+    }],
     existingNotifications: [{ id: 'notification-uuid-1', application_id: 'app-uuid-501', status: 'pending' }]
   });
   const now = new Date('2026-07-29T12:40:00.000Z');
@@ -1694,6 +1938,7 @@ test('clearStateInPostgres deletes booking rows, notifications and writes audit 
   assert.deepEqual(result.removed, {
     shifts: 1,
     applications: 1,
+    applicationAssignmentOffers: 1,
     inviteGroups: 1,
     inviteGroupMembers: 1,
     activeMentorReports: 1,
@@ -1701,6 +1946,7 @@ test('clearStateInPostgres deletes booking rows, notifications and writes audit 
   });
   assert.equal(pool.getShifts().length, 0);
   assert.equal(pool.getApplications().length, 0);
+  assert.equal(pool.getAssignmentOffers().length, 0);
   assert.equal(pool.getInviteGroups().length, 0);
   assert.equal(pool.getInviteGroupMembers().length, 0);
   assert.equal(pool.getMentorReports().length, 0);
@@ -2236,7 +2482,7 @@ test('updateShiftCapacityInPostgres commits UPDATE shifts + event + version bump
   assert.ok(between.some(sql => /SELECT version.*FROM booking_state_meta.*FOR UPDATE/i.test(sql)));
   assert.ok(between.some(sql => /SELECT id, legacy_id, seats, date::text AS date/i.test(sql)
     && /FOR UPDATE/i.test(sql)));
-  assert.ok(between.some(sql => /COUNT\(\*\)::int AS used/i.test(sql) && /FROM applications/i.test(sql)));
+  assert.ok(between.some(sql => /AS assigned/i.test(sql) && /application_assignment_offers/i.test(sql)));
   assert.ok(between.some(sql => /UPDATE shifts/i.test(sql) && /row_version = row_version \+ 1/i.test(sql)));
   assert.ok(between.some(sql => /INSERT INTO application_events/.test(sql)));
   assert.ok(between.some(sql => /UPDATE booking_state_meta/.test(sql)));
@@ -2665,6 +2911,59 @@ test('updateCommentInPostgres rolls back and releases when event insert fails', 
   assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
 });
 
+test('updateQueueCommentInPostgres updates recruiter-only queue comment', async () => {
+  const pool = fakePool({
+    currentVersion: 18,
+    existingApplications: [{
+      id: 'app-uuid-queue-comment',
+      legacy_id: 8810,
+      shift_id: null,
+      status: 'queue',
+      recruiter_queue_comment: 'old queue note'
+    }]
+  });
+  const now = new Date('2026-07-29T12:45:00.000Z');
+
+  const result = await updateQueueCommentInPostgres({
+    pool,
+    actor: recruiter,
+    command: {
+      action: 'update_queue_comment',
+      baseVersion: 18,
+      applicationId: 8810,
+      comment: '  Позвонить после 18:00  '
+    },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.previousComment, 'old queue note');
+  assert.equal(result.nextComment, 'Позвонить после 18:00');
+  assert.equal(pool.getApplications()[0].recruiter_queue_comment, 'Позвонить после 18:00');
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'application_queue_comment_updated');
+  assert.equal(JSON.parse(eventInsert.params[6]).action, 'update_queue_comment');
+});
+
+test('updateQueueCommentInPostgres rejects non-queue applications', async () => {
+  await assert.rejects(
+    () => updateQueueCommentInPostgres({
+      pool: fakePool({
+        currentVersion: 18,
+        existingApplications: [{ ...commentApp }]
+      }),
+      actor: recruiter,
+      command: {
+        action: 'update_queue_comment',
+        baseVersion: 18,
+        applicationId: 8802,
+        comment: 'queue only'
+      }
+    }),
+    /Комментарий можно сохранить только для очереди/
+  );
+});
+
 // -----------------------------------------------------------------------------
 // set_application_status
 // -----------------------------------------------------------------------------
@@ -3015,6 +3314,13 @@ const queuedApp = {
   status: 'queue',
   invite_group_id: null,
   group_link: '',
+  trainee_telegram_user_id: '222',
+  trainee_telegram_chat_id: '222',
+  telegram_username: 'trainee_user',
+  telegram_code: '@manual_note',
+  name: 'Иван Иванов',
+  phone: '+7 999 123-45-67',
+  recruiter_queue_comment: 'созвониться',
   experience: null,
   mentor_report_received: false
 };
@@ -3542,7 +3848,7 @@ test('assignShiftInPostgres moves queue application onto target shift with pendi
     && /FOR UPDATE/i.test(sql)));
   assert.ok(between.some(sql => /SELECT id, legacy_id, seats, open, canceled, date::text AS date/i.test(sql)
     && /FOR UPDATE/i.test(sql)));
-  assert.ok(between.some(sql => /COUNT\(\*\)::int AS used/i.test(sql)));
+  assert.ok(between.some(sql => /AS assigned/i.test(sql) && /application_assignment_offers/i.test(sql)));
   assert.ok(between.some(sql => /UPDATE applications\s+SET shift_id/i.test(sql)));
   assert.ok(between.some(sql => /UPDATE booking_state_meta/.test(sql)));
 
@@ -3833,6 +4139,161 @@ test('assignShiftInPostgres rejects non-recruiter actors before opening a transa
     err => err instanceof PostgresCommandAuthorizationError
   );
   assert.equal(pool.calls.length, 0);
+});
+
+test('requestAssignmentConfirmationInPostgres creates active offer without moving queue app', async () => {
+  const pool = fakePool({
+    currentVersion: 30,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }]
+  });
+  const now = new Date('2026-07-29T14:00:00.000Z');
+
+  const result = await requestAssignmentConfirmationInPostgres({
+    pool,
+    actor: recruiter,
+    command: {
+      action: 'request_assignment_confirmation',
+      baseVersion: 30,
+      applicationId: 2001,
+      shiftId: 4242
+    },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.version, 31);
+  assert.equal(result.previousStatus, 'queue');
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(result.assignmentOffer.shiftId, 4242);
+  assert.equal(result.assignmentOffer.requestedAt, now.toISOString());
+  assert.equal(result.assignmentOffer.expiresAt, '2026-07-29T15:00:00.000Z');
+  assert.equal(pool.getApplications()[0].status, 'queue');
+  assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(pool.getAssignmentOffers().length, 1);
+  assert.equal(pool.getAssignmentOffers()[0].status, 'active');
+  assert.equal(pool.getAssignmentOffers()[0].application_id, 'app-uuid-queue');
+  assert.equal(pool.getAssignmentOffers()[0].shift_id, 'shift-uuid-target');
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'assignment_offer_requested');
+});
+
+test('recordAssignmentOfferMessageInPostgres stores Telegram message reference', async () => {
+  const pool = fakePool({
+    currentVersion: 31,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }],
+    existingAssignmentOffers: [{
+      id: 'offer-uuid-active',
+      application_id: 'app-uuid-queue',
+      shift_id: 'shift-uuid-target',
+      token: 'offer-token',
+      status: 'active',
+      requested_by_telegram_user_id: '111',
+      requested_at: '2026-07-29T14:00:00.000Z',
+      expires_at: '2026-07-29T15:00:00.000Z'
+    }]
+  });
+
+  const result = await recordAssignmentOfferMessageInPostgres({
+    pool,
+    actor: recruiter,
+    command: {
+      action: 'record_assignment_offer_message',
+      applicationId: 2001,
+      token: 'offer-token',
+      messageChatId: '222',
+      messageId: 777
+    },
+    now: new Date('2026-07-29T14:00:10.000Z')
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.version, 32);
+  assert.equal(pool.getAssignmentOffers()[0].message_chat_id, '222');
+  assert.equal(pool.getAssignmentOffers()[0].message_id, 777);
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'assignment_offer_message_recorded');
+});
+
+test('respondAssignmentOfferInPostgres accepts offer and confirms application', async () => {
+  const pool = fakePool({
+    currentVersion: 32,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }],
+    existingAssignmentOffers: [{
+      id: 'offer-uuid-active',
+      application_id: 'app-uuid-queue',
+      shift_id: 'shift-uuid-target',
+      token: 'offer-token',
+      status: 'active',
+      requested_by_telegram_user_id: '111',
+      requested_at: '2026-07-29T14:00:00.000Z',
+      expires_at: '2026-07-29T15:00:00.000Z',
+      message_chat_id: '222',
+      message_id: 777
+    }]
+  });
+
+  const result = await respondAssignmentOfferInPostgres({
+    pool,
+    actor: trainee,
+    command: {
+      action: 'respond_assignment_offer',
+      applicationId: 2001,
+      token: 'offer-token',
+      decision: 'accept'
+    },
+    now: new Date('2026-07-29T14:30:00.000Z')
+  });
+
+  assert.equal(result.status, 'accepted');
+  assert.equal(result.nextStatus, 'confirmed');
+  assert.equal(result.previousOffer.messageId, 777);
+  assert.equal(pool.getApplications()[0].status, 'confirmed');
+  assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-target');
+  assert.equal(pool.getApplications()[0].recruiter_queue_comment, '');
+  assert.equal(pool.getAssignmentOffers()[0].status, 'accepted');
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['assignment_offer_accepted', 'application_assigned_to_shift']);
+});
+
+test('expireAssignmentOffersInPostgres marks unanswered offers as queue_expired', async () => {
+  const pool = fakePool({
+    currentVersion: 32,
+    existingShifts: [{ ...openTargetShift }],
+    existingApplications: [{ ...queuedApp }],
+    existingAssignmentOffers: [{
+      id: 'offer-uuid-active',
+      application_id: 'app-uuid-queue',
+      shift_id: 'shift-uuid-target',
+      token: 'offer-token',
+      status: 'active',
+      requested_by_telegram_user_id: '111',
+      requested_at: '2026-07-29T14:00:00.000Z',
+      expires_at: '2026-07-29T15:00:00.000Z',
+      message_chat_id: '222',
+      message_id: 777
+    }]
+  });
+
+  const result = await expireAssignmentOffersInPostgres({
+    pool,
+    actor: { role: 'system' },
+    now: new Date('2026-07-29T15:00:01.000Z')
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.version, 33);
+  assert.equal(result.expired.length, 1);
+  assert.equal(result.expired[0].offer.token, 'offer-token');
+  assert.equal(pool.getApplications()[0].status, 'queue_expired');
+  assert.equal(pool.getApplications()[0].recruiter_queue_comment, '');
+  assert.equal(pool.getAssignmentOffers()[0].status, 'expired');
+  const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
+  assert.equal(eventInsert.params[3], 'assignment_offer_expired');
 });
 
 // -----------------------------------------------------------------------------
@@ -4672,6 +5133,60 @@ test('cancelInternshipInPostgres rolls back when notification outbox insert fail
   assert.ok(sqls.findIndex(sql => /^RELEASE$/i.test(sql)) > sqls.findIndex(sql => /^ROLLBACK$/i.test(sql)));
   assert.equal(sqls.some(sql => /^COMMIT$/i.test(sql)), false);
   assert.equal(pool.getNotifications().length, 0);
+});
+
+test('withdrawConfirmedAssignmentInPostgres returns trainee to queue and exposes recruiter notification target', async () => {
+  const pool = fakePool({
+    currentVersion: 75,
+    existingShifts: [{ ...cancellationShift }],
+    existingApplications: [
+      makeInvitedCancellationApp({
+        trainee_telegram_user_id: '222',
+        trainee_telegram_chat_id: '222',
+        telegram_username: 'trainee_user'
+      }),
+      makeInvitedCancellationApp({
+        id: 'app-uuid-cancel-2',
+        legacy_id: 9002,
+        trainee_telegram_user_id: '900200',
+        trainee_telegram_chat_id: '900200'
+      })
+    ],
+    existingInviteGroups: [{ ...cancellationGroup }],
+    existingInviteGroupMembers: [
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-1' },
+      { invite_group_id: 'group-uuid-cancel', application_id: 'app-uuid-cancel-2' }
+    ]
+  });
+  const now = new Date('2026-07-29T17:05:00.000Z');
+
+  const result = await withdrawConfirmedAssignmentInPostgres({
+    pool,
+    actor: trainee,
+    command: { action: 'withdraw_confirmed_assignment', baseVersion: 75, applicationId: 9001 },
+    now
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.previousStatus, 'invited');
+  assert.equal(result.nextStatus, 'queue');
+  assert.equal(result.previousShiftId, 7700);
+  assert.equal(result.inviteGroupChanged, true);
+  assert.equal(result.inviteGroupRemoved, false);
+  assert.deepEqual(result.remainingMemberLegacyIds, [9002]);
+  assert.equal(result.assignmentWithdrawalTarget.application.id, 9001);
+  assert.equal(result.assignmentWithdrawalTarget.application.telegramUsername, 'trainee_user');
+  assert.equal(result.assignmentWithdrawalTarget.shift.id, 7700);
+  assert.equal(pool.getApplications()[0].status, 'queue');
+  assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.deepEqual(
+    pool.getInviteGroupMembers().map(member => member.application_id),
+    ['app-uuid-cancel-2']
+  );
+  const eventTypes = pool.calls
+    .filter(call => /INSERT INTO application_events/.test(call.sql))
+    .map(call => call.params[3]);
+  assert.deepEqual(eventTypes, ['invite_group_updated', 'assignment_withdrawn_by_trainee']);
 });
 
 // -----------------------------------------------------------------------------

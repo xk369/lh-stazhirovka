@@ -79,9 +79,20 @@ CREATE TABLE applications (
   attempt text NOT NULL CHECK (attempt IN ('first', 'repeat')),
   limits text NOT NULL DEFAULT '',
   status text NOT NULL CHECK (
-    status IN ('pending', 'queue', 'confirmed', 'invited', 'feedback', 'passed', 'failed', 'noshow')
+    status IN (
+      'pending',
+      'queue',
+      'queue_expired',
+      'confirmed',
+      'invited',
+      'feedback',
+      'passed',
+      'failed',
+      'noshow'
+    )
   ),
   recruiter_comment text NOT NULL DEFAULT '',
+  recruiter_queue_comment text NOT NULL DEFAULT '',
   venue_id text,
   group_link text NOT NULL DEFAULT '',
   candidate_report boolean NOT NULL DEFAULT false,
@@ -111,6 +122,33 @@ CREATE INDEX applications_shift_id_idx ON applications(shift_id);
 CREATE INDEX applications_trainee_telegram_user_id_idx ON applications(trainee_telegram_user_id);
 CREATE INDEX applications_telegram_username_idx ON applications(telegram_username);
 CREATE INDEX applications_name_lower_idx ON applications(lower(name));
+
+CREATE TABLE application_assignment_offers (
+  id uuid PRIMARY KEY,
+  application_id uuid NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  shift_id uuid NOT NULL REFERENCES shifts(id) ON DELETE RESTRICT,
+  token text NOT NULL UNIQUE,
+  status text NOT NULL CHECK (
+    status IN ('active', 'accepted', 'declined', 'expired', 'unavailable', 'canceled')
+  ),
+  requested_by_telegram_user_id text NOT NULL DEFAULT '',
+  requested_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  message_chat_id text,
+  message_id bigint,
+  responded_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX application_assignment_offers_one_active_per_application_idx
+  ON application_assignment_offers(application_id)
+  WHERE status = 'active';
+CREATE INDEX application_assignment_offers_shift_active_idx
+  ON application_assignment_offers(shift_id, expires_at)
+  WHERE status = 'active';
+CREATE INDEX application_assignment_offers_expiry_idx
+  ON application_assignment_offers(status, expires_at);
 
 CREATE TABLE invite_group_members (
   invite_group_id uuid NOT NULL REFERENCES invite_groups(id) ON DELETE CASCADE,

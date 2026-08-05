@@ -45,6 +45,13 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   The sandboxed `test:postgres` run fails on local PostgreSQL shared memory
   (`shmget Operation not permitted`); the same command passes outside the
   sandbox.
+- 2026-08-05 local verification after merging the latest production
+  queue-assignment flow into the migration branch: `node --check` passed for the
+  new/changed PostgreSQL smoke scripts, `bash -n scripts/test-postgres-foundation.sh`
+  passed, `npm test` passed 309/309, `git diff --cached --check` passed. A
+  sandboxed `npm run test:postgres` failed at local PostgreSQL startup with the
+  same `shmget Operation not permitted`; outside-sandbox rerun was not executed
+  in this session.
 - On 2026-07-30 migration staging imported a fresh production snapshot:
   16 shifts, 83 applications, 37 invite groups, 39 memberships and
   25 mentor reports. Field-level parity passed before writable staging QA.
@@ -70,9 +77,26 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - Branch `migration/postgres-foundation` is published in draft PR #3. Do not
   merge it into `main` until writable staging QA, cutover rehearsal and rollback
   plan are approved.
+- Local `migration/postgres-foundation` now contains the newer production
+  queue-assignment features and PostgreSQL support for
+  `application_assignment_offers`; migration staging is still at `bae4e07`
+  until explicitly refreshed.
 - Current migration progress is 95% overall. The remaining 5% is intentionally
   reserved for explicit production cutover and observation; do not claim 100%
   while production still runs JSON.
+
+## Staging / Manual Copy
+
+Use the server copy for non-urgent product changes before touching production.
+
+- Staging URL: `https://stazhirovka-manual.151.244.243.164.sslip.io`
+- Server path: `/opt/loft-hall-internship-unified-manual`
+- Docker container: `loft-internship-unified-manual`
+- Host port: `127.0.0.1:3501 -> 3000`
+- Preferred flow: create a feature branch locally, push it to GitHub, switch the staging copy to that branch, rebuild staging, test there, then merge/deploy production only after user approval.
+- Keep staging data close to production for realistic checks: before testing, back up `/opt/loft-hall-internship-unified-manual/data/db.json` and copy `/opt/loft-hall-internship-unified/data/db.json` into the manual copy.
+- Keep `SUPPRESS_TRAINEE_NOTIFICATIONS=yes` in the staging `.env` when using real production trainee data. This allows recruiter/mentor flow testing without sending personal Telegram notifications to trainees.
+- Queue assignment flow: trainees do not see public free dates and can only enter `queue`. Recruiter sends a 1-hour assignment confirmation request from the queue; trainee `Да` moves the application to `confirmed`, `Нет` keeps it in `queue`, and timeout moves it to `queue_expired` so the active queue seat hold is released. A trainee can withdraw back to `queue` before or after workgroup invite; `RECRUITER_WITHDRAWAL_CHAT_ID` receives a service notification.
 
 ## Report Routing
 
@@ -121,6 +145,9 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
 - `scripts/verify-postgres-parity.js` - читает PostgreSQL обратно и сравнивает бизнес-поля с исходным JSON.
 - `scripts/postgres-staging-role-qa.js` - staging-only HTTP role QA for
   writable PostgreSQL mode with synthetic data and dry-run Telegram delivery.
+- `scripts/postgres-assignment-offer-write-smoke.js` - live PostgreSQL smoke for
+  queue comments, assignment offers, accept/decline/expiry and trainee
+  withdrawal back to queue.
 - `src/postgres/read-booking-state.js` - восстанавливает текущую JSON-модель из нормализованных PostgreSQL-таблиц.
 - `src/booking-storage-mode.js` - явный выбор
   `json`/`postgres_readonly`/`postgres` и стабильная ошибка запрета legacy

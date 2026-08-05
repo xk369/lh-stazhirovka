@@ -11,7 +11,7 @@ import {
 test('booking state machine lists every supported application status', () => {
   assert.deepEqual(
     [...BOOKING_STATUSES],
-    ['pending', 'queue', 'confirmed', 'invited', 'feedback', 'passed', 'failed', 'noshow']
+    ['pending', 'queue', 'queue_expired', 'confirmed', 'invited', 'feedback', 'passed', 'failed', 'noshow']
   );
 });
 

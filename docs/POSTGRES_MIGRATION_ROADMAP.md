@@ -7,8 +7,9 @@
 Проект `loft_hall_internship_unified` уже в продакшене. Главная цепочка:
 
 ```text
-заявка стажера
--> подтверждение рекрутом
+кандидат в очереди
+-> рекрут руками предлагает дату
+-> стажер подтверждает дату
 -> отправка рабочей группы
 -> отметка выхода
 -> отчет наставника
@@ -60,6 +61,8 @@ Telegram-группы; в лог попадают только тип доста
 - Telegram username;
 - Telegram user id/chat id;
 - статус заявки;
+- внутренний комментарий рекрутера по очереди;
+- активные и исторические запросы подтверждения даты;
 - дату стажировки;
 - количество мест;
 - обучение и дату обучения;
@@ -76,6 +79,7 @@ Telegram-группы; в лог попадают только тип доста
 - автозакрытие дат;
 - откаты статусов;
 - отмену даты/отмену стажировки конкретному стажеру;
+- отказ стажера от подтвержденной даты и возврат в очередь;
 - защиту Telegram initData;
 - серверную роль рекрутера.
 
@@ -138,6 +142,7 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `id uuid primary key`;
 - `legacy_id bigint unique`;
 - `shift_id uuid references shifts(id) on delete set null`;
+- `invite_group_id uuid references invite_groups(id) on delete set null`;
 - `trainee_telegram_user_id text`;
 - `trainee_telegram_chat_id text`;
 - `telegram_username text`;
@@ -148,8 +153,9 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `training_date date`;
 - `attempt text not null check (attempt in ('first','repeat'))`;
 - `limits text`;
-- `status text not null`;
-- `comment text`;
+- `status text not null check (status in ('pending','queue','queue_expired','confirmed','invited','feedback','passed','failed','noshow'))`;
+- `recruiter_comment text`;
+- `recruiter_queue_comment text`;
 - `venue_id text`;
 - `group_link text`;
 - `candidate_report boolean not null default false`;
@@ -166,6 +172,32 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `applications(telegram_username)`;
 
 Важно: `status` лучше дополнительно проверять через application state machine, а не только DB check.
+
+### `application_assignment_offers`
+
+Ручной запрос подтверждения даты, который рекрут отправляет кандидату из очереди.
+
+Поля:
+
+- `id uuid primary key`;
+- `application_id uuid not null references applications(id) on delete cascade`;
+- `shift_id uuid not null references shifts(id) on delete restrict`;
+- `token text unique not null`;
+- `status text not null check (status in ('active','accepted','declined','expired','unavailable','canceled'))`;
+- `requested_by_telegram_user_id text not null default ''`;
+- `requested_at timestamptz not null`;
+- `expires_at timestamptz not null`;
+- `message_chat_id text`;
+- `message_id bigint`;
+- `responded_at timestamptz`;
+- `created_at timestamptz not null`;
+- `updated_at timestamptz not null`.
+
+Ограничения:
+
+- только один активный offer на заявку;
+- активные offer-ы учитываются в занятых местах вместе с уже назначенными заявками;
+- истекший offer переводит заявку в `queue_expired`, чтобы кандидат мог заново встать в очередь без автоматического `repeat`.
 
 ### `invite_groups`
 
@@ -246,7 +278,7 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `chat_id text`;
 - `chat_target text`;
 - `text text`;
-- `status text not null check (status in ('pending','sent','skipped','failed'))`;
+- `status text not null check (status in ('pending','sending','sent','skipped','failed'))`;
 - `telegram_message_id text`;
 - `error text`;
 - `attempt_count integer not null default 0`;
@@ -279,6 +311,14 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 - `application_cancelled`;
 - `application_assigned_to_shift`;
 - `application_returned_to_queue`;
+- `application_queue_comment_updated`;
+- `assignment_offer_requested`;
+- `assignment_offer_message_recorded`;
+- `assignment_offer_accepted`;
+- `assignment_offer_declined`;
+- `assignment_offer_expired`;
+- `assignment_offer_unavailable`;
+- `assignment_withdrawn_by_trainee`;
 - `application_comment_updated`;
 - `recruiter_confirmed`;
 - `application_invited`;
@@ -312,8 +352,13 @@ Postgres не должен быть одной таблицей `state`. Нуж�
 Разрешенные переходы:
 
 ```text
-queue -> pending
-pending -> confirmed
+queue -> confirmed        через accepted assignment offer
+queue -> queue_expired    через expired assignment offer
+queue -> queue            через declined assignment offer
+confirmed -> queue        отказ стажера до выхода
+invited -> queue          отказ стажера после рабочей группы, но до выхода
+queue -> pending          legacy/direct assignment fallback
+pending -> confirmed      legacy recruiter confirmation fallback
 confirmed -> invited
 invited -> feedback
 invited -> noshow
@@ -329,8 +374,11 @@ noshow -> invited
 
 Условия:
 
-- `queue -> pending`: должна быть дата со свободными местами;
-- `pending -> confirmed`: заявку подтверждает рекрут;
+- `queue -> confirmed`: рекрут руками создал `assignment_offer`, стажер нажал `Да`, дата открыта и место еще доступно;
+- `queue -> queue_expired`: активный запрос даты истек через 1 час без ответа;
+- `queue -> queue`: стажер нажал `Нет`, заявка остается в очереди, место освобождается;
+- `confirmed/invited -> queue`: стажер сам отказался от даты до выхода, рекрут получает служебное уведомление;
+- `queue -> pending` и `pending -> confirmed`: поддержанный fallback/legacy path, не основной новый путь регистрации;
 - `confirmed -> invited`: должна создаться рабочая группа;
 - `invited -> feedback`: рекрут нажал `Вышел`;
 - `invited -> noshow`: рекрут нажал `Не вышел`;
@@ -340,17 +388,10 @@ noshow -> invited
 - `passed -> feedback` и `failed -> feedback`: откат очищает/void старый отчет;
 - `passed -> experienced`: не статус заявки, а отдельный флаг `experience = experienced`.
 
-Текущий интерфейс также содержит корректирующее действие `Вернуть в новые
-заявки`, которое через общий `set_application_status` допускает:
-
-- `confirmed -> pending`;
-- `invited -> pending`;
-- `feedback -> pending`.
-
-До включения Postgres-записи это действие нужно заменить отдельной бизнес-командой:
-она обязана явно решить, очищаются ли старая рабочая группа, площадка и связь с
-архивом. Нельзя механически переносить этот переход в SQL, иначе старая и новая
-группы одной заявки могут смешаться.
+Корректирующее действие до выхода должно идти через отдельную команду
+`return_to_queue`, а не через механический `set_application_status -> pending`.
+Для `feedback` и финальных статусов нужен откат по шагам, чтобы не стереть
+отчетные последствия и архивные связи.
 
 ## 6. Event log: зачем и как
 

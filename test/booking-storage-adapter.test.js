@@ -113,7 +113,7 @@ test('Postgres write adapter routes upsert_trainee_application and returns fresh
       baseVersion: 10,
       application: {
         id: 501,
-        shiftId: 88,
+        shiftId: null,
         name: 'Иван Иванов',
         phone: '+7 999 123-45-67',
         training: 'passed',
@@ -121,7 +121,7 @@ test('Postgres write adapter routes upsert_trainee_application and returns fresh
         attempt: 'first',
         limits: '',
         telegramCode: '',
-        status: 'pending',
+        status: 'queue',
         comment: ''
       }
     },

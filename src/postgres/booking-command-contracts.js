@@ -1,13 +1,16 @@
 const COMMAND_SOURCES = Object.freeze({
   API_STATE: 'api_state',
   API_REPORT: 'api_report',
-  API_TELEGRAM_LINK: 'api_telegram_link'
+  API_TELEGRAM_LINK: 'api_telegram_link',
+  API_ASSIGNMENT_OFFER: 'api_assignment_offer',
+  INTERNAL: 'internal'
 });
 
 const WRITE_TABLES = Object.freeze({
   STATE_META: 'booking_state_meta',
   SHIFTS: 'shifts',
   APPLICATIONS: 'applications',
+  APPLICATION_ASSIGNMENT_OFFERS: 'application_assignment_offers',
   INVITE_GROUPS: 'invite_groups',
   INVITE_GROUP_MEMBERS: 'invite_group_members',
   MENTOR_REPORTS: 'mentor_reports',
@@ -20,6 +23,7 @@ const LOCK_SCOPES = Object.freeze({
   STATE_META: 'booking_state_meta',
   SHIFT: 'shift_row',
   APPLICATION: 'application_row',
+  APPLICATION_ASSIGNMENT_OFFER: 'application_assignment_offer_row',
   INVITE_GROUP: 'invite_group_row',
   MENTOR_REPORT: 'mentor_report_unique_application'
 });
@@ -217,6 +221,89 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
     eventTypes: ['application_comment_updated']
   }),
 
+  update_queue_comment: contract({
+    action: 'update_queue_comment',
+    actorRoles: ['recruiter'],
+    writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
+    locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION],
+    eventTypes: ['application_queue_comment_updated']
+  }),
+
+  request_assignment_confirmation: contract({
+    action: 'request_assignment_confirmation',
+    actorRoles: ['recruiter'],
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATIONS,
+      WRITE_TABLES.APPLICATION_ASSIGNMENT_OFFERS
+    ],
+    locks: [
+      LOCK_SCOPES.STATE_META,
+      LOCK_SCOPES.APPLICATION,
+      LOCK_SCOPES.SHIFT,
+      LOCK_SCOPES.APPLICATION_ASSIGNMENT_OFFER
+    ],
+    eventTypes: ['assignment_offer_requested'],
+    idempotencyKey: 'application_id + active_offer'
+  }),
+
+  record_assignment_offer_message: contract({
+    action: 'record_assignment_offer_message',
+    source: COMMAND_SOURCES.INTERNAL,
+    actorRoles: ['recruiter'],
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATION_ASSIGNMENT_OFFERS
+    ],
+    locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.APPLICATION_ASSIGNMENT_OFFER],
+    eventTypes: ['assignment_offer_message_recorded'],
+    requiresBaseVersion: false
+  }),
+
+  respond_assignment_offer: contract({
+    action: 'respond_assignment_offer',
+    source: COMMAND_SOURCES.API_ASSIGNMENT_OFFER,
+    actorRoles: ['trainee'],
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATIONS,
+      WRITE_TABLES.APPLICATION_ASSIGNMENT_OFFERS
+    ],
+    locks: [
+      LOCK_SCOPES.STATE_META,
+      LOCK_SCOPES.APPLICATION,
+      LOCK_SCOPES.SHIFT,
+      LOCK_SCOPES.APPLICATION_ASSIGNMENT_OFFER
+    ],
+    eventTypes: [
+      'assignment_offer_accepted',
+      'assignment_offer_declined',
+      'assignment_offer_expired',
+      'assignment_offer_unavailable',
+      'application_assigned_to_shift'
+    ],
+    requiresBaseVersion: false,
+    risk: 'high'
+  }),
+
+  expire_assignment_offers: contract({
+    action: 'expire_assignment_offers',
+    source: COMMAND_SOURCES.INTERNAL,
+    actorRoles: ['system', 'recruiter'],
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATIONS,
+      WRITE_TABLES.APPLICATION_ASSIGNMENT_OFFERS
+    ],
+    locks: [
+      LOCK_SCOPES.STATE_META,
+      LOCK_SCOPES.APPLICATION,
+      LOCK_SCOPES.APPLICATION_ASSIGNMENT_OFFER
+    ],
+    eventTypes: ['assignment_offer_expired'],
+    requiresBaseVersion: false
+  }),
+
   send_invites: contract({
     action: 'send_invites',
     actorRoles: ['recruiter'],
@@ -307,6 +394,30 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
     returnsFreshState: false,
     requiresOutbox: true,
     idempotencyKey: 'telegram_user_id + report_date + report_checksum'
+  }),
+
+  withdraw_confirmed_assignment: contract({
+    action: 'withdraw_confirmed_assignment',
+    actorRoles: ['trainee'],
+    writes: [
+      ...stateMetaAndEvents,
+      WRITE_TABLES.APPLICATIONS,
+      WRITE_TABLES.APPLICATION_ASSIGNMENT_OFFERS,
+      WRITE_TABLES.INVITE_GROUPS,
+      WRITE_TABLES.INVITE_GROUP_MEMBERS
+    ],
+    locks: [
+      LOCK_SCOPES.STATE_META,
+      LOCK_SCOPES.APPLICATION,
+      LOCK_SCOPES.INVITE_GROUP,
+      LOCK_SCOPES.APPLICATION_ASSIGNMENT_OFFER
+    ],
+    eventTypes: [
+      'assignment_withdrawn_by_trainee',
+      'invite_group_updated',
+      'invite_group_removed'
+    ],
+    risk: 'high'
   })
 });
 

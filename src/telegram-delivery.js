@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  editTelegramMessageText,
   sendTelegramMessage,
   sendTelegramPhoto
 } from './telegram.js';
@@ -50,6 +51,7 @@ function dryRunResult(kind, payload, context, logger) {
 export function createTelegramDelivery({
   mode = TELEGRAM_DELIVERY_MODES.LIVE,
   logger = console,
+  editMessageTextSender = editTelegramMessageText,
   messageSender = sendTelegramMessage,
   photoSender = sendTelegramPhoto
 } = {}) {
@@ -63,6 +65,13 @@ export function createTelegramDelivery({
         return dryRunResult('message', payload, context, logger);
       }
       return messageSender(payload);
+    },
+
+    async editMessageText(payload, context = {}) {
+      if (normalizedMode === TELEGRAM_DELIVERY_MODES.DRY_RUN) {
+        return dryRunResult('edit_message_text', payload, context, logger);
+      }
+      return editMessageTextSender(payload);
     },
 
     async sendPhoto(payload, context = {}) {

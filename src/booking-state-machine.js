@@ -1,6 +1,7 @@
 const STATUS_VALUES = [
   'pending',
   'queue',
+  'queue_expired',
   'confirmed',
   'invited',
   'feedback',
@@ -10,8 +11,17 @@ const STATUS_VALUES = [
 ];
 
 export const BOOKING_STATUSES = new Set(STATUS_VALUES);
-export const TRAINEE_WRITE_STATUSES = new Set(['pending', 'queue']);
+export const TRAINEE_WRITE_STATUSES = new Set(['queue']);
 export const MENTOR_REPORT_TRAINEE_STATUSES = new Set(['invited', 'feedback']);
+export const ACTIVE_TRAINEE_APPLICATION_STATUSES = new Set([
+  'pending',
+  'queue',
+  'confirmed',
+  'invited',
+  'feedback'
+]);
+export const TRAINEE_REAPPLY_SOURCE_STATUSES = new Set(['failed', 'noshow']);
+export const TRAINEE_QUEUE_REJOIN_SOURCE_STATUSES = new Set(['queue_expired']);
 export const SEAT_HOLDING_STATUSES = new Set([
   'pending',
   'confirmed',
@@ -30,7 +40,8 @@ export const SHIFT_CANCELLATION_APPLICATION_STATUSES = new Set([
 
 export const BOOKING_STATUS_LABELS = Object.freeze({
   pending: 'Заявка отправлена',
-  queue: 'Предварительная запись',
+  queue: 'Очередь',
+  queue_expired: 'Запрос истёк',
   confirmed: 'Выход подтвержден',
   invited: 'Приглашение отправлено',
   feedback: 'Ждем отчет',

@@ -49,7 +49,7 @@ async function seedOpenShift(seedIso) {
 function applicationPayload(overrides = {}) {
   return {
     id: APPLICATION_LEGACY_ID,
-    shiftId: SHIFT_LEGACY_ID,
+    shiftId: null,
     name: 'Upsert Smoke Trainee',
     phone: '+7 999 000-40-40',
     training: 'passed',
@@ -57,7 +57,7 @@ function applicationPayload(overrides = {}) {
     attempt: 'first',
     limits: 'После 17:00',
     telegramCode: '',
-    status: 'pending',
+    status: 'queue',
     comment: '',
     ...overrides
   };
@@ -87,8 +87,8 @@ try {
   });
   assert.equal(createResult.created, true);
   assert.equal(createResult.previousStatus, null);
-  assert.equal(createResult.nextStatus, 'pending');
-  assert.equal(createResult.shiftLegacyId, SHIFT_LEGACY_ID);
+  assert.equal(createResult.nextStatus, 'queue');
+  assert.equal(createResult.shiftLegacyId, null);
   assert.equal(createResult.previousVersion, seededState.version);
   assert.equal(createResult.version, seededState.version + 1);
   assert.equal(createResult.updatedAt, createNow.toISOString());
@@ -99,8 +99,8 @@ try {
     application => Number(application.id) === APPLICATION_LEGACY_ID
   );
   assert.ok(createdApp);
-  assert.equal(createdApp.status, 'pending');
-  assert.equal(Number(createdApp.shiftId), SHIFT_LEGACY_ID);
+  assert.equal(createdApp.status, 'queue');
+  assert.equal(createdApp.shiftId, null);
   assert.equal(createdApp.telegramUserId, '930040');
   assert.equal(createdApp.telegramChatId, '930040');
   assert.equal(createdApp.telegramUsername, 'upsert_smoke');
@@ -121,8 +121,8 @@ try {
   assert.equal(createdEventResult.rows[0].actor_type, 'trainee');
   assert.equal(createdEventResult.rows[0].actor_telegram_user_id, '930040');
   assert.equal(createdEventResult.rows[0].payload.action, 'upsert_trainee_application');
-  assert.equal(createdEventResult.rows[0].payload.application.status, 'pending');
-  assert.equal(createdEventResult.rows[0].payload.application.shiftId, SHIFT_LEGACY_ID);
+  assert.equal(createdEventResult.rows[0].payload.application.status, 'queue');
+  assert.equal(createdEventResult.rows[0].payload.application.shiftId, null);
 
   const queueNow = new Date('2026-07-29T18:15:00.000Z');
   const queueResult = await upsertTraineeApplicationInPostgres({
@@ -132,8 +132,6 @@ try {
       action: 'upsert_trainee_application',
       baseVersion: afterCreateState.version,
       application: applicationPayload({
-        shiftId: null,
-        status: 'queue',
         limits: 'Жду новую дату'
       })
     },
@@ -141,9 +139,9 @@ try {
   });
   assert.equal(queueResult.created, false);
   assert.equal(queueResult.updated, true);
-  assert.equal(queueResult.previousStatus, 'pending');
+  assert.equal(queueResult.previousStatus, 'queue');
   assert.equal(queueResult.nextStatus, 'queue');
-  assert.equal(queueResult.previousShiftId, SHIFT_LEGACY_ID);
+  assert.equal(queueResult.previousShiftId, null);
   assert.equal(queueResult.shiftLegacyId, null);
   assert.equal(queueResult.previousVersion, afterCreateState.version);
   assert.equal(queueResult.version, afterCreateState.version + 1);
@@ -168,9 +166,9 @@ try {
     `,
     [APPLICATION_LEGACY_ID]
   );
-  assert.equal(queueEventResult.rowCount, 2);
+  assert.equal(queueEventResult.rowCount, 1);
   const eventTypes = queueEventResult.rows.map(row => row.event_type).sort();
-  assert.deepEqual(eventTypes, ['application_returned_to_queue', 'application_updated']);
+  assert.deepEqual(eventTypes, ['application_updated']);
 
   console.log('PostgreSQL upsert_trainee_application write smoke test passed.');
 } finally {

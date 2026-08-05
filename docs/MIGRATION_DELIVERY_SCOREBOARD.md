@@ -11,9 +11,12 @@
   для no-prod/staging cutover rehearsal.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: staging-only writable runtime enabled at `bae4e07`; core live
-  migration staging QA passed including `/api/telegram/link`; final production
-  cutover plan next.
+- Текущий stage: staging-only writable runtime enabled at `bae4e07`; локальная
+  ветка дополнительно догнала свежий production queue-assignment flow, но
+  migration staging еще нужно обновить, переимпортировать и прогнать QA заново.
+- New assignment-offer PostgreSQL smoke is wired into `npm run test:postgres`;
+  local sandbox run is blocked by PostgreSQL shared memory, so outside-sandbox or
+  migration-staging pass is still required before cutover.
 
 ## Что Уже Интегрировано В Base
 
@@ -27,7 +30,6 @@
 - `upsert_trainee_application` writable PostgreSQL command:
   - trainee-only;
   - `booking_state_meta FOR UPDATE`;
-  - optional target `shifts` row `FOR UPDATE` for date bookings;
   - existing `applications` row `FOR UPDATE` when updating a previous trainee
     application;
   - optimistic `baseVersion` check;
@@ -35,9 +37,8 @@
     passed training, attempt and trainee-writable statuses;
   - attaches Telegram user/chat/username from the verified actor, never from
     client-supplied payload;
-  - enforces `queue` applications without `shift_id` and `pending`
-    applications with an open, non-canceled shift;
-  - refuses to book closed/canceled/full shifts;
+  - enforces queue-only trainee writes: new self-registration creates or updates
+    `status='queue'` with `shift_id IS NULL`;
   - rejects updates to another trainee's application;
   - rejects updates once the application has progressed beyond `pending` or
     `queue`; repeat application after `failed`/`noshow` should use the existing
@@ -53,6 +54,62 @@
     submission/update rather than a recruiter/mentor stage message;
   - version bump;
   - live PostgreSQL smoke inside `npm run test:postgres`.
+- `update_queue_comment` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - target `applications` row `FOR UPDATE`;
+  - accepts only active queue applications;
+  - writes `applications.recruiter_queue_comment`, which is hidden from trainee
+    state;
+  - writes a PII-safe queue-comment audit event with lengths only;
+  - version bump only when the comment changes;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
+- `request_assignment_confirmation` writable PostgreSQL command:
+  - recruiter-only;
+  - `booking_state_meta FOR UPDATE`;
+  - source `applications` row and target `shifts` row `FOR UPDATE`;
+  - accepts only `status='queue'` with `shift_id IS NULL`;
+  - refuses closed/canceled/full shifts;
+  - counts already assigned applications plus active non-expired assignment
+    offers against shift capacity;
+  - creates an active `application_assignment_offers` row with unique token,
+    `requested_by_telegram_user_id`, `requested_at` and 1-hour `expires_at`;
+  - keeps the application in `queue` until the trainee accepts;
+  - guarantees only one active offer per application;
+  - writes assignment-offer audit events and bumps version;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
+- `record_assignment_offer_message` writable PostgreSQL command:
+  - internal/system command after Telegram send succeeds;
+  - stores `message_chat_id` and `message_id` on the active
+    `application_assignment_offers` row so the server can edit the original
+    buttons after response/expiry;
+  - writes `assignment_offer_message_recorded` and bumps booking-state version
+    because the message refs are exposed in the reconstructed active offer;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
+- `respond_assignment_offer` writable PostgreSQL command:
+  - trainee-owned token response through `/api/assignment-offer/respond`;
+  - accepts `accept` and `decline` decisions without `baseVersion`;
+  - `accept` marks the offer `accepted`, sets application `status='confirmed'`,
+    attaches `shift_id`, clears `recruiter_queue_comment` and cancels other
+    active offers for that application;
+  - `decline` marks the offer `declined`, keeps the application in `queue` and
+    releases the held seat;
+  - expired/unavailable responses are handled stably and return enough snapshot
+    data for Telegram response messages;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
+- `expire_assignment_offers` writable PostgreSQL command:
+  - system/internal scheduler command;
+  - locks active offers whose `expires_at` has passed;
+  - marks offers `expired`, moves still-queue applications to `queue_expired`,
+    clears queue comments and releases held seats;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
+- `withdraw_confirmed_assignment` writable PostgreSQL command:
+  - trainee-owned command before attendance/final stages;
+  - returns own `confirmed`/`invited` application to `queue`;
+  - cleans shift/group/venue/report delivery fields and active offers;
+  - returns a recruiter notification target for the direct Telegram delivery
+    gateway;
+  - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
 - `cancel_application` writable PostgreSQL command:
   - trainee/recruiter;
   - `booking_state_meta FOR UPDATE`;
@@ -357,6 +414,14 @@
   - `BOOKING_STORAGE_MODE=postgres` is now a valid runtime-wired mode;
   - `/api/state` applies PostgreSQL command adapter mutations and returns fresh
     role-filtered state;
+  - `/api/state` also handles `request_assignment_confirmation` in writable
+    Postgres mode by creating the offer transactionally, sending the trainee
+    Telegram confirmation through `src/telegram-delivery.js`, then recording the
+    returned Telegram message reference through an internal Postgres command;
+  - `/api/assignment-offer/respond` routes trainee accept/decline decisions
+    through the PostgreSQL write layer in writable Postgres mode and closes the
+    original Telegram buttons through the delivery gateway when message refs are
+    available;
   - `/api/report` queues trainee and mentor report side effects into the
     PostgreSQL `notifications` outbox instead of calling Telegram directly;
   - `/api/telegram/link` links old/unlinked applications to the verified
@@ -388,11 +453,12 @@
 
 ## Очередь Writable Команд
 
-Все текущие контракты write-команд для `/api/state`, `/api/report` и
-`/api/telegram/link` реализованы в PostgreSQL write layer. Notification
-worker/dry-run processing и staging-only writable runtime wiring тоже
-реализованы. Следующая работа: deploy только на migration staging и full role
-QA/rehearsal.
+Все текущие контракты write-команд для `/api/state`, `/api/report`,
+`/api/assignment-offer/respond` и `/api/telegram/link` реализованы в PostgreSQL
+write layer или покрыты отдельным writable runtime path. Notification worker,
+dry-run processing и staging-only writable runtime wiring тоже реализованы.
+Следующая работа: обновить только migration staging, импортировать свежий
+production snapshot и пройти full role QA/rehearsal с queue assignment flow.
 
 ## Runtime-Wiring Blockers
 

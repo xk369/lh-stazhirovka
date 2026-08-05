@@ -15,6 +15,9 @@ const APPLICATION_FIELDS = new Set([
   'status',
   'comment',
   'recruiterComment',
+  'recruiterQueueComment',
+  'queueComment',
+  'assignmentOffer',
   'inviteGroupId',
   'venueId',
   'groupLink',
@@ -37,6 +40,15 @@ const APPLICATION_FIELDS = new Set([
   'mentorCommentDeliveryError',
   'experience',
   'createdAt'
+]);
+const ASSIGNMENT_OFFER_FIELDS = new Set([
+  'token',
+  'shiftId',
+  'requestedAt',
+  'expiresAt',
+  'requestedByTelegramUserId',
+  'messageChatId',
+  'messageId'
 ]);
 const INVITE_GROUP_FIELDS = new Set([
   'id',
@@ -74,6 +86,11 @@ export function auditBookingStateShape(sourceState) {
   sourceState.applications.forEach((application, index) => {
     for (const field of unknownFields(application, APPLICATION_FIELDS)) {
       findings.push(`applications[${index}].${field}`);
+    }
+    if (application?.assignmentOffer && typeof application.assignmentOffer === 'object') {
+      for (const field of unknownFields(application.assignmentOffer, ASSIGNMENT_OFFER_FIELDS)) {
+        findings.push(`applications[${index}].assignmentOffer.${field}`);
+      }
     }
   });
   sourceState.inviteGroups.forEach((group, index) => {
@@ -131,6 +148,43 @@ function uniqueMemberLinks(state, applicationIdByLegacy, inviteGroupIdByLegacy) 
   return [...links.values()];
 }
 
+function normalizeAssignmentOfferRows(state, applicationIdByLegacy, shiftIdByLegacy, now) {
+  const rows = [];
+  for (const application of state.applications) {
+    if (application.status !== 'queue') continue;
+    const offer = application.assignmentOffer;
+    if (!offer || typeof offer !== 'object' || Array.isArray(offer)) continue;
+
+    const token = String(offer.token || '').trim();
+    if (!token) {
+      throw new Error(`applications.${application.id}.assignmentOffer.token is required.`);
+    }
+    const applicationId = applicationIdByLegacy.get(String(application.id));
+    const shiftId = shiftIdByLegacy.get(String(offer.shiftId));
+    if (!applicationId || !shiftId) {
+      throw new Error(`applications.${application.id}.assignmentOffer.shiftId references an unknown shift.`);
+    }
+    const requestedAt = requiredTimestamp(offer.requestedAt, now);
+    rows.push({
+      id: randomUUID(),
+      applicationId,
+      shiftId,
+      token,
+      status: 'active',
+      requestedByTelegramUserId: String(offer.requestedByTelegramUserId || '').trim(),
+      requestedAt,
+      expiresAt: requiredTimestamp(offer.expiresAt, now),
+      messageChatId: String(offer.messageChatId || '').trim() || null,
+      messageId: offer.messageId === null || offer.messageId === undefined || offer.messageId === ''
+        ? null
+        : Number(offer.messageId),
+      createdAt: requestedAt,
+      updatedAt: requestedAt
+    });
+  }
+  return rows;
+}
+
 export function buildBookingImportPlan(sourceState, now = new Date()) {
   auditBookingStateShape(sourceState);
   const state = normalizeBookingState(sourceState);
@@ -183,6 +237,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     limits: application.limits || '',
     status: application.status,
     recruiterComment: application.comment || '',
+    recruiterQueueComment: application.recruiterQueueComment || '',
     venueId: application.venueId || null,
     groupLink: application.groupLink || '',
     candidateReport: Boolean(application.candidateReport),
@@ -257,6 +312,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     shifts,
     inviteGroups,
     applications,
+    assignmentOffers: normalizeAssignmentOfferRows(state, applicationIdByLegacy, shiftIdByLegacy, now),
     inviteGroupMembers: uniqueMemberLinks(
       state,
       applicationIdByLegacy,
@@ -268,7 +324,14 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
 }
 
 async function assertEmptyTarget(client) {
-  const tables = ['booking_state_meta', 'data_imports', 'shifts', 'applications', 'invite_groups'];
+  const tables = [
+    'booking_state_meta',
+    'data_imports',
+    'shifts',
+    'applications',
+    'application_assignment_offers',
+    'invite_groups'
+  ];
   for (const table of tables) {
     const result = await client.query(`SELECT count(*)::integer AS count FROM ${table}`);
     if (result.rows[0].count !== 0) {
@@ -349,7 +412,8 @@ async function insertApplications(client, rows) {
       INSERT INTO applications (
         id, legacy_id, shift_id, invite_group_id,
         trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
-        name, phone, training, training_date, attempt, limits, status, recruiter_comment,
+        name, phone, training, training_date, attempt, limits, status,
+        recruiter_comment, recruiter_queue_comment,
         venue_id, group_link, candidate_report, experience,
         mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
         mentor_decision, mentor_report_venue_id, mentor_report_venue, mentor_report_loft,
@@ -359,13 +423,14 @@ async function insertApplications(client, rows) {
       ) VALUES (
         $1, $2, $3, $4,
         $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20,
-        $21, $22, $23,
-        $24, $25, $26, $27,
-        $28, $29, $30,
-        $31, $32,
-        $33, $34
+        $9, $10, $11, $12, $13, $14, $15,
+        $16, $17,
+        $18, $19, $20, $21,
+        $22, $23, $24,
+        $25, $26, $27, $28,
+        $29, $30, $31,
+        $32, $33,
+        $34, $35
       )
     `, [
       row.id,
@@ -384,6 +449,7 @@ async function insertApplications(client, rows) {
       row.limits,
       row.status,
       row.recruiterComment,
+      row.recruiterQueueComment,
       row.venueId,
       row.groupLink,
       row.candidateReport,
@@ -400,6 +466,30 @@ async function insertApplications(client, rows) {
       row.mentorCommentSentAt,
       row.mentorCommentDeliveryStatus,
       row.mentorCommentDeliveryError,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
+}
+
+async function insertAssignmentOffers(client, rows) {
+  for (const row of rows) {
+    await client.query(`
+      INSERT INTO application_assignment_offers (
+        id, application_id, shift_id, token, status, requested_by_telegram_user_id,
+        requested_at, expires_at, message_chat_id, message_id, responded_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12)
+    `, [
+      row.id,
+      row.applicationId,
+      row.shiftId,
+      row.token,
+      row.status,
+      row.requestedByTelegramUserId,
+      row.requestedAt,
+      row.expiresAt,
+      row.messageChatId,
+      row.messageId,
       row.createdAt,
       row.updatedAt
     ]);
@@ -460,6 +550,7 @@ async function verifyImportedCounts(client, plan) {
     shifts: plan.shifts.length,
     applications: plan.applications.length,
     invite_groups: plan.inviteGroups.length,
+    application_assignment_offers: plan.assignmentOffers.length,
     invite_group_members: plan.inviteGroupMembers.length,
     mentor_reports: plan.mentorReports.length
   };
@@ -521,6 +612,7 @@ export async function importBookingState(client, sourceState, {
     await insertShifts(client, plan.shifts);
     await insertInviteGroups(client, plan.inviteGroups);
     await insertApplications(client, plan.applications);
+    await insertAssignmentOffers(client, plan.assignmentOffers);
     await insertInviteGroupMembers(client, plan.inviteGroupMembers);
     await insertMentorReports(client, plan.mentorReports);
     await insertEvents(client, plan.events);

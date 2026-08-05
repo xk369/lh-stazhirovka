@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  ACTIVE_TRAINEE_APPLICATION_STATUSES,
   BOOKING_STATUSES,
   BOOKING_STEP_BACK_STATUSES,
   BOOKING_STATUS_LABELS,
   MENTOR_REPORT_TRAINEE_STATUSES,
   SEAT_HOLDING_STATUSES,
   SHIFT_CANCELLATION_APPLICATION_STATUSES,
+  TRAINEE_QUEUE_REJOIN_SOURCE_STATUSES,
+  TRAINEE_REAPPLY_SOURCE_STATUSES,
   TRAINEE_WRITE_STATUSES,
   bookingStatusFromMentorDecision,
   canRecruiterSetApplicationStatus
@@ -57,6 +60,7 @@ const ATTEMPT_VALUES = new Set(['first', 'repeat']);
 const TRAINEE_MUTABLE_STATUSES = new Set(['pending', 'queue']);
 const CANCEL_APPLICATION_STATUSES = new Set(['pending', 'queue']);
 const MENTOR_COMMENT_DELIVERY_STATUSES = new Set(['sent', 'skipped', 'failed']);
+const ASSIGNMENT_OFFER_TTL_MS = 60 * 60 * 1000;
 const MENTOR_RESULT_STATUS_EVENTS = Object.freeze({
   passed: 'application_passed',
   failed: 'application_failed'
@@ -565,6 +569,7 @@ async function countBookingStateRows(client) {
     SELECT
       (SELECT count(*)::int FROM shifts) AS shifts,
       (SELECT count(*)::int FROM applications) AS applications,
+      (SELECT count(*)::int FROM application_assignment_offers) AS application_assignment_offers,
       (SELECT count(*)::int FROM invite_groups) AS invite_groups,
       (SELECT count(*)::int FROM invite_group_members) AS invite_group_members,
       (SELECT count(*)::int FROM mentor_reports WHERE voided_at IS NULL) AS active_mentor_reports,
@@ -574,6 +579,7 @@ async function countBookingStateRows(client) {
   return {
     shifts: Number(row.shifts) || 0,
     applications: Number(row.applications) || 0,
+    applicationAssignmentOffers: Number(row.application_assignment_offers) || 0,
     inviteGroups: Number(row.invite_groups) || 0,
     inviteGroupMembers: Number(row.invite_group_members) || 0,
     activeMentorReports: Number(row.active_mentor_reports) || 0,
@@ -586,6 +592,7 @@ async function clearBookingStateRows(client) {
   await client.query('DELETE FROM notifications');
   await client.query('DELETE FROM mentor_report_topics');
   await client.query('DELETE FROM mentor_reports');
+  await client.query('DELETE FROM application_assignment_offers');
   await client.query('DELETE FROM invite_group_members');
   await client.query('DELETE FROM invite_groups');
   await client.query('DELETE FROM applications');
@@ -617,7 +624,8 @@ async function insertPlannedDemoRows(client, plan) {
       INSERT INTO applications (
         id, legacy_id, shift_id, invite_group_id,
         trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
-        name, phone, training, training_date, attempt, limits, status, recruiter_comment,
+        name, phone, training, training_date, attempt, limits, status,
+        recruiter_comment, recruiter_queue_comment,
         venue_id, group_link, candidate_report, experience,
         mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
         mentor_decision, mentor_report_venue_id, mentor_report_venue, mentor_report_loft,
@@ -627,13 +635,14 @@ async function insertPlannedDemoRows(client, plan) {
       ) VALUES (
         $1, $2, $3, $4,
         $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20,
-        $21, $22, $23,
-        $24, $25, $26, $27,
-        $28, $29, $30,
-        $31, $32,
-        $33, $34
+        $9, $10, $11, $12, $13, $14, $15,
+        $16, $17,
+        $18, $19, $20, $21,
+        $22, $23, $24,
+        $25, $26, $27, $28,
+        $29, $30, $31,
+        $32, $33,
+        $34, $35
       )
     `, [
       row.id,
@@ -652,6 +661,7 @@ async function insertPlannedDemoRows(client, plan) {
       row.limits,
       row.status,
       row.recruiterComment,
+      row.recruiterQueueComment,
       row.venueId,
       row.groupLink,
       row.candidateReport,
@@ -668,6 +678,28 @@ async function insertPlannedDemoRows(client, plan) {
       row.mentorCommentSentAt,
       row.mentorCommentDeliveryStatus,
       row.mentorCommentDeliveryError,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
+
+  for (const row of plan.assignmentOffers) {
+    await client.query(`
+      INSERT INTO application_assignment_offers (
+        id, application_id, shift_id, token, status, requested_by_telegram_user_id,
+        requested_at, expires_at, message_chat_id, message_id, responded_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12)
+    `, [
+      row.id,
+      row.applicationId,
+      row.shiftId,
+      row.token,
+      row.status,
+      row.requestedByTelegramUserId,
+      row.requestedAt,
+      row.expiresAt,
+      row.messageChatId,
+      row.messageId,
       row.createdAt,
       row.updatedAt
     ]);
@@ -839,6 +871,55 @@ function normalizeUpdateCommentInput(command) {
   };
 }
 
+function normalizeUpdateQueueCommentInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    comment: normalizeOptionalText(command?.comment, 'application.recruiterQueueComment', 600),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeRequestAssignmentConfirmationInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    shiftLegacyId: normalizeShiftLegacyId(command?.shiftId),
+    baseVersion: normalizeBaseVersion(command)
+  };
+}
+
+function normalizeAssignmentOfferToken(value) {
+  return normalizeRequiredText(value, 'assignmentOffer.token', 80);
+}
+
+function normalizeTelegramMessageId(value) {
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new PostgresCommandValidationError('assignmentOffer.messageId must be a positive integer.');
+  }
+  return id;
+}
+
+function normalizeRecordAssignmentOfferMessageInput(command) {
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    token: normalizeAssignmentOfferToken(command?.token),
+    messageChatId: normalizeTelegramUserId(command?.messageChatId, 'assignmentOffer.messageChatId'),
+    messageId: normalizeTelegramMessageId(command?.messageId)
+  };
+}
+
+function normalizeRespondAssignmentOfferInput(command) {
+  const decision = normalizeRequiredText(command?.decision, 'assignmentOffer.decision', 20);
+  if (!['accept', 'decline'].includes(decision)) {
+    throw new PostgresCommandValidationError('Выберите: подтвердить или отказаться от даты.');
+  }
+  return {
+    applicationLegacyId: normalizeApplicationLegacyId(command?.applicationId),
+    token: normalizeAssignmentOfferToken(command?.token),
+    decision
+  };
+}
+
 function normalizeSetApplicationStatusInput(command) {
   const nextStatus = String(command?.status || '').trim();
   if (!BOOKING_STATUSES.has(nextStatus)) {
@@ -885,6 +966,65 @@ function displayShiftDate(value) {
     month: '2-digit',
     year: 'numeric'
   });
+}
+
+function assignmentOfferExpiresAt(now) {
+  return new Date(now.getTime() + ASSIGNMENT_OFFER_TTL_MS).toISOString();
+}
+
+function applicationTelegramTag(app) {
+  const username = String(app?.telegram_username || app?.telegramUsername || '').trim();
+  if (username) return username.startsWith('@') ? username : `@${username}`;
+  const code = String(app?.telegram_code || app?.telegramCode || '').trim();
+  if (code) return code.startsWith('@') ? code : `@${code.replace(/^@/, '')}`;
+  const userId = String(
+    app?.trainee_telegram_user_id
+    || app?.trainee_telegram_chat_id
+    || app?.telegramUserId
+    || app?.telegramChatId
+    || ''
+  ).trim();
+  return userId ? `ID ${userId}` : 'Telegram не указан';
+}
+
+function applicationSnapshotFromRow(row, overrides = {}) {
+  return {
+    id: Number(row.legacy_id),
+    shiftId: row.shift_legacy_id ? Number(row.shift_legacy_id) : null,
+    name: row.name || '',
+    phone: row.phone || '',
+    status: String(row.status || ''),
+    telegramCode: row.telegram_code || '',
+    telegramChatId: row.trainee_telegram_chat_id || row.trainee_telegram_user_id || '',
+    telegramUserId: row.trainee_telegram_user_id || '',
+    telegramUsername: row.telegram_username || '',
+    groupLink: row.group_link || '',
+    venueId: row.venue_id || null,
+    recruiterQueueComment: row.recruiter_queue_comment || '',
+    ...overrides
+  };
+}
+
+function shiftSnapshotFromRow(row, prefix = 'shift_') {
+  return {
+    id: Number(row[`${prefix}legacy_id`]),
+    date: shiftDateAsString(row[`${prefix}date`]),
+    seats: Number(row[`${prefix}seats`] || row.seats || 0),
+    open: Boolean(row[`${prefix}open`]),
+    canceled: Boolean(row[`${prefix}canceled`])
+  };
+}
+
+function assignmentOfferSnapshotFromRow(row) {
+  return {
+    token: row.token,
+    shiftId: Number(row.offer_shift_legacy_id || row.shift_legacy_id),
+    requestedAt: shiftUpdatedAtAsString(row.requested_at),
+    expiresAt: shiftUpdatedAtAsString(row.expires_at),
+    requestedByTelegramUserId: row.requested_by_telegram_user_id || '',
+    messageChatId: row.message_chat_id || '',
+    messageId: row.message_id === null || row.message_id === undefined ? null : Number(row.message_id)
+  };
 }
 
 function composeSendInviteNotificationText({ venueId, link, shiftDate }) {
@@ -1276,6 +1416,54 @@ async function insertNotifications(client, rows) {
   return { inserted };
 }
 
+async function countShiftSeatUsageInPostgres(client, {
+  shiftUuid,
+  excludedApplicationUuid = null,
+  now = new Date()
+}) {
+  const result = await client.query(
+    `
+      SELECT
+        (
+          SELECT COUNT(*)::int
+            FROM applications
+           WHERE shift_id = $1
+             AND status = ANY($2::text[])
+             AND ($3::uuid IS NULL OR id <> $3::uuid)
+        ) AS assigned,
+        (
+          SELECT COUNT(*)::int
+            FROM application_assignment_offers
+            JOIN applications
+              ON applications.id = application_assignment_offers.application_id
+           WHERE application_assignment_offers.shift_id = $1
+             AND application_assignment_offers.status = 'active'
+             AND application_assignment_offers.expires_at > $4::timestamptz
+             AND ($3::uuid IS NULL OR application_assignment_offers.application_id <> $3::uuid)
+        ) AS offered
+    `,
+    [
+      shiftUuid,
+      SEAT_HOLDING_STATUS_VALUES,
+      excludedApplicationUuid,
+      now.toISOString()
+    ]
+  );
+  const row = result.rows[0] || {};
+  return (Number(row.assigned) || 0) + (Number(row.offered) || 0);
+}
+
+async function cancelActiveAssignmentOffers(client, { applicationUuid, nowIso }) {
+  await client.query(
+    `UPDATE application_assignment_offers
+        SET status = 'canceled',
+            updated_at = $1
+      WHERE application_id = $2
+        AND status = 'active'`,
+    [nowIso, applicationUuid]
+  );
+}
+
 export async function upsertTraineeApplicationInPostgres({
   pool,
   actor,
@@ -1283,7 +1471,7 @@ export async function upsertTraineeApplicationInPostgres({
   now = new Date()
 }) {
   requireTrainee(actor);
-  const application = normalizeTraineeApplicationInput(command, actor);
+  let application = normalizeTraineeApplicationInput(command, actor);
 
   return runInPostgresTransaction(pool, async client => {
     const meta = await lockBookingStateMeta(client);
@@ -1340,7 +1528,8 @@ export async function upsertTraineeApplicationInPostgres({
               applications.training_date::text AS training_date,
               applications.attempt,
               applications.limits,
-              applications.recruiter_comment
+              applications.recruiter_comment,
+              applications.recruiter_queue_comment
          FROM applications
          LEFT JOIN shifts ON shifts.id = applications.shift_id
         WHERE applications.legacy_id = $1
@@ -1356,6 +1545,34 @@ export async function upsertTraineeApplicationInPostgres({
       if (!TRAINEE_MUTABLE_STATUSES.has(String(existing.status || ''))) {
         throw new PostgresCommandValidationError('application cannot be changed in current status.');
       }
+    } else {
+      const ownApplicationsResult = await client.query(
+        `SELECT legacy_id, status
+           FROM applications
+          WHERE trainee_telegram_user_id = $1
+             OR trainee_telegram_chat_id = $1
+          ORDER BY legacy_id DESC
+          FOR UPDATE`,
+        [application.telegramUserId]
+      );
+      const ownApplications = ownApplicationsResult.rows || [];
+      const activeApplication = ownApplications.find(row =>
+        ACTIVE_TRAINEE_APPLICATION_STATUSES.has(String(row.status || ''))
+      );
+      if (activeApplication) {
+        throw new PostgresCommandValidationError('У вас уже есть активная заявка на стажировку.');
+      }
+      const latestApplication = ownApplications[0] || null;
+      const latestStatus = String(latestApplication?.status || '');
+      if (latestApplication) {
+        if (TRAINEE_REAPPLY_SOURCE_STATUSES.has(latestStatus)) {
+          application = { ...application, attempt: 'repeat' };
+        } else if (!TRAINEE_QUEUE_REJOIN_SOURCE_STATUSES.has(latestStatus)) {
+          throw new PostgresCommandValidationError(
+            'Повторная запись доступна только после завершенной неудачной попытки.'
+          );
+        }
+      }
     }
 
     const nowIso = now.toISOString();
@@ -1370,7 +1587,8 @@ export async function upsertTraineeApplicationInPostgres({
         `INSERT INTO applications (
             id, legacy_id, shift_id, invite_group_id,
             trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
-            name, phone, training, training_date, attempt, limits, status, recruiter_comment,
+            name, phone, training, training_date, attempt, limits, status,
+            recruiter_comment, recruiter_queue_comment,
             venue_id, group_link, candidate_report, experience,
             mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
             mentor_decision, mentor_report_venue_id, mentor_report_venue,
@@ -1381,7 +1599,8 @@ export async function upsertTraineeApplicationInPostgres({
           VALUES (
             $1, $2, $3, NULL,
             $4, $5, $6, $7,
-            $8, $9, $10, $11::date, $12, $13, $14, $15,
+            $8, $9, $10, $11::date, $12, $13, $14,
+            $15, '',
             NULL, '', false, NULL,
             false, NULL, NULL,
             '', '', '',
@@ -1468,6 +1687,7 @@ export async function upsertTraineeApplicationInPostgres({
                 limits = $11,
                 status = $12,
                 recruiter_comment = $13,
+                recruiter_queue_comment = CASE WHEN $12 = 'queue' THEN recruiter_queue_comment ELSE '' END,
                 venue_id = NULL,
                 group_link = '',
                 candidate_report = false,
@@ -2392,6 +2612,7 @@ export async function cancelShiftInPostgres({ pool, actor, command, now = new Da
                 venue_id = NULL,
                 group_link = '',
                 candidate_report = false,
+                recruiter_queue_comment = '',
                 mentor_report_received = false,
                 mentor_report_at = NULL,
                 mentor_reporter_telegram_user_id = NULL,
@@ -2414,7 +2635,24 @@ export async function cancelShiftInPostgres({ pool, actor, command, now = new Da
         'DELETE FROM invite_group_members WHERE application_id = ANY($1::uuid[])',
         [affectedUuids]
       );
+      await client.query(
+        `UPDATE application_assignment_offers
+            SET status = 'canceled',
+                updated_at = $1
+          WHERE application_id = ANY($2::uuid[])
+            AND status = 'active'`,
+        [nowIso, affectedUuids]
+      );
     }
+
+    await client.query(
+      `UPDATE application_assignment_offers
+          SET status = 'unavailable',
+              updated_at = $1
+        WHERE shift_id = $2
+          AND status = 'active'`,
+      [nowIso, shift.id]
+    );
 
     const inviteGroupChanges = [];
     for (const group of inviteGroupRows) {
@@ -2585,14 +2823,10 @@ export async function updateShiftCapacityInPostgres({ pool, actor, command, now 
       };
     }
 
-    const usageResult = await client.query(
-      `SELECT COUNT(*)::int AS used
-         FROM applications
-        WHERE shift_id = $1
-          AND status = ANY($2::text[])`,
-      [shift.id, SEAT_HOLDING_STATUS_VALUES]
-    );
-    const usedSeats = Number(usageResult.rows[0]?.used || 0);
+    const usedSeats = await countShiftSeatUsageInPostgres(client, {
+      shiftUuid: shift.id,
+      now
+    });
     if (seats < usedSeats) {
       throw new PostgresCommandValidationError(
         `Нельзя уменьшить количество мест до ${seats}: на эту дату уже записано ${usedSeats} стажёров.`
@@ -2766,6 +3000,90 @@ export async function updateCommentInPostgres({ pool, actor, command, now = new 
   });
 }
 
+export async function updateQueueCommentInPostgres({ pool, actor, command, now = new Date() }) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, comment, baseVersion } = normalizeUpdateQueueCommentInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT id, legacy_id, status, recruiter_queue_comment
+         FROM applications
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    if (String(app.status || '') !== 'queue') {
+      throw new PostgresCommandValidationError('Комментарий можно сохранить только для очереди.');
+    }
+
+    const previousComment = String(app.recruiter_queue_comment || '');
+    if (previousComment === comment) {
+      return {
+        applicationLegacyId,
+        applicationId: app.id,
+        previousComment,
+        nextComment: comment,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+
+    await client.query(
+      `UPDATE applications
+          SET recruiter_queue_comment = $1,
+              updated_at = $2,
+              row_version = row_version + 1
+        WHERE id = $3`,
+      [comment, nowIso, app.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: 'application_queue_comment_updated',
+      applicationId: applicationLegacyId,
+      shiftId: null,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'update_queue_comment',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousLength: previousComment.length,
+        nextLength: comment.length
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousComment,
+      nextComment: comment,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
 export async function setApplicationStatusInPostgres({ pool, actor, command, now = new Date() }) {
   requireRecruiter(actor);
   const { applicationLegacyId, nextStatus, baseVersion } = normalizeSetApplicationStatusInput(command);
@@ -2825,11 +3143,15 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
       `UPDATE applications
           SET status = $1,
               experience = $2,
+              recruiter_queue_comment = CASE WHEN $1 = 'queue' THEN recruiter_queue_comment ELSE '' END,
               updated_at = $3,
               row_version = row_version + 1
         WHERE id = $4`,
       [nextStatus, nextExperience, nowIso, app.id]
     );
+    if (nextStatus !== 'queue') {
+      await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
+    }
 
     let shiftLegacyId = null;
     let shiftAutoClosed = false;
@@ -3406,14 +3728,11 @@ export async function assignShiftInPostgres({ pool, actor, command, now = new Da
       throw new PostgresCommandValidationError('Нельзя назначить на закрытую дату.');
     }
 
-    const usageResult = await client.query(
-      `SELECT COUNT(*)::int AS used
-         FROM applications
-        WHERE shift_id = $1
-          AND status = ANY($2::text[])`,
-      [shift.id, SEAT_HOLDING_STATUS_VALUES]
-    );
-    const usedSeats = Number(usageResult.rows[0]?.used || 0);
+    const usedSeats = await countShiftSeatUsageInPostgres(client, {
+      shiftUuid: shift.id,
+      excludedApplicationUuid: app.id,
+      now
+    });
     const seats = Number(shift.seats) || 0;
     if (usedSeats >= seats) {
       throw new PostgresCommandValidationError('На выбранную дату больше нет свободных мест.');
@@ -3428,11 +3747,13 @@ export async function assignShiftInPostgres({ pool, actor, command, now = new Da
       `UPDATE applications
           SET shift_id = $1,
               status = $2,
+              recruiter_queue_comment = '',
               updated_at = $3,
               row_version = row_version + 1
         WHERE id = $4`,
       [shift.id, nextStatus, nowIso, app.id]
     );
+    await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
 
     await insertApplicationEvents(client, [
       {
@@ -3488,6 +3809,624 @@ export async function assignShiftInPostgres({ pool, actor, command, now = new Da
       shiftDate: shiftDateText,
       shiftSeats: seats,
       usedSeatsAfter: usedSeats + 1,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function requestAssignmentConfirmationInPostgres({
+  pool,
+  actor,
+  command,
+  now = new Date()
+}) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, shiftLegacyId, baseVersion } =
+    normalizeRequestAssignmentConfirmationInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT id,
+              legacy_id,
+              status,
+              shift_id,
+              trainee_telegram_user_id,
+              trainee_telegram_chat_id,
+              telegram_username,
+              telegram_code,
+              name,
+              phone,
+              recruiter_queue_comment
+         FROM applications
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    if (String(app.status || '') !== 'queue' || app.shift_id !== null) {
+      throw new PostgresCommandValidationError(
+        'Подтверждение даты можно запросить только у стажёра в очереди.'
+      );
+    }
+    const traineeChatId = String(app.trainee_telegram_chat_id || app.trainee_telegram_user_id || '').trim();
+    if (!traineeChatId) {
+      throw new PostgresCommandValidationError(
+        'У стажёра ещё не подключен Telegram. Сначала он должен открыть мини-приложение.'
+      );
+    }
+
+    const shiftResult = await client.query(
+      `SELECT id, legacy_id, seats, open, canceled, date::text AS date
+         FROM shifts
+        WHERE legacy_id = $1
+        FOR UPDATE`,
+      [shiftLegacyId]
+    );
+    if (shiftResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('shift not found.');
+    }
+    const shift = shiftResult.rows[0];
+    if (shift.canceled || !shift.open) {
+      throw new PostgresCommandValidationError('Эта дата закрыта для записи.');
+    }
+
+    const usedSeats = await countShiftSeatUsageInPostgres(client, {
+      shiftUuid: shift.id,
+      excludedApplicationUuid: app.id,
+      now
+    });
+    const seats = Number(shift.seats) || 0;
+    if (usedSeats >= seats) {
+      throw new PostgresCommandValidationError('На выбранную дату больше нет свободных мест.');
+    }
+
+    const nowIso = now.toISOString();
+    const expiresAt = assignmentOfferExpiresAt(now);
+    const nextVersion = meta.version + 1;
+    const offerId = randomUUID();
+    const token = randomUUID();
+
+    await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
+    await client.query(
+      `INSERT INTO application_assignment_offers (
+          id, application_id, shift_id, token, status, requested_by_telegram_user_id,
+          requested_at, expires_at, message_chat_id, message_id, responded_at, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, NULL, NULL, NULL, $6, $6)`,
+      [
+        offerId,
+        app.id,
+        shift.id,
+        token,
+        actorTelegramUserId(actor) || '',
+        nowIso,
+        expiresAt
+      ]
+    );
+    await client.query(
+      `UPDATE applications
+          SET updated_at = $1,
+              row_version = row_version + 1
+        WHERE id = $2`,
+      [nowIso, app.id]
+    );
+
+    await insertApplicationEvents(client, [{
+      eventType: 'assignment_offer_requested',
+      applicationId: applicationLegacyId,
+      shiftId: shiftLegacyId,
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'request_assignment_confirmation',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        expiresAt,
+        trainee: applicationTelegramTag(app)
+      },
+      createdAt: nowIso
+    }]);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      shiftLegacyId,
+      shiftId: shift.id,
+      previousStatus: 'queue',
+      nextStatus: 'queue',
+      assignmentOffer: {
+        token,
+        shiftId: shiftLegacyId,
+        requestedAt: nowIso,
+        expiresAt,
+        requestedByTelegramUserId: actorTelegramUserId(actor) || '',
+        messageChatId: '',
+        messageId: null
+      },
+      shift: {
+        id: shiftLegacyId,
+        date: shiftDateAsString(shift.date),
+        seats,
+        open: Boolean(shift.open),
+        canceled: Boolean(shift.canceled)
+      },
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function recordAssignmentOfferMessageInPostgres({
+  pool,
+  actor,
+  command,
+  now = new Date()
+}) {
+  requireRecruiter(actor);
+  const { applicationLegacyId, token, messageChatId, messageId } =
+    normalizeRecordAssignmentOfferMessageInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    const offerResult = await client.query(
+      `SELECT application_assignment_offers.id,
+              application_assignment_offers.message_chat_id,
+              application_assignment_offers.message_id,
+              applications.id AS application_id,
+              shifts.legacy_id AS shift_legacy_id
+         FROM application_assignment_offers
+         JOIN applications ON applications.id = application_assignment_offers.application_id
+         JOIN shifts ON shifts.id = application_assignment_offers.shift_id
+        WHERE applications.legacy_id = $1
+          AND application_assignment_offers.token = $2
+          AND application_assignment_offers.status = 'active'
+        FOR UPDATE OF application_assignment_offers`,
+      [applicationLegacyId, token]
+    );
+    if (offerResult.rowCount !== 1) {
+      return {
+        applicationLegacyId,
+        token,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+    const offer = offerResult.rows[0];
+    const previousChatId = String(offer.message_chat_id || '');
+    const previousMessageId = offer.message_id === null || offer.message_id === undefined
+      ? null
+      : Number(offer.message_id);
+    if (previousChatId === messageChatId && previousMessageId === messageId) {
+      return {
+        applicationLegacyId,
+        token,
+        messageChatId,
+        messageId,
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    await client.query(
+      `UPDATE application_assignment_offers
+          SET message_chat_id = $1,
+              message_id = $2,
+              updated_at = $3
+        WHERE id = $4`,
+      [messageChatId, messageId, nowIso, offer.id]
+    );
+    await insertApplicationEvents(client, [{
+      eventType: 'assignment_offer_message_recorded',
+      applicationId: applicationLegacyId,
+      shiftId: Number(offer.shift_legacy_id),
+      actorType: 'recruiter',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'record_assignment_offer_message',
+        previousVersion: meta.version,
+        nextVersion,
+        messageChatId,
+        messageId
+      },
+      createdAt: nowIso
+    }]);
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      token,
+      messageChatId,
+      messageId,
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function respondAssignmentOfferInPostgres({
+  pool,
+  actor,
+  command,
+  now = new Date()
+}) {
+  requireTrainee(actor);
+  const { applicationLegacyId, token, decision } = normalizeRespondAssignmentOfferInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    const offerResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.telegram_code,
+              applications.name,
+              applications.phone,
+              applications.recruiter_queue_comment,
+              applications.venue_id,
+              applications.group_link,
+              application_assignment_offers.id AS offer_id,
+              application_assignment_offers.token,
+              application_assignment_offers.requested_at,
+              application_assignment_offers.expires_at,
+              application_assignment_offers.requested_by_telegram_user_id,
+              application_assignment_offers.message_chat_id,
+              application_assignment_offers.message_id,
+              shifts.id AS offer_shift_id,
+              shifts.legacy_id AS offer_shift_legacy_id,
+              shifts.date::text AS offer_shift_date,
+              shifts.seats AS offer_shift_seats,
+              shifts.open AS offer_shift_open,
+              shifts.canceled AS offer_shift_canceled
+         FROM application_assignment_offers
+         JOIN applications ON applications.id = application_assignment_offers.application_id
+         JOIN shifts ON shifts.id = application_assignment_offers.shift_id
+        WHERE applications.legacy_id = $1
+          AND application_assignment_offers.token = $2
+          AND application_assignment_offers.status = 'active'
+        FOR UPDATE OF applications, application_assignment_offers, shifts`,
+      [applicationLegacyId, token]
+    );
+    if (offerResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError(
+        'Этот запрос уже неактуален. Откройте последнее сообщение от рекрута.'
+      );
+    }
+    const row = offerResult.rows[0];
+    if (!applicationRowBelongsToTrainee(row, actor)) {
+      throw new PostgresCommandAuthorizationError('Эта заявка принадлежит другому Telegram-аккаунту.');
+    }
+    if (String(row.status || '') !== 'queue') {
+      throw new PostgresCommandValidationError(
+        'Этот запрос уже неактуален. Откройте последнее сообщение от рекрута.'
+      );
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const previousOffer = assignmentOfferSnapshotFromRow(row);
+    const shift = shiftSnapshotFromRow(row, 'offer_shift_');
+    const expired = new Date(row.expires_at).getTime() <= now.getTime();
+    let resultStatus = '';
+
+    if (expired) {
+      resultStatus = 'expired';
+      await client.query(
+        `UPDATE applications
+            SET status = 'queue_expired',
+                recruiter_queue_comment = '',
+                updated_at = $1,
+                row_version = row_version + 1
+          WHERE id = $2`,
+        [nowIso, row.id]
+      );
+      await client.query(
+        `UPDATE application_assignment_offers
+            SET status = 'expired',
+                responded_at = $1,
+                updated_at = $1
+          WHERE id = $2`,
+        [nowIso, row.offer_id]
+      );
+    } else if (decision === 'decline') {
+      resultStatus = 'declined';
+      await client.query(
+        `UPDATE application_assignment_offers
+            SET status = 'declined',
+                responded_at = $1,
+                updated_at = $1
+          WHERE id = $2`,
+        [nowIso, row.offer_id]
+      );
+      await client.query(
+        `UPDATE applications
+            SET updated_at = $1,
+                row_version = row_version + 1
+          WHERE id = $2`,
+        [nowIso, row.id]
+      );
+    } else if (row.offer_shift_canceled || !row.offer_shift_open) {
+      resultStatus = 'unavailable';
+      await client.query(
+        `UPDATE application_assignment_offers
+            SET status = 'unavailable',
+                responded_at = $1,
+                updated_at = $1
+          WHERE id = $2`,
+        [nowIso, row.offer_id]
+      );
+      await client.query(
+        `UPDATE applications
+            SET updated_at = $1,
+                row_version = row_version + 1
+          WHERE id = $2`,
+        [nowIso, row.id]
+      );
+    } else {
+      const usedSeats = await countShiftSeatUsageInPostgres(client, {
+        shiftUuid: row.offer_shift_id,
+        excludedApplicationUuid: row.id,
+        now
+      });
+      const seats = Number(row.offer_shift_seats) || 0;
+      if (usedSeats >= seats) {
+        resultStatus = 'unavailable';
+        await client.query(
+          `UPDATE application_assignment_offers
+              SET status = 'unavailable',
+                  responded_at = $1,
+                  updated_at = $1
+            WHERE id = $2`,
+          [nowIso, row.offer_id]
+        );
+        await client.query(
+          `UPDATE applications
+              SET updated_at = $1,
+                  row_version = row_version + 1
+            WHERE id = $2`,
+          [nowIso, row.id]
+        );
+      } else {
+        resultStatus = 'accepted';
+        await client.query(
+          `UPDATE applications
+              SET shift_id = $1,
+                  status = 'confirmed',
+                  recruiter_queue_comment = '',
+                  updated_at = $2,
+                  row_version = row_version + 1
+            WHERE id = $3`,
+          [row.offer_shift_id, nowIso, row.id]
+        );
+        await client.query(
+          `UPDATE application_assignment_offers
+              SET status = 'accepted',
+                  responded_at = $1,
+                  updated_at = $1
+            WHERE id = $2`,
+          [nowIso, row.offer_id]
+        );
+      }
+    }
+
+    const eventType = {
+      accepted: 'assignment_offer_accepted',
+      declined: 'assignment_offer_declined',
+      expired: 'assignment_offer_expired',
+      unavailable: 'assignment_offer_unavailable'
+    }[resultStatus];
+    const events = [{
+      eventType,
+      applicationId: applicationLegacyId,
+      shiftId: Number(row.offer_shift_legacy_id),
+      actorType: 'trainee',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'respond_assignment_offer',
+        previousVersion: meta.version,
+        nextVersion,
+        decision,
+        result: resultStatus,
+        previousStatus: 'queue',
+        nextStatus: resultStatus === 'accepted'
+          ? 'confirmed'
+          : resultStatus === 'expired'
+            ? 'queue_expired'
+            : 'queue'
+      },
+      createdAt: nowIso
+    }];
+    if (resultStatus === 'accepted') {
+      events.push({
+        eventType: 'application_assigned_to_shift',
+        applicationId: applicationLegacyId,
+        shiftId: Number(row.offer_shift_legacy_id),
+        actorType: 'trainee',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'respond_assignment_offer',
+          previousVersion: meta.version,
+          nextVersion,
+          previousShiftId: null,
+          nextShiftId: Number(row.offer_shift_legacy_id),
+          date: shiftDateAsString(row.offer_shift_date)
+        },
+        createdAt: nowIso
+      });
+    }
+    await insertApplicationEvents(client, events);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: row.id,
+      previousStatus: 'queue',
+      nextStatus: resultStatus === 'accepted'
+        ? 'confirmed'
+        : resultStatus === 'expired'
+          ? 'queue_expired'
+          : 'queue',
+      status: resultStatus,
+      decision,
+      shift,
+      previousOffer,
+      previousApplication: applicationSnapshotFromRow(row, {
+        assignmentOffer: previousOffer
+      }),
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function expireAssignmentOffersInPostgres({
+  pool,
+  actor = { role: 'system' },
+  now = new Date()
+}) {
+  if (!['system', 'recruiter'].includes(String(actor?.role || ''))) {
+    throw new PostgresCommandAuthorizationError('Недостаточно прав для истечения запросов даты.');
+  }
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    const nowIso = now.toISOString();
+    const expiredResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.telegram_code,
+              applications.name,
+              applications.phone,
+              applications.recruiter_queue_comment,
+              applications.venue_id,
+              applications.group_link,
+              application_assignment_offers.id AS offer_id,
+              application_assignment_offers.token,
+              application_assignment_offers.requested_at,
+              application_assignment_offers.expires_at,
+              application_assignment_offers.requested_by_telegram_user_id,
+              application_assignment_offers.message_chat_id,
+              application_assignment_offers.message_id,
+              shifts.id AS offer_shift_id,
+              shifts.legacy_id AS offer_shift_legacy_id,
+              shifts.date::text AS offer_shift_date,
+              shifts.seats AS offer_shift_seats,
+              shifts.open AS offer_shift_open,
+              shifts.canceled AS offer_shift_canceled
+         FROM application_assignment_offers
+         JOIN applications ON applications.id = application_assignment_offers.application_id
+         JOIN shifts ON shifts.id = application_assignment_offers.shift_id
+        WHERE application_assignment_offers.status = 'active'
+          AND application_assignment_offers.expires_at <= $1::timestamptz
+          AND applications.status = 'queue'
+        ORDER BY application_assignment_offers.expires_at, applications.legacy_id
+        FOR UPDATE OF applications, application_assignment_offers`,
+      [nowIso]
+    );
+    const rows = expiredResult.rows;
+    if (!rows.length) {
+      return {
+        expired: [],
+        version: meta.version,
+        previousVersion: meta.version,
+        updatedAt: shiftUpdatedAtAsString(meta.updatedAt),
+        changed: false
+      };
+    }
+
+    const nextVersion = meta.version + 1;
+    const applicationUuids = rows.map(row => row.id);
+    const offerUuids = rows.map(row => row.offer_id);
+
+    await client.query(
+      `UPDATE applications
+          SET status = 'queue_expired',
+              recruiter_queue_comment = '',
+              updated_at = $1,
+              row_version = row_version + 1
+        WHERE id = ANY($2::uuid[])`,
+      [nowIso, applicationUuids]
+    );
+    await client.query(
+      `UPDATE application_assignment_offers
+          SET status = 'expired',
+              responded_at = $1,
+              updated_at = $1
+        WHERE id = ANY($2::uuid[])`,
+      [nowIso, offerUuids]
+    );
+
+    await insertApplicationEvents(client, rows.map(row => ({
+      eventType: 'assignment_offer_expired',
+      applicationId: Number(row.legacy_id),
+      shiftId: Number(row.offer_shift_legacy_id),
+      actorType: 'system',
+      actorTelegramUserId: null,
+      payload: {
+        action: 'expire_assignment_offers',
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus: 'queue',
+        nextStatus: 'queue_expired',
+        expiresAt: shiftUpdatedAtAsString(row.expires_at)
+      },
+      createdAt: nowIso
+    })));
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      expired: rows.map(row => ({
+        application: applicationSnapshotFromRow(row, {
+          assignmentOffer: assignmentOfferSnapshotFromRow(row)
+        }),
+        shift: shiftSnapshotFromRow(row, 'offer_shift_'),
+        offer: assignmentOfferSnapshotFromRow(row)
+      })),
       version: nextVersion,
       previousVersion: meta.version,
       updatedAt: nowIso,
@@ -3602,6 +4541,7 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
               invite_group_id = $1,
               venue_id = $2,
               group_link = $3,
+              recruiter_queue_comment = '',
               updated_at = $4,
               row_version = row_version + 1
         WHERE id = ANY($5::uuid[])`,
@@ -3777,6 +4717,7 @@ export async function cancelInternshipInPostgres({ pool, actor, command, now = n
               venue_id = NULL,
               group_link = '',
               candidate_report = false,
+              recruiter_queue_comment = '',
               mentor_report_received = false,
               mentor_report_at = NULL,
               mentor_reporter_telegram_user_id = NULL,
@@ -3794,6 +4735,7 @@ export async function cancelInternshipInPostgres({ pool, actor, command, now = n
         WHERE id = $2`,
       [nowIso, app.id]
     );
+    await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
 
     let inviteGroupChanged = false;
     let inviteGroupRemoved = false;
@@ -3895,6 +4837,210 @@ export async function cancelInternshipInPostgres({ pool, actor, command, now = n
         pending: notificationRows.filter(row => row.status === 'pending').length,
         skipped: notificationRows.filter(row => row.status === 'skipped').length,
         inserted: notificationResult.inserted
+      },
+      version: nextVersion,
+      previousVersion: meta.version,
+      updatedAt: nowIso,
+      changed: true
+    };
+  });
+}
+
+export async function withdrawConfirmedAssignmentInPostgres({
+  pool,
+  actor,
+  command,
+  now = new Date()
+}) {
+  requireTrainee(actor);
+  const { applicationLegacyId, baseVersion } = normalizeReturnToQueueInput(command);
+
+  return runInPostgresTransaction(pool, async client => {
+    const meta = await lockBookingStateMeta(client);
+    if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
+
+    const appResult = await client.query(
+      `SELECT applications.id,
+              applications.legacy_id,
+              applications.status,
+              applications.shift_id,
+              shifts.legacy_id AS shift_legacy_id,
+              shifts.date::text AS shift_date,
+              shifts.seats AS shift_seats,
+              shifts.open AS shift_open,
+              shifts.canceled AS shift_canceled,
+              applications.invite_group_id,
+              invite_groups.legacy_id AS invite_group_legacy_id,
+              applications.venue_id,
+              applications.group_link,
+              applications.trainee_telegram_user_id,
+              applications.trainee_telegram_chat_id,
+              applications.telegram_username,
+              applications.telegram_code,
+              applications.name,
+              applications.phone,
+              applications.recruiter_queue_comment
+         FROM applications
+         LEFT JOIN shifts ON shifts.id = applications.shift_id
+         LEFT JOIN invite_groups ON invite_groups.id = applications.invite_group_id
+        WHERE applications.legacy_id = $1
+        FOR UPDATE OF applications`,
+      [applicationLegacyId]
+    );
+    if (appResult.rowCount !== 1) {
+      throw new PostgresCommandValidationError('application not found.');
+    }
+    const app = appResult.rows[0];
+    if (!applicationRowBelongsToTrainee(app, actor)) {
+      throw new PostgresCommandAuthorizationError('Нельзя изменить чужую заявку.');
+    }
+    const previousStatus = String(app.status || '');
+    if (!['confirmed', 'invited'].includes(previousStatus) || !app.shift_id) {
+      throw new PostgresCommandValidationError(
+        'Отказаться от выхода можно только после подтверждения даты или отправки рабочей группы.'
+      );
+    }
+
+    let inviteGroup = null;
+    let previousMemberLegacyIds = [];
+    let remainingMemberLegacyIds = [];
+    if (app.invite_group_id) {
+      const groupResult = await client.query(
+        `SELECT id, legacy_id, shift_id, venue_id, link
+           FROM invite_groups
+          WHERE id = $1
+          FOR UPDATE`,
+        [app.invite_group_id]
+      );
+      inviteGroup = groupResult.rows[0] || null;
+      if (inviteGroup) {
+        const membersResult = await client.query(
+          `SELECT applications.legacy_id
+             FROM invite_group_members
+             JOIN applications ON applications.id = invite_group_members.application_id
+            WHERE invite_group_members.invite_group_id = $1
+            ORDER BY applications.legacy_id`,
+          [inviteGroup.id]
+        );
+        previousMemberLegacyIds = membersResult.rows
+          .map(row => Number(row.legacy_id))
+          .filter(value => Number.isSafeInteger(value) && value > 0);
+        remainingMemberLegacyIds = previousMemberLegacyIds
+          .filter(legacyId => legacyId !== applicationLegacyId);
+      }
+    }
+
+    const nowIso = now.toISOString();
+    const nextVersion = meta.version + 1;
+    const previousShiftLegacyId = Number(app.shift_legacy_id);
+    const previousInviteGroupLegacyId = app.invite_group_legacy_id
+      ? Number(app.invite_group_legacy_id)
+      : null;
+    const previousApplication = applicationSnapshotFromRow(app);
+    const previousShift = shiftSnapshotFromRow(app, 'shift_');
+
+    await client.query(
+      `UPDATE applications
+          SET shift_id = NULL,
+              invite_group_id = NULL,
+              status = 'queue',
+              venue_id = NULL,
+              group_link = '',
+              candidate_report = false,
+              recruiter_queue_comment = '',
+              updated_at = $1,
+              row_version = row_version + 1
+        WHERE id = $2`,
+      [nowIso, app.id]
+    );
+    await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
+
+    let inviteGroupChanged = false;
+    let inviteGroupRemoved = false;
+    if (inviteGroup && previousMemberLegacyIds.includes(applicationLegacyId)) {
+      await client.query(
+        `DELETE FROM invite_group_members
+          WHERE invite_group_id = $1
+            AND application_id = $2`,
+        [inviteGroup.id, app.id]
+      );
+      inviteGroupChanged = true;
+      if (remainingMemberLegacyIds.length === 0) {
+        await client.query('DELETE FROM invite_groups WHERE id = $1', [inviteGroup.id]);
+        inviteGroupRemoved = true;
+      } else {
+        await client.query(
+          `UPDATE invite_groups
+              SET updated_at = $1,
+                  row_version = row_version + 1
+            WHERE id = $2`,
+          [nowIso, inviteGroup.id]
+        );
+      }
+    }
+
+    const events = [];
+    if (inviteGroupChanged) {
+      events.push({
+        eventType: inviteGroupRemoved ? 'invite_group_removed' : 'invite_group_updated',
+        applicationId: null,
+        shiftId: previousShiftLegacyId,
+        actorType: 'trainee',
+        actorTelegramUserId: actorTelegramUserId(actor),
+        payload: {
+          action: 'withdraw_confirmed_assignment',
+          baseVersion,
+          previousVersion: meta.version,
+          nextVersion,
+          inviteGroupId: previousInviteGroupLegacyId,
+          venueId: app.venue_id || inviteGroup.venue_id || '',
+          removedMemberIds: [applicationLegacyId],
+          memberIds: remainingMemberLegacyIds
+        },
+        createdAt: nowIso
+      });
+    }
+    events.push({
+      eventType: 'assignment_withdrawn_by_trainee',
+      applicationId: applicationLegacyId,
+      shiftId: previousShiftLegacyId,
+      actorType: 'trainee',
+      actorTelegramUserId: actorTelegramUserId(actor),
+      payload: {
+        action: 'withdraw_confirmed_assignment',
+        baseVersion,
+        previousVersion: meta.version,
+        nextVersion,
+        previousStatus,
+        nextStatus: 'queue',
+        previousShiftId: previousShiftLegacyId,
+        nextShiftId: null,
+        previousInviteGroupId: previousInviteGroupLegacyId,
+        previousVenueId: app.venue_id || null,
+        previousGroupLink: app.group_link || ''
+      },
+      createdAt: nowIso
+    });
+    await insertApplicationEvents(client, events);
+
+    await client.query(
+      'UPDATE booking_state_meta SET version = $1, updated_at = $2 WHERE singleton = true',
+      [nextVersion, nowIso]
+    );
+
+    return {
+      applicationLegacyId,
+      applicationId: app.id,
+      previousStatus,
+      nextStatus: 'queue',
+      previousShiftId: previousShiftLegacyId,
+      previousInviteGroupId: previousInviteGroupLegacyId,
+      inviteGroupChanged,
+      inviteGroupRemoved,
+      remainingMemberLegacyIds,
+      assignmentWithdrawalTarget: {
+        application: previousApplication,
+        shift: previousShift
       },
       version: nextVersion,
       previousVersion: meta.version,
@@ -4007,6 +5153,7 @@ export async function returnToQueueInPostgres({ pool, actor, command, now = new 
               venue_id = NULL,
               group_link = '',
               candidate_report = false,
+              recruiter_queue_comment = '',
               mentor_report_received = false,
               mentor_report_at = NULL,
               mentor_reporter_telegram_user_id = NULL,
@@ -4024,6 +5171,7 @@ export async function returnToQueueInPostgres({ pool, actor, command, now = new 
         WHERE id = $2`,
       [nowIso, app.id]
     );
+    await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
 
     let inviteGroupChanged = false;
     let inviteGroupRemoved = false;

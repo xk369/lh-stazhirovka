@@ -100,7 +100,8 @@ export async function sendTelegramMessage({
   chatId,
   text,
   parseMode = '',
-  disableWebPagePreview = false
+  disableWebPagePreview = false,
+  replyMarkup = null
 }) {
   const body = {
     chat_id: chatId,
@@ -109,8 +110,37 @@ export async function sendTelegramMessage({
 
   if (parseMode) body.parse_mode = parseMode;
   if (disableWebPagePreview) body.disable_web_page_preview = true;
+  if (replyMarkup) body.reply_markup = replyMarkup;
 
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  return readTelegramResult(response);
+}
+
+export async function editTelegramMessageText({
+  botToken,
+  chatId,
+  messageId,
+  text,
+  parseMode = '',
+  disableWebPagePreview = false,
+  replyMarkup = null
+}) {
+  const body = {
+    chat_id: chatId,
+    message_id: messageId,
+    text
+  };
+
+  if (parseMode) body.parse_mode = parseMode;
+  if (disableWebPagePreview) body.disable_web_page_preview = true;
+  if (replyMarkup) body.reply_markup = replyMarkup;
+
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/editMessageText`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)

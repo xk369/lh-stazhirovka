@@ -2,7 +2,7 @@
 
 Этот документ описывает текущую модель данных проекта `loft_hall_internship_unified`: какие поля есть, за что они отвечают, какие значения допустимы и как сущности связаны между собой.
 
-Актуальный источник истины для записи на стажировку - JSON-файл `data/db.json` на сервере. Сервер читает и нормализует его в `src/server.js`. Фронт может хранить локальные черновики в `localStorage`, но они не считаются базой.
+Актуальный production-источник истины для записи на стажировку - JSON-файл `data/db.json` на сервере. Целевая схема миграции описана в `db/migrations/001_initial.sql`: она раскладывает тот же бизнес-state в PostgreSQL-таблицы, добавляет аудит и outbox, но production пока остается на JSON. Сервер читает и нормализует state в `src/server.js`. Фронт может хранить локальные черновики в `localStorage`, но они не считаются базой.
 
 ## 1. Корень booking-state
 
@@ -71,7 +71,7 @@
 - `failed`;
 - `noshow`.
 
-`queue` место не занимает, потому что у заявки нет даты.
+`queue` место не занимает, потому что у заявки нет даты. Исключение в новой цепочке - активный `assignmentOffer`: пока рекрут ждет ответ стажера на предложенную дату, место считается временно занятым на 1 час.
 
 ## 3. `applications`: заявка стажера
 
@@ -89,6 +89,8 @@
   "limits": "Удобно после 17:00",
   "status": "invited",
   "comment": "",
+  "recruiterQueueComment": "",
+  "assignmentOffer": null,
   "inviteGroupId": 1784910878008,
   "venueId": "loft5_small",
   "groupLink": "https://t.me/+...",
@@ -145,15 +147,18 @@
 | --- | --- | --- |
 | `shiftId` | positive integer или `null` | Связь с датой стажировки: `applications.shiftId -> shifts.id`. Если `null`, заявка в предварительной записи. |
 | `status` | enum | Текущий этап заявки. Основной драйвер интерфейса и действий. |
-| `comment` | string, max 1200 | Внутренний комментарий рекрута. Ранее мог называться `recruiterComment`. |
+| `comment` | string, max 1200 | Внутренний комментарий рекрута по заявке после назначения/стажировки. Ранее мог называться `recruiterComment`. |
+| `recruiterQueueComment` | string, max 600 | Внутренний комментарий рекрута именно по очереди. Видит только рекрут; стажеру не отдается. Очищается, когда кандидат выходит из очереди или запрос истекает. |
+| `assignmentOffer` | object или `null` | Активный запрос подтверждения даты стажером. В JSON живет внутри заявки, в PostgreSQL вынесен в `application_assignment_offers`. |
 
 ### 3.4 Статусы заявки
 
 | Статус | Отображение | Кто ставит | Что означает |
 | --- | --- | --- | --- |
 | `queue` | Предварительная запись | стажер или рекрут | Стажер в очереди без даты. `shiftId = null`, место не занимает. |
-| `pending` | Заявка отправлена | стажер или рекрут при назначении из очереди | Есть дата, рекрут еще не подтвердил выход. |
-| `confirmed` | Выход подтвержден | рекрут | Рекрут подтвердил стажировку, но рабочая группа еще не отправлена. |
+| `queue_expired` | Запрос истек | система | Рекрут предложил дату, но стажер не ответил за 1 час. Заявка выходит из активной очереди, место освобождается, стажер может встать в очередь заново без `repeat`. |
+| `pending` | Заявка отправлена | legacy/direct assignment path | Есть дата, но выход еще не подтвержден. Новый основной путь старается не создавать `pending` при регистрации: стажер идет в `queue`, а после согласия на дату сразу становится `confirmed`. |
+| `confirmed` | Выход подтвержден | стажер через Telegram-кнопку или рекрут | Дата закреплена, но рабочая группа еще не отправлена. |
 | `invited` | Приглашение отправлено | рекрут через отправку группы | Стажеру отправлены площадка, ссылка и инструкции. |
 | `feedback` | Ждем отчет | рекрут нажал `Вышел` | Стажер вышел, наставник должен отправить отчет. |
 | `passed` | Стажировка пройдена | отчет наставника | Финал: наставник решил, что стажировка пройдена. |
@@ -172,6 +177,18 @@ Legacy-маппинг при чтении старых данных:
 - `passed -> feedback`, старый отчет наставника очищается;
 - `failed -> feedback`, старый отчет наставника очищается;
 - `noshow -> invited`.
+
+`assignmentOffer` в JSON:
+
+| Поле | Тип | За что отвечает |
+| --- | --- | --- |
+| `token` | string | Одноразовый токен ответа на запрос даты. Используется endpoint `/api/assignment-offer/respond`. |
+| `shiftId` | positive integer | Дата, которую рекрут предложил кандидату. |
+| `requestedAt` | ISO datetime | Когда рекрут создал запрос. |
+| `expiresAt` | ISO datetime | Когда запрос перестает быть активным. Сейчас TTL - 1 час. |
+| `requestedByTelegramUserId` | numeric string или `""` | Telegram user ID рекрутера, который отправил запрос. |
+| `messageChatId` | numeric string или `""` | Chat ID сообщения с кнопками, если Telegram вернул данные доставки. |
+| `messageId` | positive integer или `null` | Telegram `message_id`, чтобы после ответа/истечения убрать кнопки через edit message. |
 
 ### 3.5 Связь с рабочей группой и площадкой
 
@@ -413,13 +430,18 @@ Booking-state при этом не закрывает заявку и не ме�
 
 | `action` | Кто может | Что меняет |
 | --- | --- | --- |
-| `upsert_trainee_application` | стажер | Создает/обновляет свою заявку в статусе `pending` или `queue`. |
+| `upsert_trainee_application` | стажер | Создает/обновляет свою кандидатскую заявку только в статусе `queue`. |
 | `cancel_application` | стажер/рекрут | Удаляет заявку. Стажер может удалить только свою и только на ранних этапах. |
 | `set_application_status` | рекрут | Меняет статус заявки. Проверяет необходимые условия этапа. |
 | `step_back_application` | рекрут | Возвращает заявку на один этап назад. |
 | `mark_experienced` | рекрут | Ставит `experience = experienced` только для `passed`. |
 | `return_to_queue` | рекрут | Возвращает заявку в `queue` и очищает дату. |
 | `assign_shift` | рекрут | Назначает заявку из очереди на дату и ставит `pending`. |
+| `update_queue_comment` | рекрут | Меняет внутренний комментарий по кандидату в очереди. |
+| `request_assignment_confirmation` | рекрут | Ручное подтверждение рекрутера: выбирает кандидата из `queue`, выбирает дату и отправляет стажеру запрос с кнопками. Заявка остается `queue`, активный оффер временно держит место. |
+| `record_assignment_offer_message` | system/internal | Сохраняет `messageChatId/messageId` после отправки Telegram-запроса, чтобы потом закрыть кнопки. |
+| `expire_assignment_offers` | system/internal | Переводит просроченные активные офферы в `expired`, а заявки - в `queue_expired`. |
+| `withdraw_confirmed_assignment` | стажер | До выхода возвращает свою подтвержденную/приглашенную заявку в `queue`; рекрут получает служебное уведомление. |
 | `cancel_shift` | рекрут | Отменяет дату и возвращает незавершенные заявки в очередь. |
 | `cancel_internship` | рекрут | Отменяет стажировку конкретного стажера до выхода. |
 | `toggle_shift` | рекрут | Открывает/закрывает дату. |
@@ -437,11 +459,113 @@ Booking-state при этом не закрывает заявку и не ме�
 | `GET /api/report/trainees` | Список стажеров для наставника. |
 | `POST /api/report` | Отправка отчета стажера или наставника в нужную Telegram-группу. |
 | `POST /api/notify` | Личные уведомления стажерам по действиям рекрута. |
+| `POST /api/assignment-offer/respond` | Ответ стажера на предложенную дату: `Да` переводит заявку в `confirmed`, `Нет` оставляет в `queue`, просрочка переводит в `queue_expired`. |
 | `POST /api/telegram/link` | Привязка Telegram к заявке. |
 | `POST /api/auth/telegram` | Проверка Telegram `initData` и роли. |
 | `GET /api/trainees/export.csv` | CSV-экспорт реестра стажеров. |
 
-## 11. Реестр и CSV-экспорт
+## 11. Целевая PostgreSQL-схема миграции
+
+PostgreSQL-схема не создает отдельную hiring-базу. Центральный слой - `applications`: сначала это кандидат в очереди, затем та же запись получает дату, группу, отчеты и итог стажировки. Будущее мини-приложение для собеседований должно расширять этот кандидатский слой, а не дублировать людей в новой таблице с отдельной жизнью.
+
+### Основные таблицы
+
+| Таблица | Роль |
+| --- | --- |
+| `booking_state_meta` | Глобальная версия state и `updated_at` для optimistic locking. |
+| `data_imports` | Журнал импортов JSON-снапшотов в пустую PostgreSQL-БД. |
+| `telegram_users` | Нормализованные Telegram-пользователи для будущего общего слоя идентичности. |
+| `recruiters` | Рекрутеры и их Telegram ID. |
+| `shifts` | Даты стажировок. |
+| `applications` | Главная сущность кандидата/стажера. |
+| `application_assignment_offers` | Ручные предложения даты от рекрутера с TTL и Telegram message refs. |
+| `invite_groups` | Отправленные рабочие группы. |
+| `invite_group_members` | Связь many-to-many между рабочей группой и заявками. |
+| `mentor_reports` | Сохраненный отчет наставника как отдельная сущность. |
+| `mentor_report_topics` | Темы к повторению из отчета наставника. |
+| `notifications` | Durable outbox для Telegram-сообщений. |
+| `application_events` | PII-safe аудит действий по заявке/дате. |
+
+### `applications` в PostgreSQL
+
+| Колонка | Тип/ограничение | За что отвечает |
+| --- | --- | --- |
+| `id` | `uuid primary key` | Внутренний устойчивый ID строки. |
+| `legacy_id` | `bigint unique` | Старый JSON `application.id`, сохраняется для parity, UI и миграционного чтения. |
+| `shift_id` | `uuid references shifts(id) on delete set null` | Дата стажировки после назначения. У кандидата в `queue` обычно `NULL`. |
+| `invite_group_id` | `uuid references invite_groups(id) on delete set null` | Рабочая группа после отправки приглашения. |
+| `trainee_telegram_user_id` | `text` | Владелец заявки для авторизации стажера. |
+| `trainee_telegram_chat_id` | `text` | Куда отправлять личные Telegram-сообщения. |
+| `telegram_username` | `text` | Username без `@`, для рекрутерского интерфейса и поиска. |
+| `telegram_code` | `text` | Legacy fallback-код связывания. |
+| `name` | `text not null` | ФИО кандидата/стажера. |
+| `phone` | `text not null default ''` | Телефон кандидата. |
+| `training` | `passed/not_passed` | Прошел ли банкетное обучение. |
+| `training_date` | `date` | Дата обучения, если `training='passed'`. |
+| `attempt` | `first/repeat` | Первая или повторная стажировка. После `failed/noshow` новая заявка создается как `repeat`; после `queue_expired` - не обязательно `repeat`. |
+| `limits` | `text not null default ''` | Ограничения/удобное время кандидата. |
+| `status` | enum: `pending`, `queue`, `queue_expired`, `confirmed`, `invited`, `feedback`, `passed`, `failed`, `noshow` | Этап единой цепочки от кандидата до результата стажировки. |
+| `recruiter_comment` | `text not null default ''` | Внутренний комментарий по уже назначенной/исторической заявке. |
+| `recruiter_queue_comment` | `text not null default ''` | Внутренний комментарий рекрутера по кандидату в очереди; стажеру не отдается. |
+| `venue_id` | `text` | Площадка после отправки рабочей группы. |
+| `group_link` | `text not null default ''` | Ссылка на рабочую группу, продублированная в заявке. |
+| `candidate_report` | `boolean not null default false` | Флаг отчета стажера. |
+| `experience` | `NULL` или `experienced` | Рекрутерская отметка опытного стажера после `passed`. |
+| `mentor_report_received` | `boolean not null default false` | Был ли применен отчет наставника. |
+| `mentor_report_at` | `timestamptz` | Когда отчет наставника применен к заявке. |
+| `mentor_reporter_telegram_user_id` | `text` | Telegram ID наставника, отправившего отчет. |
+| `mentor_decision` | `text not null default ''` | Итог наставника. |
+| `mentor_report_venue_id` | `text not null default ''` | Техническая площадка отчета наставника. |
+| `mentor_report_venue` | `text not null default ''` | Человеческое название площадки в отчете. |
+| `mentor_report_loft` | `text not null default ''` | Лофт из отчета наставника. |
+| `mentor_report_hall` | `text not null default ''` | Зал из отчета наставника. |
+| `mentor_comment_for_trainee` | `text not null default ''` | Внутренний комментарий наставника, сохраненный при отчете. |
+| `mentor_comment_sent_at` | `timestamptz` | Когда отправили личный итог стажеру. |
+| `mentor_comment_delivery_status` | `sent/skipped/failed` или `NULL` | Доставка личного итога стажеру. |
+| `mentor_comment_delivery_error` | `text not null default ''` | Причина ошибки/пропуска доставки. |
+| `row_version` | `bigint not null default 1` | Версия строки для будущих точечных конфликтов. |
+| `created_at`, `updated_at` | `timestamptz` | Служебные timestamps. |
+
+Индексы: `status`, `shift_id`, `trainee_telegram_user_id`, `telegram_username`, `lower(name)`.
+
+### `application_assignment_offers`
+
+Эта таблица и есть место, где рекрут подтверждает руками. Рекрут в карточке очереди выбирает дату и нажимает запрос подтверждения. Система создает активный offer, отправляет стажеру Telegram-сообщение с кнопками и держит место до ответа или истечения TTL.
+
+| Колонка | Тип/ограничение | За что отвечает |
+| --- | --- | --- |
+| `id` | `uuid primary key` | Внутренний ID оффера. |
+| `application_id` | `uuid not null references applications(id) on delete cascade` | Кандидат, которому предложили дату. |
+| `shift_id` | `uuid not null references shifts(id) on delete restrict` | Предложенная дата. |
+| `token` | `text not null unique` | Одноразовый токен для ответа из Telegram WebApp. |
+| `status` | `active/accepted/declined/expired/unavailable/canceled` | Жизнь предложения: активно, принято, отклонено, истекло, стало недоступно из-за даты/мест, отменено при возврате/переносе. |
+| `requested_by_telegram_user_id` | `text not null default ''` | Рекрутер, который руками отправил запрос. |
+| `requested_at` | `timestamptz not null` | Когда запрос создан. |
+| `expires_at` | `timestamptz not null` | Когда запрос должен истечь. Сейчас это `requested_at + 1 hour`. |
+| `message_chat_id` | `text` | Chat ID исходного сообщения с кнопками. |
+| `message_id` | `bigint` | Telegram message id исходного сообщения с кнопками. |
+| `responded_at` | `timestamptz` | Когда стажер ответил или когда система обработала истечение. |
+| `created_at`, `updated_at` | `timestamptz` | Служебные timestamps. |
+
+Ограничения и индексы:
+
+- `application_assignment_offers_one_active_per_application_idx` разрешает только один активный offer на заявку;
+- `application_assignment_offers_shift_active_idx` помогает считать занятые/зарезервированные места по дате;
+- `application_assignment_offers_expiry_idx` нужен воркеру истечения offer-ов.
+
+### Прочие PostgreSQL-таблицы
+
+| Таблица | Ключевые поля |
+| --- | --- |
+| `shifts` | `legacy_id`, `date`, `seats`, `open`, `canceled`, `canceled_at`, `row_version`, timestamps. |
+| `invite_groups` | `legacy_id`, `shift_id`, `venue_id`, `link`, `sent_at`, `created_by_telegram_user_id`, `row_version`, timestamps. |
+| `invite_group_members` | `invite_group_id`, `application_id`, `created_at`; composite primary key. |
+| `mentor_reports` | `application_id`, mentor identity, `result_status`, `decision`, score fields, venue/hall fields, comments/texts, `source`, `created_at`, `voided_at`. |
+| `mentor_report_topics` | `mentor_report_id`, `topic_order`, `title`, `created_at`. |
+| `notifications` | `application_id`, `mentor_report_id`, `type`, `chat_id`, `chat_target`, `text`, `parse_mode`, `status`, `telegram_message_id`, `error`, `idempotency_key`, retry timestamps/counters. |
+| `application_events` | `application_id`, `shift_id`, `event_type`, `actor_type`, `actor_telegram_user_id`, `payload jsonb`, `created_at`. |
+
+## 12. Реестр и CSV-экспорт
 
 Реестр строится из `applications`, `shifts` и `inviteGroups`.
 
@@ -471,22 +595,20 @@ CSV-поля:
 | `Создано` | `application.createdAt` |
 | `State обновлен` | root `updatedAt` |
 
-## 12. Что не хранится в state
+## 13. Что не хранится в state
 
-Сейчас в booking-state не хранится:
+Сейчас в JSON booking-state не хранится:
 
 - полный чек-лист стажера;
 - полный чек-лист наставника по каждому пункту;
 - полный текст отчета наставника как отдельная сущность;
-- все отправленные Telegram `message_id`;
-- история всех изменений статусов;
 - отдельная таблица пользователей;
 - отдельная таблица наставников;
 - SQL-связи/foreign keys на уровне базы.
 
-Это значит, что `data/db.json` хранит актуальное состояние заявки и ключевые итоговые поля, а не полный журнал событий.
+PostgreSQL migration target уже закрывает часть этих дыр: есть foreign keys, `application_events`, `mentor_reports`, `notifications` outbox и `application_assignment_offers.message_id` для запросов подтверждения даты. Но полноценный профиль пользователя, отдельная CRM по собеседованиям и полный чек-лист стажера/наставника пока не спроектированы как отдельные таблицы.
 
-## 13. Практические правила для будущих правок
+## 14. Практические правила для будущих правок
 
 1. Если добавляется новое поле в `applications`, его нужно добавить в `normalizeApplicationForWrite`, фронтовый `normalizeApplication`, экспорт/реестр при необходимости и тесты.
 2. Если поле связано с площадкой или залом, его нужно проверять на сервере, а не только рисовать на фронте.

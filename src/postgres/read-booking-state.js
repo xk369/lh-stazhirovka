@@ -68,6 +68,7 @@ export async function readBookingStateFromPostgres(client) {
         limits,
         status,
         recruiter_comment,
+        recruiter_queue_comment,
         venue_id,
         group_link,
         candidate_report,
@@ -87,6 +88,22 @@ export async function readBookingStateFromPostgres(client) {
         created_at
       FROM applications
       ORDER BY legacy_id
+    `);
+  const assignmentOffersResult = await client.query(`
+      SELECT
+        applications.legacy_id AS application_legacy_id,
+        shifts.legacy_id AS shift_legacy_id,
+        application_assignment_offers.token,
+        application_assignment_offers.requested_at,
+        application_assignment_offers.expires_at,
+        application_assignment_offers.requested_by_telegram_user_id,
+        application_assignment_offers.message_chat_id,
+        application_assignment_offers.message_id
+      FROM application_assignment_offers
+      JOIN applications ON applications.id = application_assignment_offers.application_id
+      JOIN shifts ON shifts.id = application_assignment_offers.shift_id
+      WHERE application_assignment_offers.status = 'active'
+      ORDER BY applications.legacy_id, application_assignment_offers.created_at DESC
     `);
   const inviteGroupsResult = await client.query(`
       SELECT
@@ -111,6 +128,26 @@ export async function readBookingStateFromPostgres(client) {
 
   if (metaResult.rowCount !== 1) {
     throw new Error('PostgreSQL booking_state_meta must contain exactly one row.');
+  }
+
+  const activeOfferByApplicationLegacyId = new Map();
+  for (const row of assignmentOffersResult.rows) {
+    const applicationLegacyId = legacyId(
+      row.application_legacy_id,
+      'application_assignment_offers.application_id'
+    );
+    if (activeOfferByApplicationLegacyId.has(applicationLegacyId)) continue;
+    activeOfferByApplicationLegacyId.set(applicationLegacyId, {
+      token: row.token,
+      shiftId: legacyId(row.shift_legacy_id, 'application_assignment_offers.shift_id'),
+      requestedAt: timestampText(row.requested_at),
+      expiresAt: timestampText(row.expires_at),
+      requestedByTelegramUserId: row.requested_by_telegram_user_id || '',
+      messageChatId: row.message_chat_id || '',
+      messageId: row.message_id === null || row.message_id === undefined
+        ? null
+        : Number(row.message_id)
+    });
   }
 
   const memberIdsByGroup = new Map();
@@ -147,6 +184,12 @@ export async function readBookingStateFromPostgres(client) {
         limits: row.limits,
         status: row.status,
         comment: row.recruiter_comment,
+        recruiterQueueComment: row.recruiter_queue_comment,
+        assignmentOffer: row.status === 'queue'
+          ? activeOfferByApplicationLegacyId.get(
+            legacyId(row.legacy_id, 'applications.legacy_id')
+          ) || null
+          : null,
         inviteGroupId: row.invite_group_legacy_id === null
           ? null
           : legacyId(row.invite_group_legacy_id, 'applications.invite_group_id'),

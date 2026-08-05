@@ -8,6 +8,10 @@ async function readPublicFile(name) {
   return readFile(new URL(`public/${name}`, projectRoot), 'utf8');
 }
 
+async function readProjectFile(name) {
+  return readFile(new URL(name, projectRoot), 'utf8');
+}
+
 test('home menu names describe the user action behind every entry', async () => {
   const html = await readPublicFile('index.html');
 
@@ -181,6 +185,10 @@ test('recruiter queue is searchable, grouped by priority and exposes Telegram co
   assert.match(html, /function renderQueuePool\(\)/);
   assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
   assert.match(html, /data-assign-selected="\$\{app\.id\}"/);
+  assert.match(html, /Коммент для Жени/);
+  assert.match(html, /data-save-queue-comment="\$\{app\.id\}"/);
+  assert.match(html, /request_assignment_confirmation/);
+  assert.match(html, /update_queue_comment/);
   assert.doesNotMatch(renderRecruiterDates, /renderQueuePool|renderQueueForShift|queue-priority-group/);
   assert.doesNotMatch(datesSection, /Самый приоритетный|Нужно внимательнее|Низший приоритет|Очередь отображается/);
 });
@@ -210,6 +218,13 @@ test('registry hides limitations and lets recruiters copy Telegram', async () =>
   const renderRegistryTelegram = html.match(/function renderRegistryTelegram\(row\) \{[\s\S]*?\n    \}\n\n    function renderRegistryStatus/)?.[0] || '';
   const copyHandler = html.match(/const copyTelegram = event\.target\.closest\("\[data-copy-telegram\]"\);[\s\S]*?return;\n        \}/)?.[0] || '';
 
+  assert.match(html, /\.panel \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(html, /body\.view-registry \.app \{[\s\S]*?width: min\(100%, 1080px\);/);
+  assert.match(html, /document\.body\.classList\.toggle\("view-registry", role === "recruiter" && unlocked && section === "registry"\)/);
+  assert.match(html, /\.registry-table-wrap \{[\s\S]*?overflow: auto;[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
+  assert.match(html, /\.registry-table \{[\s\S]*?table-layout: fixed;/);
+  assert.match(html, /<colgroup>[\s\S]*?registry-col-group[\s\S]*?<\/colgroup>/);
+  assert.match(html, /\.registry-link \{[\s\S]*?white-space: nowrap;/);
   assert.match(html, /function renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTable, /renderRegistryTelegram\(row\)/);
   assert.match(renderRegistryTelegram, /class="registry-telegram"/);
@@ -282,14 +297,31 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 
-test('trainee available dates stay clean after an active application is locked', async () => {
+test('trainee booking screen is queue-only and does not render public date choices', async () => {
   const html = await readPublicFile('booking.html');
   const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
+  const renderMyStatus = html.match(/function renderMyStatus\(app\) \{[\s\S]*?\n    \}\n\n    function traineeApplicationHistory/)?.[0] || '';
 
-  assert.match(renderTrainee, /currentCanChangeDate = current && \["pending", "queue"\]\.includes\(current\.status\)/);
-  assert.match(renderTrainee, /openShifts\(\)\.filter/);
-  assert.match(renderTrainee, /String\(shift\.id\) !== String\(current\.shiftId\)/);
-  assert.match(renderTrainee, /if \(currentCanChangeDate && currentShift/);
+  assert.match(html, /<h2>Очередь<\/h2>/);
+  assert.match(renderTrainee, /Дату назначает рекрут/);
+  assert.match(renderTrainee, /queueLocked = current && !\["queue", "queue_expired", "failed", "noshow"\]\.includes\(current\.status\)/);
+  assert.match(renderMyStatus, /\["confirmed", "invited"\]\.includes\(app\.status\)/);
+  assert.match(renderMyStatus, /data-withdraw-assignment="\$\{app\.id\}"/);
+  assert.doesNotMatch(renderTrainee, /data-book="\$\{shift\.id\}"/);
+  assert.doesNotMatch(renderTrainee, /openShifts\(\)\.filter/);
+});
+
+test('failed trainees get an explicit repeat booking path', async () => {
+  const html = await readPublicFile('booking.html');
+  const renderMyStatus = html.match(/function renderMyStatus\(app\) \{[\s\S]*?\n    \}\n\n    function traineeApplicationHistory/)?.[0] || '';
+  const createApplication = html.match(/async function createApplication\(type, shiftId\) \{[\s\S]*?\n    \}\n\n    async function setStatus/)?.[0] || '';
+  const clickHandler = html.match(/document\.addEventListener\("click", async event => \{[\s\S]*?\n    \}\);/)?.[0] || '';
+
+  assert.match(renderMyStatus, /Повторная стажировка/);
+  assert.match(renderMyStatus, /data-reapply-queue/);
+  assert.match(createApplication, /canReapply \? "repeat" : state\.profile\.attempt/);
+  assert.match(clickHandler, /data-reapply-queue/);
+  assert.doesNotMatch(renderMyStatus, /data-scroll-dates/);
 });
 
 test('trainee status hydrates from server-owned applications without a local profile name', async () => {
@@ -302,7 +334,7 @@ test('trainee status hydrates from server-owned applications without a local pro
 
   assert.match(applyServerStatePayload, /hydrateTraineeProfileFromServerState\(\)/);
   assert.match(html, /let lastStateRefreshAt = 0/);
-  assert.match(html, /refreshBookingStateOnResume\(\);/);
+  assert.match(html, /handleInitialBookingState\(\);/);
   assert.match(resumeRefresh, /now - lastStateRefreshAt < 3500/);
   assert.match(html, /document\.addEventListener\("visibilitychange"/);
   assert.match(html, /window\.addEventListener\("focus", refreshBookingStateOnResume\)/);
@@ -347,6 +379,42 @@ test('invite group date selector shows only actual dates in ascending order', as
   assert.match(renderInviteGroups, /inviteShifts\.map/);
   assert.match(ensureInviteDraft, /const inviteShifts = groupInviteShifts\(\)/);
   assert.doesNotMatch(renderInviteGroups, /state\.shifts\.map\(shift => `<option value="\$\{shift\.id\}"/);
+});
+
+test('new common venues are available across recruiter, mentor and server layers', async () => {
+  const bookingHtml = await readPublicFile('booking.html');
+  const reportHtml = await readPublicFile('index.html');
+  const serverJs = await readProjectFile('src/server.js');
+
+  assert.match(bookingHtml, /id: "ludwig", name: "LUDWIG HALL"/);
+  assert.match(bookingHtml, /id: "vishnevy_sad", name: "ВИШНЕВЫЙ САД"/);
+  assert.match(reportHtml, /loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\]/);
+  assert.match(reportHtml, /ludwig: 'LUDWIG HALL'/);
+  assert.match(reportHtml, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
+  assert.match(serverJs, /ludwig: 'LUDWIG HALL'/);
+  assert.match(serverJs, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
+  assert.match(serverJs, /ludwig: \{ loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\], fixedHall: 'LUDWIG HALL' \}/);
+  assert.match(serverJs, /vishnevy_sad: \{ loft: 'ВИШНЕВЫЙ САД', halls: \['CHEKHOV HALL', 'LEVITAN HALL'\] \}/);
+});
+
+test('queue assignment request has confirm helper and transient feedback', async () => {
+  const html = await readPublicFile('booking.html');
+  const requestAssignment = html.match(/async function requestAssignmentConfirmation\(applicationId, shiftId\) \{[\s\S]*?\n    \}/)?.[0] || '';
+  const saveQueueComment = html.match(/async function saveQueueComment\(applicationId\) \{[\s\S]*?\n    \}/)?.[0] || '';
+
+  assert.match(html, /function confirmAction\(message\) \{/);
+  assert.match(html, /function setQueueActionMessage\(applicationId, message/);
+  assert.match(html, /function clearQueueActionMessage\(applicationId/);
+  assert.match(requestAssignment, /await confirmAction\(/);
+  assert.match(requestAssignment, /не ответит за 1 час/);
+  assert.match(requestAssignment, /Отправляем запрос стажёру/);
+  assert.match(requestAssignment, /Уведомление отправлено/);
+  assert.match(requestAssignment, /Место зарезервировано на 1 час/);
+  assert.match(requestAssignment, /Тестовый режим: запрос создан, но ЛС стажёру не отправлено/);
+  assert.match(requestAssignment, /trainee_notifications_suppressed/);
+  assert.match(requestAssignment, /notify: false/);
+  assert.doesNotMatch(requestAssignment, /3 часа/);
+  assert.match(saveQueueComment, /setQueueActionMessage\(applicationId, "Комментарий сохранён\.", \{ ttl: 2200 \}\)/);
 });
 
 test('report submission success does not auto-close the mini app', async () => {

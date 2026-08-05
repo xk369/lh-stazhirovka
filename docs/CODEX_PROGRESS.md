@@ -6,9 +6,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Last Updated
 
-- Date: 2026-07-30
-- Agent task: continue PostgreSQL migration work without touching production,
-  keep handoff docs current, and prepare the next safe QA/implementation steps.
+- Date: 2026-08-05
+- Agent task: merge the latest production queue-assignment features into the
+  PostgreSQL migration branch, keep production untouched, and document the
+  candidate-to-internship schema for the future interview mini app.
 
 ## Active Context
 
@@ -40,6 +41,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
 - Current staging commit: `bae4e07`.
+- Local migration branch now also contains the newer production queue-assignment
+  flow after merging `origin/main`; migration staging has not yet been refreshed
+  to this local state.
 - Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
   16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
   25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
@@ -152,10 +156,37 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `/api/telegram/link`: verified Telegram actor, application row lock, owner
   mismatch protection, idempotent no-op for already-linked applications,
   `telegram_application_linked` audit event and fresh state through the adapter.
+- Merged the newer production queue-assignment flow into the migration branch:
+  trainee registration is queue-only, recruiter queue comments are preserved,
+  recruiters manually request a 1-hour assignment confirmation, trainee responses
+  accept/decline the offer, expired offers move applications to `queue_expired`,
+  and trainees can withdraw confirmed/invited assignments back to `queue`.
+- Extended the PostgreSQL target for that flow: `applications.status` accepts
+  `queue_expired`, `applications.recruiter_queue_comment` stores recruiter-only
+  queue notes, and `application_assignment_offers` stores active/history offer
+  rows with token, status, TTL and Telegram message references.
+- Added PostgreSQL read/import/write support for assignment offers, including
+  `update_queue_comment`, `request_assignment_confirmation`,
+  `record_assignment_offer_message`, `respond_assignment_offer`,
+  `expire_assignment_offers` and `withdraw_confirmed_assignment` command routing.
+- Updated the recruiter UI correction path so `confirmed`/`invited` applications
+  return through `return_to_queue` instead of the obsolete
+  `set_application_status -> pending` path; `feedback` keeps step-back.
+- Added `scripts/postgres-assignment-offer-write-smoke.js` and wired it into
+  `npm run test:postgres` after `assign_shift`.
 - Published the branch and opened draft PR #3.
 
 ## Current Checks
 
+- 2026-08-05: `npm test` passed, 309/309 tests after merging the latest
+  production queue-assignment features into the PostgreSQL migration branch and
+  adding PostgreSQL schema/import/read/write/contract coverage for
+  `application_assignment_offers`, `recruiter_queue_comment` and
+  `queue_expired`. `node --check` also passed for the new/changed PostgreSQL
+  smoke scripts, `bash -n scripts/test-postgres-foundation.sh` passed and
+  `git diff --cached --check` passed. A sandboxed `npm run test:postgres` failed
+  at local PostgreSQL startup with `shmget Operation not permitted`; the
+  outside-sandbox rerun was not executed in this session.
 - 2026-07-30: targeted `node --test test/postgres-write-command.test.js
   test/booking-storage-adapter.test.js` passed after adding transactional
   PostgreSQL `toggle_shift`, adapter routing and unit coverage.
@@ -347,6 +378,22 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Latest Worklog Entry
 
+- 2026-08-05: merged current `origin/main` into
+  `migration/postgres-foundation` without touching production. Conflict in
+  `src/server.js` was resolved by keeping the production queue-assignment UX and
+  routing its new side effects through the PostgreSQL adapter/Telegram delivery
+  gateway in writable Postgres mode. Added target schema support for
+  `applications.recruiter_queue_comment`, `queue_expired` and
+  `application_assignment_offers`; added PostgreSQL command/read/import
+  coverage for queue comments, assignment confirmation requests, offer message
+  refs, offer responses, offer expiry and trainee withdrawal back to queue.
+  Also mapped the old recruiter correction button to `return_to_queue` for
+  pre-attendance statuses and added a live PostgreSQL smoke script for the offer
+  chain. `npm test` passed locally, 309/309; `test:postgres` still needs an
+  outside-sandbox rerun because local PostgreSQL cannot start inside the sandbox.
+  Production, migration staging and live Telegram were not touched. Next step is
+  to refresh migration staging with this branch, re-import a fresh production
+  snapshot and rerun full role QA in `TELEGRAM_DELIVERY_MODE=dry_run`.
 - 2026-07-30: closed the last known no-prod writable PostgreSQL routing gap for
   `/api/telegram/link`. The endpoint now uses the PostgreSQL command adapter in
   `BOOKING_STORAGE_MODE=postgres`, while JSON production behavior stays on the
@@ -683,31 +730,37 @@ Known doc rule:
 ## Next Safe Actions
 
 1. Keep production untouched and keep PR #3 in draft.
-2. Deploy the already-tested writable runtime to migration staging only:
+2. Commit/push the current local migration branch after final checks.
+3. Refresh migration staging only with this branch, a fresh copied production
+   JSON snapshot and a clean PostgreSQL database:
    `BOOKING_STORAGE_MODE=postgres`, `TELEGRAM_DELIVERY_MODE=dry_run`, no
    production deploy and no live Telegram.
-3. Review command mapping against `/api/state` + `/api/report` during staging
-   QA, especially `return_to_queue` versus legacy
-   back-to-`pending` behavior.
-4. Run local tests again after any doc/code changes:
+4. Review command mapping against `/api/state`, `/api/report`,
+   `/api/assignment-offer/respond` and `/api/telegram/link` during staging QA,
+   especially the new queue-confirmation and trainee-withdraw paths.
+5. Run local tests again after any doc/code changes:
    `npm test -- --test-reporter=dot`, `npm run test:postgres` and
    `git diff --check`.
-5. Run the migration PR safety check before pushing any staging-runtime commit.
-6. Do full role QA on migration staging:
+6. Run the migration PR safety check before pushing any staging-runtime commit.
+7. Do full role QA on migration staging:
    trainee view, recruiter view, mentor report validation, registry, groups,
-   archive, bad links, duplicate clicks and version conflicts.
-7. For UI QA that needs Telegram identity, use signed test `initData` or a
+   archive, bad links, duplicate clicks, version conflicts, assignment offer
+   accept/decline/expiry and withdrawal back to queue.
+8. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-8. Only after staging writable QA passes should we plan a production cutover
+9. Only after staging writable QA passes should we plan a production cutover
    window and rollback path.
 
 ## Current Runtime-Wiring Notes
 
 - PostgreSQL `return_to_queue` now defines the safe cleanup path for sending a
-  pre-attendance trainee back to preliminary queue. Before writable runtime
-  cutover, the UI/API path currently labeled `Вернуть в новые заявки` must be
-  mapped to this command where queue return is intended, or a separate
-  back-to-`pending` command must be specified.
+  pre-attendance trainee back to preliminary queue. The migration branch UI path
+  for the old `Вернуть в новые заявки` correction now uses `return_to_queue`
+  for `confirmed`/`invited`; `feedback` keeps the explicit step-back path.
+- PostgreSQL `request_assignment_confirmation` is the new recruiter hand-confirm
+  point: the recruiter chooses a queue candidate and a shift, the application
+  stays in `queue`, and `application_assignment_offers` temporarily reserves the
+  seat until the trainee answers or the 1-hour TTL expires.
 - PostgreSQL `update_comment` is internal and intentionally does not create a
   trainee notification/outbox row.
 - PostgreSQL `trainee_report_submission` is report-only: it writes a group
