@@ -1007,6 +1007,34 @@ function reportTextTraineeLookup(reportText) {
   };
 }
 
+function cleanReportPersonValue(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return /^не\s+(заполнено|указан[оа]?)$/i.test(text) ? '' : text;
+}
+
+function reportTextMentorReporter(reportText) {
+  const text = String(reportText || '');
+  const block = text.match(/Наставник:\s*([\s\S]*?)(?:\n\s*Стаж[её]р:|\nВыполнено:|\n━|$)/i)?.[1] || '';
+  const firstName = cleanReportPersonValue(block.match(/Имя:\s*([^\n]+)/i)?.[1]);
+  const lastName = cleanReportPersonValue(block.match(/Фамилия:\s*([^\n]+)/i)?.[1]);
+  const usernameMatch = block.match(/\(@?([A-Za-z0-9_]{3,32})\)/);
+  const username = usernameMatch && !/не\s*указан/i.test(usernameMatch[1]) ? usernameMatch[1] : '';
+  return {
+    name: [lastName, firstName].filter(Boolean).join(' '),
+    username
+  };
+}
+
+function mentorReporterFromRequest(body, reportText, telegramUser) {
+  const reportMentor = reportTextMentorReporter(reportText);
+  const bodyName = normalizeOptionalText(body?.mentorReporterName, 'mentorReporterName', 160);
+  const bodyUsername = normalizeUsername(body?.mentorReporterTelegramUsername);
+  return {
+    name: bodyName || reportMentor.name || telegramUserDisplayName(telegramUser),
+    username: bodyUsername || reportMentor.username || telegramUser?.username || ''
+  };
+}
+
 function mentorReportLookupFromRequest(body, reportText) {
   const source = body?.mentorTraineeLookup && typeof body.mentorTraineeLookup === 'object'
     ? body.mentorTraineeLookup
@@ -1328,6 +1356,19 @@ function mentorReporterIdentity(application) {
   };
 }
 
+function mentorIdentityHasUsefulName(identity) {
+  const name = String(identity?.name || '').trim();
+  return Boolean(name && name !== 'Наставник не указан' && !/^Наставник ID \d+$/i.test(name));
+}
+
+function improveMentorIdentity(target, source) {
+  if (!mentorIdentityHasUsefulName(target) && mentorIdentityHasUsefulName(source)) {
+    target.name = source.name;
+  }
+  if (!target.telegram && source.telegram) target.telegram = source.telegram;
+  if (!target.telegramUserId && source.telegramUserId) target.telegramUserId = source.telegramUserId;
+}
+
 function mentorAnalyticsTraineeFromApplication(state, application) {
   const shift = applicationShift(state, application);
   const group = applicationInviteGroup(state, application);
@@ -1367,6 +1408,7 @@ function mentorAnalyticsFromState(state) {
         });
       }
       const mentor = mentorsByKey.get(identity.key);
+      improveMentorIdentity(mentor, identity);
       mentor.total += 1;
       if (trainee.result === 'passed') mentor.passed += 1;
       else if (trainee.result === 'failed') mentor.failed += 1;
@@ -2993,6 +3035,9 @@ app.post('/api/report', async (request, response) => {
       'mentorCommentForTrainee',
       1200
     );
+    const mentorReporter = role === 'mentor'
+      ? mentorReporterFromRequest(request.body, reportText, telegram.user)
+      : { name: telegramUserDisplayName(telegram.user), username: telegram.user.username || '' };
     const rawMentorTraineeResult = request.body?.mentorTraineeResult;
     const mentorTraineeResult = role === 'mentor' && rawMentorTraineeResult && typeof rawMentorTraineeResult === 'object'
       ? normalizeMentorTraineeResult(rawMentorTraineeResult)
@@ -3027,8 +3072,8 @@ app.post('/api/report', async (request, response) => {
           {
             applicationId,
             reporterTelegramUserId: telegram.user.id,
-            reporterName: telegramUserDisplayName(telegram.user),
-            reporterUsername: telegram.user.username || '',
+            reporterName: mentorReporter.name,
+            reporterUsername: mentorReporter.username,
             mentorDecision,
             mentorCommentForTrainee,
             mentorTraineeResult,
@@ -3064,8 +3109,8 @@ app.post('/api/report', async (request, response) => {
           {
             applicationId,
             reporterTelegramUserId: telegram.user.id,
-            reporterName: telegramUserDisplayName(telegram.user),
-            reporterUsername: telegram.user.username || '',
+            reporterName: mentorReporter.name,
+            reporterUsername: mentorReporter.username,
             mentorDecision,
             mentorCommentForTrainee,
             mentorTraineeResult,
@@ -3194,6 +3239,8 @@ export {
   ensureMentorReportVenueMatches,
   findMentorReportApplicationForLookup,
   mentorAnalyticsFromState,
+  mentorReporterFromRequest,
+  reportTextMentorReporter,
   mentorTraineesFromState,
   normalizeBookingState,
   shiftCapacityChangeNotificationPlan,

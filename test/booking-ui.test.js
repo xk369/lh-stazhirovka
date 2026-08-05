@@ -58,6 +58,8 @@ test('recruiter has compact mentor analytics for linked reports', async () => {
   assert.match(mentorsSection, />Ждут отчет<\/option>/);
   assert.match(html, /function mentorAnalyticsData\(\)/);
   assert.match(html, /function renderMentorAnalytics\(\)/);
+  assert.match(html, /data-mentor-result-filter/);
+  assert.match(html, /mentorResultFilters/);
   assert.match(renderRecruiter, /mentorAnalyticsBtn/);
   assert.match(html, /document\.getElementById\("mentorAnalyticsBtn"\)\.classList\.toggle\("hidden", !recruiterToolsVisible\)/);
   assert.match(renderRecruiter, /\["dates", "candidates", "groups", "registry", "mentors"\]/);

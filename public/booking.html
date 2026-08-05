@@ -2020,6 +2020,28 @@
       min-height: 28px;
       font-size: 11.5px;
     }
+    .mentor-count-button {
+      appearance: none;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease, color .16s ease;
+    }
+    .mentor-count-button:active {
+      transform: scale(.98);
+    }
+    .mentor-count-button.active {
+      border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .mentor-selection-label {
+      margin: -4px 15px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.25;
+    }
     .mentor-trainees {
       display: grid;
       gap: 8px;
@@ -2068,6 +2090,12 @@
     .mentor-waiting {
       border-style: dashed;
       background: color-mix(in srgb, var(--surface) 82%, var(--field));
+    }
+    .registry-empty.compact {
+      padding: 14px 10px;
+      border-radius: 14px;
+      font-size: 12px;
+      font-weight: 850;
     }
     .closed-dates {
       border: 1px solid var(--line);
@@ -3303,6 +3331,8 @@
     let lastStateRefreshAt = 0;
     let assignmentOfferResponseHandled = false;
     const expandedShiftIds = new Set();
+    const mentorResultFilters = new Map();
+    const mentorExpandedKeys = new Set();
     let closedDatesExpanded = false;
 
     const fields = {
@@ -5535,6 +5565,19 @@ ${managerLine}
       };
     }
 
+    function mentorIdentityHasUsefulName(identity) {
+      const name = String(identity?.name || "").trim();
+      return Boolean(name && name !== "Наставник не указан" && !/^Наставник ID \d+$/i.test(name));
+    }
+
+    function improveMentorIdentity(target, source) {
+      if (!mentorIdentityHasUsefulName(target) && mentorIdentityHasUsefulName(source)) {
+        target.name = source.name;
+      }
+      if (!target.telegram && source.telegram) target.telegram = source.telegram;
+      if (!target.telegramUserId && source.telegramUserId) target.telegramUserId = source.telegramUserId;
+    }
+
     function mentorAnalyticsTraineeRow(app) {
       const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
       const group = state.inviteGroups.find(item => String(item.id) === String(app.inviteGroupId));
@@ -5574,6 +5617,7 @@ ${managerLine}
           }
           const trainee = mentorAnalyticsTraineeRow(app);
           const mentor = mentorsByKey.get(identity.key);
+          improveMentorIdentity(mentor, identity);
           mentor.total += 1;
           if (trainee.result === "passed") mentor.passed += 1;
           else if (trainee.result === "failed") mentor.failed += 1;
@@ -5658,10 +5702,30 @@ ${managerLine}
       `;
     }
 
+    function mentorCountButton(mentor, result, label, count, tone = "") {
+      const activeResult = mentorResultFilters.get(mentor.key) || "all";
+      const active = activeResult === result;
+      return `
+        <button class="registry-tag mentor-count-button ${tone} ${active ? "active" : ""}" type="button" data-mentor-key="${escapeHtml(mentor.key)}" data-mentor-result-filter="${escapeHtml(result)}" aria-pressed="${active ? "true" : "false"}">
+          ${escapeHtml(label)}: ${count}
+        </button>
+      `;
+    }
+
     function renderMentorCard(mentor) {
       const telegramLine = [mentor.telegram, mentor.telegramUserId ? `ID ${mentor.telegramUserId}` : ""].filter(Boolean).join(" · ");
+      const activeResult = mentorResultFilters.get(mentor.key) || "all";
+      const visibleTrainees = activeResult === "all"
+        ? mentor.trainees
+        : mentor.trainees.filter(row => row.result === activeResult);
+      const resultLabel = {
+        all: "Все отчеты",
+        passed: "Прошли стажировку",
+        failed: "Не прошли стажировку",
+        unknown: "Итог не указан"
+      }[activeResult] || "Все отчеты";
       return `
-        <details class="mentor-card">
+        <details class="mentor-card" data-mentor-card-key="${escapeHtml(mentor.key)}" ${mentorExpandedKeys.has(mentor.key) ? "open" : ""}>
           <summary>
             <span class="mentor-card-title">
               <b>${escapeHtml(mentor.name)}</b>
@@ -5669,13 +5733,14 @@ ${managerLine}
             </span>
           </summary>
           <div class="mentor-counts">
-            <span class="registry-tag">Всего: ${mentor.total}</span>
-            <span class="registry-tag ok">Прошли: ${mentor.passed}</span>
-            <span class="registry-tag ${mentor.failed ? "warn" : ""}">Не прошли: ${mentor.failed}</span>
-            ${mentor.unknown ? `<span class="registry-tag">Итог не указан: ${mentor.unknown}</span>` : ""}
+            ${mentorCountButton(mentor, "all", "Всего", mentor.trainees.length)}
+            ${mentorCountButton(mentor, "passed", "Прошли", mentor.passed, "ok")}
+            ${mentorCountButton(mentor, "failed", "Не прошли", mentor.failed, mentor.failed ? "warn" : "")}
+            ${mentor.unknown ? mentorCountButton(mentor, "unknown", "Итог не указан", mentor.unknown) : ""}
           </div>
+          <div class="mentor-selection-label">${escapeHtml(resultLabel)} · ${visibleTrainees.length} стаж.</div>
           <div class="mentor-trainees">
-            ${mentor.trainees.map(renderMentorTraineeRow).join("")}
+            ${visibleTrainees.length ? visibleTrainees.map(renderMentorTraineeRow).join("") : `<div class="registry-empty compact">В этой группе стажёров нет.</div>`}
           </div>
         </details>
       `;
@@ -6433,6 +6498,17 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
         document.getElementById("mentorsSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
+      const mentorResultButton = event.target.closest("[data-mentor-result-filter]");
+      if (mentorResultButton) {
+        const key = mentorResultButton.dataset.mentorKey || "";
+        const result = mentorResultButton.dataset.mentorResultFilter || "all";
+        if (key) {
+          mentorResultFilters.set(key, result);
+          mentorExpandedKeys.add(key);
+        }
+        scheduleMentorRender();
+        return;
+      }
       if (event.target.id === "downloadTraineesCsvBtn") {
         await downloadTraineesCsv();
         return;
@@ -6463,6 +6539,14 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") refreshBookingStateOnResume();
     });
+
+    document.addEventListener("toggle", event => {
+      const card = event.target.closest?.(".mentor-card[data-mentor-card-key]");
+      if (!card || event.target !== card) return;
+      const key = card.dataset.mentorCardKey || "";
+      if (!key) return;
+      card.open ? mentorExpandedKeys.add(key) : mentorExpandedKeys.delete(key);
+    }, true);
 
     window.addEventListener("focus", refreshBookingStateOnResume);
 

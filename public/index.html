@@ -2922,6 +2922,10 @@
               mentorTraineeName: mentorTrainee ? mentorTrainee.name : undefined,
               mentorDecision: state.role === 'mentor' ? state.summary.mentorDecision || '' : undefined,
               mentorCommentForTrainee: state.role === 'mentor' ? state.summary.mentorRecommendations || '' : undefined,
+              mentorReporterName: state.role === 'mentor'
+                ? [state.profile.lastName, state.profile.firstName].map(part => String(part || '').trim()).filter(Boolean).join(' ') || state.profile.fio || ''
+                : undefined,
+              mentorReporterTelegramUsername: state.role === 'mentor' ? state.profile.telegram || '' : undefined,
               mentorTraineeResult: state.role === 'mentor' ? mentorTraineeResultPayload() : undefined,
               mentorTraineeLookup: state.role === 'mentor' ? mentorTraineeLookupPayload() : undefined
             }),

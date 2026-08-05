@@ -7,6 +7,8 @@ import {
   ensureMentorReportVenueMatches,
   findMentorReportApplicationForLookup,
   mentorAnalyticsFromState,
+  mentorReporterFromRequest,
+  reportTextMentorReporter,
   mentorTraineesFromState
 } from '../src/server.js';
 
@@ -290,6 +292,67 @@ test('mentor analytics counts old linked reports by stored mentor id', () => {
   assert.equal(analytics.mentors[0].name, 'Наставник ID 777');
   assert.deepEqual(analytics.mentors[0].trainees.map(item => item.applicationId).sort(), [1, 2]);
   assert.deepEqual(analytics.waiting.map(item => item.applicationId), [6]);
+});
+
+test('mentor reporter name is parsed from mentor report text', () => {
+  const reportText = [
+    'Дата стажировки: 25.07.2026',
+    'Зал: THE BIRCH BLACKWOOD',
+    'Наставник:',
+    'Имя: Софья',
+    'Фамилия: Сучкова',
+    '(@user6319642)',
+    '',
+    'Стажёр:',
+    'Имя: Виктория',
+    'Фамилия: Неудахина',
+    '(@k0ktya)',
+    'Выполнено: 28 из 29 пунктов'
+  ].join('\n');
+
+  assert.deepEqual(reportTextMentorReporter(reportText), {
+    name: 'Сучкова Софья',
+    username: 'user6319642'
+  });
+  assert.deepEqual(
+    mentorReporterFromRequest(
+      {},
+      reportText,
+      { id: 1294774551, first_name: '', last_name: '', username: '' }
+    ),
+    {
+      name: 'Сучкова Софья',
+      username: 'user6319642'
+    }
+  );
+});
+
+test('mentor analytics upgrades old id fallback when one report has a stored mentor name', () => {
+  const state = stateWithApplications();
+  state.applications[0] = {
+    ...state.applications[0],
+    status: 'passed',
+    mentorReport: true,
+    mentorDecision: 'Стажировка пройдена',
+    mentorReporterTelegramUserId: '777',
+    mentorReportAt: '2026-07-10T20:00:00.000Z'
+  };
+  state.applications[1] = {
+    ...state.applications[1],
+    status: 'failed',
+    mentorReport: true,
+    mentorDecision: 'Требуется повторная стажировка',
+    mentorReporterTelegramUserId: '777',
+    mentorReporterName: 'Сучкова Софья',
+    mentorReporterTelegramUsername: 'user6319642',
+    mentorReportAt: '2026-07-10T21:00:00.000Z'
+  };
+
+  const analytics = mentorAnalyticsFromState(state);
+
+  assert.equal(analytics.mentors[0].name, 'Сучкова Софья');
+  assert.equal(analytics.mentors[0].telegram, '@user6319642');
+  assert.equal(analytics.mentors[0].total, 2);
 });
 
 test('manual mentor report lookup links the matching booking application by trainee data', () => {
