@@ -1532,6 +1532,79 @@
       gap: 10px;
       padding: 0 10px 10px;
     }
+    .workgroup-search {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .workgroup-search label {
+      margin: 0;
+    }
+    .workgroup-search-results {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .workgroup-search-card {
+      display: grid;
+      gap: 9px;
+      min-width: 0;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 82%, var(--field));
+    }
+    .workgroup-search-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(92px, auto);
+      gap: 8px;
+      align-items: start;
+      min-width: 0;
+    }
+    .workgroup-search-name {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .workgroup-search-name b {
+      min-width: 0;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 950;
+      line-height: 1.18;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .workgroup-search-name span,
+    .workgroup-search-meta {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .workgroup-search-head .pill {
+      justify-self: end;
+      max-width: 132px;
+      min-width: 0;
+      white-space: normal;
+      text-align: center;
+      font-size: 10.5px;
+      padding-inline: 8px;
+    }
+    .workgroup-search-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .workgroup-search-actions .quiet {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 999px;
+      text-align: center;
+    }
     .sent-archive {
       margin-top: 12px;
       border: 1px solid var(--line);
@@ -1657,6 +1730,13 @@
         gap: 6px;
       }
       .archive-trainee-row .pill {
+        justify-self: start;
+        max-width: 100%;
+      }
+      .workgroup-search-head {
+        grid-template-columns: 1fr;
+      }
+      .workgroup-search-head .pill {
         justify-self: start;
         max-width: 100%;
       }
@@ -2962,6 +3042,12 @@
           <section class="panel">
             <h2>Шаблоны для рабочих групп</h2>
             <p class="meta">После отправки приглашений здесь появится готовый текст для каждой рабочей группы. Менеджера укажите отдельно в нужной карточке, затем скопируйте сообщение и отправьте его в группу.</p>
+            <div class="workgroup-search">
+              <label>Поиск стажера в рабочих группах
+                <input id="workgroupSearch" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="ФИО или Telegram">
+              </label>
+              <div class="workgroup-search-results hidden" id="workgroupSearchResults"></div>
+            </div>
             <div class="list" id="sentGroups"></div>
           </section>
         </section>
@@ -3164,6 +3250,7 @@
     let registryStatusFilter = "all";
     let queueSearch = "";
     let candidateSearch = "";
+    let workgroupSearch = "";
     let registryRenderFrame = 0;
     let lastStateRefreshAt = 0;
     let assignmentOfferResponseHandled = false;
@@ -4973,6 +5060,99 @@ ${managerLine}
       }).join("");
     }
 
+    function workgroupSearchResultMeta(app) {
+      const result = workgroupArchiveResultMeta(app);
+      if (result.label !== "Нет итога") return result;
+      return {
+        label: statusNames[app?.status] || "Нет итога",
+        tone: statusPill[app?.status] || result.tone
+      };
+    }
+
+    function workgroupSearchHaystack(group, app) {
+      const venue = venueById(group.venueId);
+      return [
+        app.name,
+        traineeTelegramTag(app),
+        app.telegramUserId,
+        app.telegramChatId,
+        app.phone,
+        app.mentorFirstName,
+        app.mentorLastName,
+        venue?.name,
+        venue?.address,
+        group.link,
+        group.shifts.map(shift => shift.date).join(" "),
+        group.shifts.map(shift => formatDate(shift.date)).join(" "),
+        statusNames[app.status],
+        workgroupArchiveResultMeta(app).label
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function workgroupSearchMatches() {
+      const query = workgroupSearch.trim().toLowerCase();
+      if (!query) return [];
+      return workgroupTemplateGroups()
+        .flatMap(group => group.members.map(app => ({ group, app })))
+        .filter(item => workgroupSearchHaystack(item.group, item.app).includes(query))
+        .sort((left, right) => {
+          const leftVisible = isWorkgroupTemplateVisible(left.group);
+          const rightVisible = isWorkgroupTemplateVisible(right.group);
+          if (leftVisible !== rightVisible) return leftVisible ? -1 : 1;
+          const dateSort = latestWorkgroupDate(right.group).localeCompare(latestWorkgroupDate(left.group));
+          if (dateSort) return dateSort;
+          return String(left.app.name || "").localeCompare(String(right.app.name || ""), "ru");
+        });
+    }
+
+    function renderWorkgroupSearchResults() {
+      const input = document.getElementById("workgroupSearch");
+      const box = document.getElementById("workgroupSearchResults");
+      if (!input || !box) return;
+      if (input.value !== workgroupSearch) input.value = workgroupSearch;
+      const query = workgroupSearch.trim();
+      if (!query) {
+        box.classList.add("hidden");
+        box.innerHTML = "";
+        return;
+      }
+      const matches = workgroupSearchMatches();
+      box.classList.remove("hidden");
+      if (!matches.length) {
+        box.innerHTML = `<div class="empty tight">Стажер не найден в отправленных рабочих группах.</div>`;
+        return;
+      }
+      const limit = 20;
+      const rows = matches.slice(0, limit).map(({ group, app }) => {
+        const venue = venueById(group.venueId);
+        const dates = group.shifts.map(shift => formatDate(shift.date)).join(", ") || "без даты";
+        const tag = traineeTelegramTag(app);
+        const status = workgroupSearchResultMeta(app);
+        const scope = isWorkgroupTemplateVisible(group) ? "актуальный шаблон" : "архив";
+        return `
+          <article class="workgroup-search-card">
+            <div class="workgroup-search-head">
+              <span class="workgroup-search-name">
+                <b title="${escapeHtml(app.name || "Стажёр")}">${escapeHtml(app.name || "Стажёр")}</b>
+                <span>${escapeHtml(tag || "Telegram не указан")}</span>
+              </span>
+              <span class="pill ${escapeHtml(status.tone)}">${escapeHtml(status.label)}</span>
+            </div>
+            <div class="workgroup-search-meta">${escapeHtml(venue?.name || "Площадка не указана")} · ${escapeHtml(dates)} · ${escapeHtml(scope)}</div>
+            <div class="workgroup-search-actions">
+              ${group.link
+                ? `<a class="quiet" href="${escapeHtml(group.link)}" data-external-link target="_blank" rel="noopener">Открыть группу</a>`
+                : `<span class="workgroup-search-meta">Ссылка на группу не указана</span>`}
+            </div>
+          </article>
+        `;
+      }).join("");
+      const overflow = matches.length > limit
+        ? `<div class="empty tight">Показано ${limit} из ${matches.length}. Уточните запрос.</div>`
+        : "";
+      box.innerHTML = `${rows}${overflow}`;
+    }
+
     function renderSentGroupArchive() {
       const archiveGroups = archivedWorkgroupTemplateGroups();
       if (!archiveGroups.length) return "";
@@ -5171,6 +5351,7 @@ ${managerLine}
       document.getElementById("sendInvitesBtn").setAttribute("aria-disabled", document.getElementById("sendInvitesBtn").disabled ? "true" : "false");
 
       document.getElementById("sentGroups").innerHTML = renderSentGroupTemplates();
+      renderWorkgroupSearchResults();
       saveLocalSnapshot();
     }
 
@@ -6223,6 +6404,10 @@ ${shift ? `📅 <b>Дата стажировки:</b> ${escapeHtml(formatLongDat
       if (event.target.id === "candidateSearch") {
         candidateSearch = event.target.value;
         renderCandidates();
+      }
+      if (event.target.id === "workgroupSearch") {
+        workgroupSearch = event.target.value;
+        renderWorkgroupSearchResults();
       }
     });
 

@@ -301,6 +301,23 @@ test('workgroup templates are grouped by venue and hide expired internship dates
   assert.match(html, /\.sent-archive,[\s\S]*?max-width: 100%;/);
 });
 
+test('workgroup templates include trainee search with direct group links', async () => {
+  const html = await readPublicFile('booking.html');
+  const groupsSection = html.match(/<section id="groupsSection"[\s\S]*?<section class="panel">\s*<h2>Шаблоны для рабочих групп<\/h2>[\s\S]*?<div class="list" id="sentGroups"><\/div>/)?.[0] || '';
+  const renderSearch = html.match(/function renderWorkgroupSearchResults\(\) \{[\s\S]*?\n    \}\n\n    function renderSentGroupArchive/)?.[0] || '';
+  const inputHandler = html.match(/if \(event\.target\.id === "workgroupSearch"\) \{[\s\S]*?renderWorkgroupSearchResults\(\);[\s\S]*?\}/)?.[0] || '';
+
+  assert.match(groupsSection, /id="workgroupSearch"/);
+  assert.match(groupsSection, /ФИО или Telegram/);
+  assert.match(html, /function workgroupSearchHaystack\(group, app\) \{/);
+  assert.match(html, /function workgroupSearchMatches\(\) \{/);
+  assert.match(renderSearch, /data-external-link/);
+  assert.match(renderSearch, /Открыть группу/);
+  assert.match(renderSearch, /isWorkgroupTemplateVisible\(group\) \? "актуальный шаблон" : "архив"/);
+  assert.match(inputHandler, /workgroupSearch = event\.target\.value/);
+  assert.match(html, /renderWorkgroupSearchResults\(\);\n      saveLocalSnapshot\(\);/);
+});
+
 test('trainee booking screen is queue-only and does not render public date choices', async () => {
   const html = await readPublicFile('booking.html');
   const renderTrainee = html.match(/function renderTrainee\(\) \{[\s\S]*?\n    \}\n\n    function renderTelegramConnect/)?.[0] || '';
