@@ -68,7 +68,9 @@ test('trainee booking form requires phone and sends it with applications', async
   assert.match(validation, /state\.profile\.training === "passed"/);
   assert.match(validation, /Укажите дату прохождения обучения/);
   assert.match(workgroupLine, /тел\. \$\{phone\}/);
-  assert.match(html, /Дата обучения: \$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}/);
+  assert.match(html, /function renderQueueProfile\(app\) \{/);
+  assert.match(html, /trainingPassed && app\.trainingDate \? formatDate\(app\.trainingDate\)\.replace\(",", ""\) : ""/);
+  assert.match(html, /Пройдено\$\{trainingDate \? ` · \$\{trainingDate\}` : ""\}/);
   assert.match(html, /function renderTraineeProfileTags\(app\)/);
   assert.match(html, /<span>Обучение<\/span>/);
   assert.match(html, /<small>\$\{escapeHtml\(formatDate\(app\.trainingDate\)\)\}<\/small>/);
@@ -184,8 +186,16 @@ test('recruiter queue is searchable, grouped by priority and exposes Telegram co
   assert.match(html, /Обучение пройдено · первая стажировка/);
   assert.match(html, /function queueSortTimestamp\(app\)/);
   assert.match(html, /function renderQueueJoinedAt\(app\)/);
+  assert.match(html, /function renderQueueHistory\(app\) \{/);
+  assert.match(html, /function traineePreviousFinals\(app, status\) \{/);
+  assert.match(html, /Ранее не вышел/);
+  assert.match(html, /Ранее не прошел/);
+  assert.match(html, /renderQueueProfile\(app\)/);
+  assert.match(html, /renderQueueHistory\(app\)/);
   assert.match(html, /queueJoinedAt/);
   assert.match(html, /В очереди с/);
+  assert.match(html, /ранее не вышел невыход/);
+  assert.match(html, /ранее не прошел повторная/);
   assert.match(html, /function renderQueuePool\(\)/);
   assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
   assert.match(html, /data-assign-selected="\$\{app\.id\}"/);

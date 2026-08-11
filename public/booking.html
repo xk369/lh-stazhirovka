@@ -928,22 +928,34 @@
     .queue-candidate-card {
       min-width: 0;
       display: grid;
-      gap: 8px;
+      gap: 10px;
       border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
       border-radius: 16px;
-      background: var(--surface);
-      padding: 10px;
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--accent-soft)), var(--surface));
+      padding: 12px;
     }
     .queue-candidate-main {
       display: grid;
-      gap: 5px;
+      grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
+      gap: 8px;
+      align-items: start;
       min-width: 0;
     }
     .queue-candidate-name {
       color: var(--text);
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 950;
       line-height: 1.18;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .queue-candidate-meta {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.25;
       overflow-wrap: anywhere;
     }
     .queue-telegram {
@@ -973,6 +985,61 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+    }
+    .queue-profile-strip,
+    .queue-history-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+      padding-top: 2px;
+    }
+    .queue-profile-chip,
+    .queue-history-chip {
+      display: inline-grid;
+      gap: 1px;
+      min-height: 30px;
+      min-width: 0;
+      max-width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--field) 86%, transparent);
+      color: var(--muted);
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.05;
+      white-space: normal;
+      text-align: left;
+    }
+    .queue-profile-chip b,
+    .queue-history-chip b {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .queue-profile-chip.good {
+      border-color: color-mix(in srgb, var(--ok) 24%, var(--line));
+      background: color-mix(in srgb, var(--ok) 8%, var(--surface));
+      color: var(--ok);
+    }
+    .queue-profile-chip.warn {
+      border-color: color-mix(in srgb, var(--warn) 22%, var(--line));
+      background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+      color: var(--warn);
+    }
+    .queue-profile-chip.accent {
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+      background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+      color: var(--accent);
+    }
+    .queue-history-chip {
+      border-color: color-mix(in srgb, var(--bad) 28%, var(--line));
+      background: color-mix(in srgb, var(--bad) 7%, var(--surface));
+      color: var(--bad);
+    }
+    .queue-history-chip b {
+      color: var(--bad);
     }
     .queue-candidate-tags .badge {
       min-height: 26px;
@@ -2712,6 +2779,7 @@
       .metric span { font-size: 10px; }
       .candidate-filter-panel { grid-template-columns: 1fr; }
       .queue-candidate-list { grid-template-columns: 1fr; }
+      .queue-candidate-main { grid-template-columns: 1fr; }
       .queue-priority-group { padding: 9px; }
       .queue-priority-head { gap: 8px; }
       .queue-assign-row { grid-template-columns: 1fr; }
@@ -4550,6 +4618,8 @@
         app.trainingDate,
         trainingNames[app.training],
         attemptNames[app.attempt],
+        traineePreviousFinals(app, "noshow").length ? "ранее не вышел невыход" : "",
+        traineePreviousFinals(app, "failed").length ? "ранее не прошел повторная" : "",
         app.limits,
         app.recruiterQueueComment
       ].filter(Boolean).join(" ").toLowerCase();
@@ -4609,6 +4679,95 @@
       return `<button class="queue-telegram" data-copy-telegram="${app.id}" type="button" title="Скопировать Telegram">${escapeHtml(tag)}</button>`;
     }
 
+    function traineeIdentityKeys(app) {
+      const keys = [];
+      const push = (prefix, value) => {
+        const clean = String(value || "").trim().toLowerCase();
+        if (clean) keys.push(`${prefix}:${clean}`);
+      };
+      push("user", app.telegramUserId);
+      push("chat", app.telegramChatId);
+      push("username", String(app.telegramUsername || "").replace(/^@/, ""));
+      push("phone", String(app.phone || "").replace(/\D/g, ""));
+      if (!keys.length) push("name", app.name);
+      return new Set(keys);
+    }
+
+    function sameTraineeApplication(left, right) {
+      if (!left || !right || String(left.id) === String(right.id)) return false;
+      const leftKeys = traineeIdentityKeys(left);
+      return [...traineeIdentityKeys(right)].some(key => leftKeys.has(key));
+    }
+
+    function applicationShiftDate(app) {
+      const shift = state.shifts.find(item => String(item.id) === String(app.shiftId));
+      return shift?.date || "";
+    }
+
+    function applicationHistoryDate(app) {
+      return applicationShiftDate(app)
+        || String(app.mentorReportAt || app.createdAt || "").slice(0, 10);
+    }
+
+    function formatHistoryDate(value) {
+      if (!value) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDate(value).replace(",", "");
+      const time = Date.parse(value);
+      if (!Number.isFinite(time)) return "";
+      return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" }).format(new Date(time));
+    }
+
+    function traineePreviousFinals(app, status) {
+      return state.applications
+        .filter(item => item.status === status && sameTraineeApplication(app, item))
+        .map(item => ({ app: item, date: applicationHistoryDate(item) }))
+        .sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
+    }
+
+    function historyTimesLabel(count) {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 === 1 && mod100 !== 11) return "раз";
+      if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "раза";
+      return "раз";
+    }
+
+    function renderQueueHistory(app) {
+      const items = [
+        { status: "noshow", title: "Ранее не вышел" },
+        { status: "failed", title: "Ранее не прошел" }
+      ].map(item => {
+        const events = traineePreviousFinals(app, item.status);
+        if (!events.length) return "";
+        const date = formatHistoryDate(events[0].date);
+        const count = events.length > 1 ? ` · ${events.length} ${historyTimesLabel(events.length)}` : "";
+        return `
+          <span class="queue-history-chip">
+            <span>${escapeHtml(item.title)}${escapeHtml(count)}</span>
+            ${date ? `<b>${escapeHtml(date)}</b>` : ""}
+          </span>
+        `;
+      }).filter(Boolean);
+      return items.length ? `<div class="queue-history-strip">${items.join("")}</div>` : "";
+    }
+
+    function renderQueueProfile(app) {
+      const trainingPassed = app.training === "passed";
+      const trainingDate = trainingPassed && app.trainingDate ? formatDate(app.trainingDate).replace(",", "") : "";
+      return `
+        <div class="queue-profile-strip">
+          <span class="queue-profile-chip ${trainingPassed ? "good" : "warn"}">
+            <span>Обучение</span>
+            <b>${escapeHtml(trainingPassed ? `Пройдено${trainingDate ? ` · ${trainingDate}` : ""}` : "Не пройдено")}</b>
+          </span>
+          <span class="queue-profile-chip ${app.attempt === "first" ? "accent" : ""}">
+            <span>Стажировка</span>
+            <b>${escapeHtml(app.attempt === "first" ? "Первая" : "Повторная")}</b>
+          </span>
+        </div>
+      `;
+    }
+
     function assignableQueueShifts() {
       return state.shifts
         .filter(shift => shift.open && freeSeats(shift) > 0)
@@ -4634,16 +4793,15 @@
       return `
         <article class="queue-candidate-card">
           <div class="queue-candidate-main">
-            <div class="queue-candidate-name">${escapeHtml(app.name)}</div>
+            <div>
+              <div class="queue-candidate-name" title="${escapeHtml(app.name)}">${escapeHtml(app.name)}</div>
+              <div class="queue-candidate-meta">${app.phone ? `Телефон: ${escapeHtml(app.phone)}` : "Телефон не указан"}</div>
+            </div>
             ${renderQueueTelegram(app)}
           </div>
           ${renderQueueJoinedAt(app)}
-          ${app.phone ? `<p class="queue-candidate-limits">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
-          ${app.training === "passed" && app.trainingDate ? `<p class="queue-candidate-limits">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
-          <div class="queue-candidate-tags">
-            ${badge(app.training === "passed", trainingNames[app.training])}
-            ${badge(app.attempt === "first", attemptNames[app.attempt])}
-          </div>
+          ${renderQueueProfile(app)}
+          ${renderQueueHistory(app)}
           ${app.limits ? `<p class="queue-candidate-limits">Ограничения: ${escapeHtml(app.limits)}</p>` : ""}
           ${offerActive ? `
             <div class="queue-offer-state">
