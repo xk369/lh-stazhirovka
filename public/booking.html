@@ -986,6 +986,35 @@
       line-height: 1.3;
       overflow-wrap: anywhere;
     }
+    .queue-joined-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+    .queue-joined-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      max-width: 100%;
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+      color: var(--text);
+      padding: 0 9px;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1.15;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .queue-joined-pill.wait {
+      border-color: color-mix(in srgb, var(--warn) 26%, var(--line));
+      background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+      color: var(--warn);
+    }
     .queue-offer-state {
       display: grid;
       gap: 3px;
@@ -3269,6 +3298,7 @@
         mentorCommentDeliveryStatus: app.mentorCommentDeliveryStatus || "",
         mentorCommentDeliveryError: app.mentorCommentDeliveryError || "",
         recruiterQueueComment: app.recruiterQueueComment || "",
+        queueJoinedAt: app.queueJoinedAt || "",
         assignmentOffer: app.assignmentOffer && typeof app.assignmentOffer === "object" ? {
           token: app.assignmentOffer.token || "",
           shiftId: app.assignmentOffer.shiftId ?? null,
@@ -4376,6 +4406,52 @@
       return username ? `@${username}` : "";
     }
 
+    function parseQueueTimestamp(value) {
+      const time = Date.parse(value || "");
+      return Number.isFinite(time) ? time : null;
+    }
+
+    function queueSortTimestamp(app) {
+      return parseQueueTimestamp(app.queueJoinedAt)
+        ?? parseQueueTimestamp(app.createdAt)
+        ?? Number(app.id || Number.MAX_SAFE_INTEGER);
+    }
+
+    function formatQueueJoinedDate(value) {
+      const time = parseQueueTimestamp(value);
+      if (time === null) return "";
+      return new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(time)).replace(",", " ·");
+    }
+
+    function formatQueueWait(value) {
+      const time = parseQueueTimestamp(value);
+      if (time === null) return "";
+      const minutes = Math.max(1, Math.floor((Date.now() - time) / 60000));
+      if (minutes < 60) return `ждёт ${minutes} мин`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `ждёт ${hours} ч`;
+      const days = Math.floor(hours / 24);
+      const restHours = hours % 24;
+      return restHours ? `ждёт ${days} д ${restHours} ч` : `ждёт ${days} д`;
+    }
+
+    function renderQueueJoinedAt(app) {
+      const joinedLabel = formatQueueJoinedDate(app.queueJoinedAt);
+      if (!joinedLabel) return "";
+      const waitLabel = formatQueueWait(app.queueJoinedAt);
+      return `
+        <div class="queue-joined-row">
+          <span class="queue-joined-pill">В очереди с ${escapeHtml(joinedLabel)}</span>
+          ${waitLabel ? `<span class="queue-joined-pill wait">${escapeHtml(waitLabel)}</span>` : ""}
+        </div>
+      `;
+    }
+
     function queueSearchHaystack(app) {
       return [
         app.name,
@@ -4383,6 +4459,7 @@
         app.telegramUserId,
         app.telegramChatId,
         app.phone,
+        app.queueJoinedAt,
         app.trainingDate,
         trainingNames[app.training],
         attemptNames[app.attempt],
@@ -4424,6 +4501,9 @@
         const leftOrder = leftGroup >= 0 ? leftGroup : queuePriorityGroups.length;
         const rightOrder = rightGroup >= 0 ? rightGroup : queuePriorityGroups.length;
         if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        const leftQueueTime = queueSortTimestamp(left);
+        const rightQueueTime = queueSortTimestamp(right);
+        if (leftQueueTime !== rightQueueTime) return leftQueueTime - rightQueueTime;
         return String(left.name || "").localeCompare(String(right.name || ""), "ru");
       });
     }
@@ -4470,6 +4550,7 @@
             <div class="queue-candidate-name">${escapeHtml(app.name)}</div>
             ${renderQueueTelegram(app)}
           </div>
+          ${renderQueueJoinedAt(app)}
           ${app.phone ? `<p class="queue-candidate-limits">Телефон: ${escapeHtml(app.phone)}</p>` : ""}
           ${app.training === "passed" && app.trainingDate ? `<p class="queue-candidate-limits">Дата обучения: ${escapeHtml(formatDate(app.trainingDate))}</p>` : ""}
           <div class="queue-candidate-tags">

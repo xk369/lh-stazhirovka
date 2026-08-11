@@ -175,6 +175,7 @@ test('assignment offer response accepts or declines without baseVersion', () => 
         telegramUserId: '999',
         telegramChatId: '999',
         recruiterQueueComment: 'Созвониться вечером',
+        queueJoinedAt: '2026-07-02T08:00:00.000Z',
         assignmentOffer: {
           token: 'offer-token',
           shiftId: 1,
@@ -199,6 +200,7 @@ test('assignment offer response accepts or declines without baseVersion', () => 
   assert.equal(accepted.state.applications[0].status, 'confirmed');
   assert.equal(accepted.state.applications[0].shiftId, 1);
   assert.equal(accepted.state.applications[0].recruiterQueueComment, '');
+  assert.equal(accepted.state.applications[0].queueJoinedAt, '');
   assert.equal(accepted.state.applications[0].assignmentOffer, null);
 
   const declined = applyRespondAssignmentOffer(
@@ -210,6 +212,7 @@ test('assignment offer response accepts or declines without baseVersion', () => 
   assert.equal(declined.result.status, 'declined');
   assert.equal(declined.state.applications[0].status, 'queue');
   assert.equal(declined.state.applications[0].shiftId, null);
+  assert.equal(declined.state.applications[0].queueJoinedAt, '2026-07-02T08:00:00.000Z');
   assert.equal(declined.state.applications[0].assignmentOffer, null);
 
   const expired = applyRespondAssignmentOffer(
@@ -222,6 +225,7 @@ test('assignment offer response accepts or declines without baseVersion', () => 
   assert.equal(expired.state.applications[0].status, 'queue_expired');
   assert.equal(expired.state.applications[0].shiftId, null);
   assert.equal(expired.state.applications[0].recruiterQueueComment, '');
+  assert.equal(expired.state.applications[0].queueJoinedAt, '');
   assert.equal(expired.state.applications[0].assignmentOffer, null);
 });
 
@@ -569,6 +573,68 @@ test('does not require training date when banquet training is not completed', ()
   assert.equal(next.applications[0].trainingDate, '');
   assert.equal(next.applications[0].status, 'queue');
   assert.equal(next.applications[0].shiftId, null);
+});
+
+test('stamps new queue applications with server queue join time', () => {
+  const now = new Date('2026-08-11T12:30:00.000Z');
+  const next = applyBookingCommand(
+    bookingState(),
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 2,
+      application: {
+        id: 20,
+        shiftId: null,
+        name: 'Queue Trainee',
+        phone: '+7 999 123-45-67',
+        training: 'not_passed',
+        attempt: 'first',
+        status: 'queue'
+      }
+    },
+    traineeActor,
+    now
+  );
+
+  assert.equal(next.applications[0].queueJoinedAt, now.toISOString());
+});
+
+test('preserves queue join time when trainee edits an existing queue application', () => {
+  const source = bookingState();
+  source.applications = [{
+    id: 20,
+    shiftId: null,
+    name: 'Queue Trainee',
+    phone: '+7 999 123-45-67',
+    training: 'not_passed',
+    attempt: 'first',
+    status: 'queue',
+    telegramUserId: '999',
+    queueJoinedAt: '2026-08-10T09:00:00.000Z'
+  }];
+
+  const next = applyBookingCommand(
+    source,
+    {
+      action: 'upsert_trainee_application',
+      baseVersion: 2,
+      application: {
+        id: 20,
+        shiftId: null,
+        name: 'Queue Trainee Updated',
+        phone: '+7 999 123-45-67',
+        training: 'not_passed',
+        attempt: 'first',
+        status: 'queue',
+        queueJoinedAt: 'client-spoofed-value'
+      }
+    },
+    traineeActor,
+    new Date('2026-08-11T12:30:00.000Z')
+  );
+
+  assert.equal(next.applications[0].name, 'Queue Trainee Updated');
+  assert.equal(next.applications[0].queueJoinedAt, '2026-08-10T09:00:00.000Z');
 });
 
 test('rejects trainee direct date booking because recruiter assigns dates from queue', () => {

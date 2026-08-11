@@ -504,6 +504,10 @@ function normalizeShiftForWrite(shift) {
   };
 }
 
+function normalizeQueueJoinedAt(value) {
+  return normalizeOptionalIsoTimestamp(value, 'application.queueJoinedAt');
+}
+
 function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = {}) {
   const status = normalizeLegacyStatus(app?.status);
   if (!BOOKING_STATUSES.has(status)) {
@@ -541,6 +545,7 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
       'application.recruiterQueueComment',
       600
     ),
+    queueJoinedAt: status === 'queue' && role !== 'trainee' ? normalizeQueueJoinedAt(app?.queueJoinedAt) : '',
     assignmentOffer: status === 'queue' ? normalizeAssignmentOffer(app?.assignmentOffer, shiftsById) : null,
     inviteGroupId: normalizeId(app?.inviteGroupId, 'application.inviteGroupId', { nullable: true }),
     venueId: app?.venueId === null || app?.venueId === undefined
@@ -582,6 +587,7 @@ function normalizeApplicationForWrite(app, shiftsById, { role = 'recruiter' } = 
   }
   if (clean.status !== 'queue') {
     clean.recruiterQueueComment = '';
+    clean.queueJoinedAt = '';
   }
 
   const experience = normalizeOptionalText(app?.experience, 'application.experience', 40);
@@ -1620,7 +1626,22 @@ function mutableStateCopy(state) {
   };
 }
 
-function applyUpsertTraineeApplication(state, command, actor) {
+function queueJoinedAtForTransition(existingApplication, nextStatus, now = new Date()) {
+  if (normalizeLegacyStatus(nextStatus) !== 'queue') return '';
+  if (normalizeLegacyStatus(existingApplication?.status) === 'queue') {
+    return existingApplication?.queueJoinedAt || '';
+  }
+  return now.toISOString();
+}
+
+function withQueueJoinedAt(application, existingApplication, now = new Date()) {
+  return {
+    ...application,
+    queueJoinedAt: queueJoinedAtForTransition(existingApplication, application.status, now)
+  };
+}
+
+function applyUpsertTraineeApplication(state, command, actor, now = new Date()) {
   const shiftsById = new Map(state.shifts.map(shift => [shift.id, shift]));
   let incoming = attachActorToApplication(
     normalizeApplicationForWrite(command.application, shiftsById, { role: 'trainee' }),
@@ -1657,7 +1678,7 @@ function applyUpsertTraineeApplication(state, command, actor) {
   }
 
   if (index < 0) {
-    next.applications.push(incoming);
+    next.applications.push(withQueueJoinedAt(incoming, null, now));
     return next;
   }
 
@@ -1677,6 +1698,7 @@ function applyUpsertTraineeApplication(state, command, actor) {
     ...incoming,
     status: incoming.status,
     recruiterQueueComment: incoming.status === 'queue' ? existing.recruiterQueueComment || '' : '',
+    queueJoinedAt: queueJoinedAtForTransition(existing, incoming.status, now),
     assignmentOffer: incoming.status === 'queue' ? existing.assignmentOffer || null : null
   };
   return next;
@@ -1695,7 +1717,7 @@ function applyCancelApplication(state, command, actor) {
   return next;
 }
 
-function applySetApplicationStatus(state, command, actor) {
+function applySetApplicationStatus(state, command, actor, now = new Date()) {
   requireRecruiterRole(actor);
   const status = normalizeLegacyStatus(command.status);
   if (!BOOKING_STATUSES.has(status)) throw new BookingValidationError('application.status is invalid.');
@@ -1714,6 +1736,7 @@ function applySetApplicationStatus(state, command, actor) {
   next.applications[index] = {
     ...application,
     status,
+    queueJoinedAt: queueJoinedAtForTransition(application, status, now),
     experience: status === 'passed' ? application.experience || '' : ''
   };
   autoCloseResolvedShift(next, application.shiftId);
@@ -1787,7 +1810,7 @@ function applyMarkExperienced(state, command, actor) {
   return next;
 }
 
-function applyReturnToQueue(state, command, actor) {
+function applyReturnToQueue(state, command, actor, now = new Date()) {
   requireRecruiterRole(actor);
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, command.applicationId);
@@ -1795,6 +1818,7 @@ function applyReturnToQueue(state, command, actor) {
     ...application,
     shiftId: null,
     status: 'queue',
+    queueJoinedAt: queueJoinedAtForTransition(application, 'queue', now),
     assignmentOffer: null
   };
   return next;
@@ -1820,6 +1844,7 @@ function applyAssignShift(state, command, actor) {
     shiftId,
     status: 'pending',
     recruiterQueueComment: '',
+    queueJoinedAt: '',
     assignmentOffer: null
   };
   return next;
@@ -1905,6 +1930,7 @@ function applyExpireAssignmentOffers(currentState, now = new Date()) {
       ...application,
       status: 'queue_expired',
       recruiterQueueComment: '',
+      queueJoinedAt: '',
       assignmentOffer: null
     };
     expired.push({
@@ -1951,6 +1977,7 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
       ...application,
       status: 'queue_expired',
       recruiterQueueComment: '',
+      queueJoinedAt: '',
       assignmentOffer: null
     };
     return {
@@ -1981,6 +2008,7 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
     shiftId: offer.shiftId,
     status: 'confirmed',
     recruiterQueueComment: '',
+    queueJoinedAt: '',
     assignmentOffer: null
   };
   return {
@@ -1989,7 +2017,7 @@ function applyRespondAssignmentOffer(currentState, command, actor, now = new Dat
   };
 }
 
-function applyWithdrawConfirmedAssignment(state, command, actor) {
+function applyWithdrawConfirmedAssignment(state, command, actor, now = new Date()) {
   const applicationId = normalizeId(command.applicationId, 'applicationId');
   const next = mutableStateCopy(state);
   const { index, application } = requireApplication(next, applicationId);
@@ -2005,6 +2033,7 @@ function applyWithdrawConfirmedAssignment(state, command, actor) {
     ...application,
     shiftId: null,
     status: 'queue',
+    queueJoinedAt: queueJoinedAtForTransition(application, 'queue', now),
     inviteGroupId: null,
     venueId: null,
     groupLink: '',
@@ -2040,6 +2069,7 @@ function applyCancelShift(state, command, actor, now = new Date()) {
       ...resetMentorReport(application),
       shiftId: null,
       status: 'queue',
+      queueJoinedAt: queueJoinedAtForTransition(application, 'queue', now),
       inviteGroupId: null,
       venueId: null,
       groupLink: '',
@@ -2056,7 +2086,7 @@ function applyCancelShift(state, command, actor, now = new Date()) {
   return next;
 }
 
-function applyCancelInternship(state, command, actor) {
+function applyCancelInternship(state, command, actor, now = new Date()) {
   requireRecruiterRole(actor);
   const applicationId = normalizeId(command.applicationId, 'applicationId');
   const next = mutableStateCopy(state);
@@ -2070,6 +2100,7 @@ function applyCancelInternship(state, command, actor) {
     ...resetMentorReport(application),
     shiftId: null,
     status: 'queue',
+    queueJoinedAt: queueJoinedAtForTransition(application, 'queue', now),
     inviteGroupId: null,
     venueId: null,
     groupLink: '',
@@ -2230,13 +2261,13 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
 
   switch (action) {
     case 'upsert_trainee_application':
-      nextState = applyUpsertTraineeApplication(state, command, actor);
+      nextState = applyUpsertTraineeApplication(state, command, actor, now);
       break;
     case 'cancel_application':
       nextState = applyCancelApplication(state, command, actor);
       break;
     case 'set_application_status':
-      nextState = applySetApplicationStatus(state, command, actor);
+      nextState = applySetApplicationStatus(state, command, actor, now);
       break;
     case 'step_back_application':
       nextState = applyStepBackApplication(state, command, actor);
@@ -2245,7 +2276,7 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       nextState = applyMarkExperienced(state, command, actor);
       break;
     case 'return_to_queue':
-      nextState = applyReturnToQueue(state, command, actor);
+      nextState = applyReturnToQueue(state, command, actor, now);
       break;
     case 'assign_shift':
       nextState = applyAssignShift(state, command, actor);
@@ -2254,13 +2285,13 @@ function applyBookingCommand(currentState, command, actor, now = new Date()) {
       nextState = applyRequestAssignmentConfirmation(state, command, actor, now);
       break;
     case 'withdraw_confirmed_assignment':
-      nextState = applyWithdrawConfirmedAssignment(state, command, actor);
+      nextState = applyWithdrawConfirmedAssignment(state, command, actor, now);
       break;
     case 'cancel_shift':
       nextState = applyCancelShift(state, command, actor, now);
       break;
     case 'cancel_internship':
-      nextState = applyCancelInternship(state, command, actor);
+      nextState = applyCancelInternship(state, command, actor, now);
       break;
     case 'toggle_shift':
       nextState = applyToggleShift(state, command, actor);

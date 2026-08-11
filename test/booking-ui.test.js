@@ -182,6 +182,10 @@ test('recruiter queue is searchable, grouped by priority and exposes Telegram co
   assert.ok(datesSection.indexOf('id="recruiterDates"') < datesSection.indexOf('id="queuePool"'));
   assert.match(html, /const queuePriorityGroups = \[/);
   assert.match(html, /Обучение пройдено · первая стажировка/);
+  assert.match(html, /function queueSortTimestamp\(app\)/);
+  assert.match(html, /function renderQueueJoinedAt\(app\)/);
+  assert.match(html, /queueJoinedAt/);
+  assert.match(html, /В очереди с/);
   assert.match(html, /function renderQueuePool\(\)/);
   assert.match(html, /data-copy-telegram="\$\{app\.id\}"/);
   assert.match(html, /data-assign-selected="\$\{app\.id\}"/);
