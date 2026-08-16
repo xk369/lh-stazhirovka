@@ -422,6 +422,7 @@ test('new common venues are available across recruiter, mentor and server layers
   assert.match(reportHtml, /loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\]/);
   assert.match(reportHtml, /ludwig: 'LUDWIG HALL'/);
   assert.match(reportHtml, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
+  assert.match(reportHtml, /function hallValue\(loft, hall\) \{[\s\S]*?sameHall \? cleanLoft : `\$\{cleanLoft\} \$\{cleanHall\}`/);
   assert.match(serverJs, /ludwig: 'LUDWIG HALL'/);
   assert.match(serverJs, /vishnevy_sad: 'ВИШНЕВЫЙ САД'/);
   assert.match(serverJs, /ludwig: \{ loft: 'LUDWIG HALL', halls: \['LUDWIG HALL'\], fixedHall: 'LUDWIG HALL' \}/);

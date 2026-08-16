@@ -132,3 +132,37 @@ test('formats mentor report for the manager group', () => {
     ].join('\n')
   );
 });
+
+test('formats one-hall venue reports without duplicating the venue hashtag', () => {
+  const items = [
+    { id: 'mentor-1', item_order: 1, text: 'Пункт наставника 1' },
+    { id: 'mentor-2', item_order: 2, text: 'Пункт наставника 2' }
+  ];
+  const answers = Object.fromEntries(items.map(item => [item.id, { status: 'yes' }]));
+
+  const report = formatInternshipReport({
+    role: 'mentor',
+    profile: {
+      date: '2026-08-16',
+      hall: 'LUDWIG HALL LUDWIG HALL',
+      firstName: 'Анна',
+      lastName: 'Киселева',
+      telegram: '@mentor',
+      traineeFirstName: 'Иван',
+      traineeLastName: 'Стажеров',
+      traineeTelegram: '@trainee'
+    },
+    summary: {
+      mentorRecommendations: 'Все хорошо.',
+      mentorDecision: 'Стажировка пройдена'
+    },
+    items,
+    answers,
+    mentorTopics
+  });
+
+  assert.match(report, /Зал: LUDWIG HALL\n/);
+  assert.match(report, /#LUDWIGHALL$/);
+  assert.doesNotMatch(report, /LUDWIGHALLLUDWIGHALL/);
+  assert.doesNotMatch(report, /Зал: LUDWIG HALL LUDWIG HALL/);
+});

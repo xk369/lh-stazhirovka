@@ -2458,10 +2458,18 @@
         haptic();
       }
       function setRoleLabels() { $('#profileRole').textContent = roleLabels[state.role]; $('#checklistRole').textContent = roleLabels[state.role]; $('#reviewRole').textContent = roleLabels[state.role] }
-      function hallValue(loft, hall) { return `${loft} ${hall}` }
+      function hallValue(loft, hall) {
+        const cleanLoft = String(loft || '').replace(/\s+/g, ' ').trim();
+        const cleanHall = String(hall || '').replace(/\s+/g, ' ').trim();
+        if (!cleanHall) return cleanLoft;
+        const sameHall = cleanLoft.toLowerCase() === cleanHall.toLowerCase();
+        return sameHall ? cleanLoft : `${cleanLoft} ${cleanHall}`;
+      }
       function traineeResultVenueLabel() {
         const selected = parseHallValue(state.profile.hall);
-        if (selected.hall) return `${selected.loft} · ${selected.hall}`;
+        if (selected.hall) return selected.loft.toLowerCase() === selected.hall.toLowerCase()
+          ? selected.loft
+          : `${selected.loft} · ${selected.hall}`;
         return BOOKING_VENUE_LABELS[state.profile.bookingVenueId] || state.profile.hall || '—';
       }
       function mentorTraineeResultPayload() {

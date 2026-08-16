@@ -2,6 +2,7 @@ const TELEGRAM_REPORT_LIMIT = 3900;
 const SEPARATOR = '━━━━━━━━━━━━━━━';
 const KNOWN_HALLS = [
   'ROCKFELLER&ROTHSHILD`S HALL',
+  'LUDWIG HALL',
   'WELCOME HALL',
   'ROSEWOOD HALL',
   'MILINIS HALL',
@@ -21,6 +22,7 @@ const KNOWN_HALLS = [
   'BACKYARD',
   'RATUSHA',
   'MONDRIAN',
+  'МЕТЕЛИЦА',
   'BANKSY',
   'SMALL',
   'GRACE',
@@ -63,8 +65,20 @@ function mentorHashtag(profile) {
   return surname ? `#${surname}` : '#ФамилияНеУказана';
 }
 
+function collapseRepeatedHallValue(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const words = text.split(' ');
+  if (words.length < 2 || words.length % 2 !== 0) return text;
+  const middle = words.length / 2;
+  const first = words.slice(0, middle).join(' ');
+  const second = words.slice(middle).join(' ');
+  const normalize = item => item.replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+  return normalize(first) && normalize(first) === normalize(second) ? first : text;
+}
+
 function hallHashtag(profile) {
-  const hallValue = String(profile.hall || '').replace(/\s+/g, ' ').trim();
+  const hallValue = collapseRepeatedHallValue(profile.hall);
   const knownHall = KNOWN_HALLS.find(hall => hallValue === hall || hallValue.endsWith(` ${hall}`));
   const hall = knownHall || hallValue;
   const tag = hall.replace(/[^\p{L}\p{N}_]+/gu, '');
@@ -114,7 +128,7 @@ export function formatInternshipReport({
         : 'Решение не указано.';
     const headerLines = [
       `Дата стажировки: ${formatDate(profile.date)}`,
-      `Зал: ${compactReportText(String(profile.hall || '').trim() || 'Не заполнено', 90)}`,
+      `Зал: ${compactReportText(collapseRepeatedHallValue(profile.hall) || 'Не заполнено', 90)}`,
       ...personLines({ firstName: profile.firstName, lastName: profile.lastName, legacyName: profile.fio, username: profile.telegram, title: 'Наставник:' }),
       '',
       ...personLines({ firstName: profile.traineeFirstName, lastName: profile.traineeLastName, legacyName: profile.traineeFio, username: profile.traineeTelegram, title: 'Стажёр:' }),
