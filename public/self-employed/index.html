@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121714">
+  <meta name="description" content="Пошаговая инструкция Loft Hall по оформлению самозанятости и выплат.">
+  <title>Выплаты и самозанятость · Loft Hall</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem('loft-onboarding-theme');
+      const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+      const theme = saved === 'light' || saved === 'dark' ? saved : (dark ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0b0b0e' : '#f5f5f7');
+    })();
+  </script>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html" aria-label="Loft Hall — на главную">
+      <span class="brand-mark">LOFT<br>HALL</span>
+      <span class="brand-copy"><b>Персонал</b><small>оформление выплат</small></span>
+    </a>
+    <div class="topbar-actions">
+      <button class="icon-button theme-button" type="button" data-theme-toggle aria-label="Включить тёмную тему" title="Сменить тему">
+        <svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.4A8.5 8.5 0 0 1 8.6 4a8.5 8.5 0 1 0 11.4 11.4Z"/></svg>
+        <svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <button class="icon-button" type="button" data-share aria-label="Поделиться инструкцией" title="Поделиться">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0-12 4 4m-4-4L8 7M5 12v7h14v-7"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="route-tabs" aria-label="Выбор площадки">
+    <a class="route-tab active" href="./index.html" aria-current="page">Все площадки</a>
+    <a class="route-tab" href="./tau.html">ТАУ <span>отдельно</span></a>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow"><span></span> Маршрут оформления</div>
+      <h1>Получайте выплаты<br><em>без лишних вопросов</em></h1>
+      <p>Пройдите шаги по порядку. Приложение запомнит, на чём вы остановились.</p>
+      <div class="hero-actions">
+        <a class="primary-button" href="#steps">Начать оформление</a>
+        <a class="text-button" href="#trusted-person">Не могу оформить СЗ</a>
+      </div>
+      <div class="eligibility">
+        <span class="eligibility-icon">16+</span>
+        <p><b>Кто может оформить:</b> граждане России, Армении, Беларуси, Казахстана и Киргизии с 16 лет.</p>
+      </div>
+    </section>
+
+    <section class="progress-panel" aria-label="Прогресс оформления">
+      <div class="progress-copy">
+        <div><span>Ваш прогресс</span><b data-progress-label>0 из 6</b></div>
+        <button type="button" class="reset-button" data-reset>Сбросить</button>
+      </div>
+      <div class="progress-track"><span data-progress-bar></span></div>
+      <p data-progress-message>Начните с установки приложений</p>
+    </section>
+
+    <section class="content-section" id="steps">
+      <div class="section-heading">
+        <span>01</span>
+        <div><p>Самозанятость</p><h2>Что нужно сделать</h2></div>
+      </div>
+
+      <div class="steps-list">
+        <article class="step-card" data-step="apps">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>1</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 1 · 3 минуты</p>
+            <h3>Установите 2 приложения</h3>
+            <p>Они понадобятся для регистрации, договора и выплат.</p>
+            <div class="app-list">
+              <div class="app-row">
+                <span class="app-icon tax-icon">₽</span>
+                <div><b>Мой налог</b><small>Регистрация самозанятости</small></div>
+                <a class="mini-button" href="https://npd.nalog.ru/app/" target="_blank" rel="noopener">Скачать</a>
+              </div>
+              <div class="app-row">
+                <span class="app-icon jump-icon">J</span>
+                <div><b>Jump.Работа</b><small>Договор и выплаты</small></div>
+                <button class="mini-button" type="button" data-sheet-open="jump-links">Скачать</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="step-card" data-step="registration">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>2</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 2 · Мой налог</p>
+            <h3>Зарегистрируйтесь</h3>
+            <p>Выберите удобный способ: через Госуслуги, паспорт РФ или логин и пароль от личного кабинета ФНС.</p>
+            <div class="note safe-note">
+              <span>!</span>
+              <p><b>Подготовьте заранее</b> паспортные данные, номер телефона и банковскую карту для выплат.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="step-card" data-step="message">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>3</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 3 · Telegram</p>
+            <h3>Отправьте данные по шаблону</h3>
+            <p>Вступите в группу «Самозанятость МСК» и отправьте одно сообщение — без паспортных данных и номера карты.</p>
+            <div class="template-box" id="main-template">Самозанятость официант Москва, Иванов Иван Иванович, +79991234567, Сбербанк</div>
+            <div class="button-row">
+              <button class="secondary-button" type="button" data-copy-target="main-template">Скопировать шаблон</button>
+              <a class="primary-button compact" href="https://t.me/+XejcuYf5gmE2Nzdi" target="_blank" rel="noopener">Открыть группу</a>
+            </div>
+            <details class="inline-details">
+              <summary>В группе нельзя писать?</summary>
+              <p>Временно отправьте только заполненный шаблон бухгалтеру <a href="https://t.me/Dina_LoftHall" target="_blank" rel="noopener">@Dina_LoftHall</a>. Не начинайте отдельный диалог.</p>
+            </details>
+          </div>
+        </article>
+
+        <article class="step-card" data-step="invite">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>4</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 4 · Два подтверждения</p>
+            <h3>Примите приглашение</h3>
+            <ol class="micro-steps">
+              <li><span>1</span><p>Откройте ссылку бухгалтера и подтвердите партнёра в приложении <b>«Мой налог»</b>.</p></li>
+              <li><span>2</span><p>Откройте <b>Jump.Работа</b>, подтвердите данные и подпишите договор.</p></li>
+            </ol>
+            <div class="note warning-note"><span>!</span><p>Без обоих подтверждений выплаты не начнутся.</p></div>
+          </div>
+        </article>
+
+        <article class="step-card" data-step="check-data">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>5</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 5 · Проверка</p>
+            <h3>Сверьте данные</h3>
+            <p>В «Мой налог» и Jump.Работа должны полностью совпадать:</p>
+            <ul class="check-list"><li>номер телефона;</li><li>паспортные данные;</li><li>данные банковской карты.</li></ul>
+          </div>
+        </article>
+
+        <article class="step-card" data-step="done">
+          <button class="step-check" type="button" data-check aria-label="Отметить шаг выполненным"><span>6</span></button>
+          <div class="step-body">
+            <p class="step-kicker">Шаг 6 · Готово</p>
+            <h3>Следите за выплатами</h3>
+            <p>Выплаты за прошлую рабочую неделю обычно приходят по пятницам. Об изменениях сообщат в рабочей группе.</p>
+            <div class="money-example">
+              <div><small>За работу</small><b>10 000 ₽</b></div><span>+</span><div><small>На будущий налог</small><b>600 ₽</b></div><span>=</span><div class="money-total"><small>На карту</small><b>10 600 ₽</b></div>
+            </div>
+            <p class="caption">Пример расчёта из инструкции. Налог сотрудник оплачивает самостоятельно в «Мой налог» за предыдущий месяц.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="content-section alternative-section" id="trusted-person">
+      <div class="section-heading light">
+        <span>02</span>
+        <div><p>Альтернатива</p><h2>Не можете оформить СЗ?</h2></div>
+      </div>
+      <p class="section-lead">Выплаты может получать доверенное лицо — коллега Loft Hall или человек, который не работает в компании.</p>
+      <div class="choice-grid">
+        <article><span>01</span><h3>Заполните расписку</h3><p>Укажите данные человека, который будет получать выплаты за вас.</p></article>
+        <article><span>02</span><h3>Отправьте на проверку</h3><p>Фото расписки отправьте Дине в WhatsApp, затем передайте оригинал в бухгалтерию.</p></article>
+      </div>
+      <a class="whatsapp-button" href="https://wa.me/79661743975" target="_blank" rel="noopener"><span>WA</span><div><small>Отправить расписку Дине</small><b>+7 966 174-39-75</b></div><i>→</i></a>
+      <div class="downloads">
+        <p>Бланки и пример</p>
+        <a href="./docs/2026_Расписка_бланк.docx" download><span>DOC</span><div><b>Бланк расписки 2026</b><small>Скачать документ</small></div><i>↓</i></a>
+        <a href="./docs/2027_Расписка_бланк.docx" download><span>DOC</span><div><b>Бланк расписки 2027</b><small>Скачать документ</small></div><i>↓</i></a>
+        <a href="./docs/Пример_Расписка_бланк.docx" download><span>DOC</span><div><b>Пример заполнения</b><small>Посмотреть образец</small></div><i>↓</i></a>
+      </div>
+      <details class="dark-details">
+        <summary>Шаблон сообщения для группы</summary>
+        <div class="template-box dark" id="trusted-template">Самозанятость официант Москва, Иванов Иван Иванович (получает выплаты) получает за Петрова Петра Петровича, +79991234567, Сбербанк</div>
+        <button class="secondary-button light-button" type="button" data-copy-target="trusted-template">Скопировать</button>
+      </details>
+    </section>
+
+    <section class="tau-promo">
+      <div><span>Работаете на ТАУ?</span><h2>Есть ещё один обязательный этап</h2><p>Подключите СМЗ к «Мой Кейтеринг», чеки и договор.</p></div>
+      <a href="./tau.html">Перейти к инструкции <span>→</span></a>
+    </section>
+  </main>
+
+  <footer><span class="brand-mark small">LOFT<br>HALL</span><p>Инструкция для персонала<br><small>Если что-то не получается — сделайте скриншот шага и отправьте менеджеру.</small></p></footer>
+
+  <dialog class="bottom-sheet" id="jump-links">
+    <div class="sheet-handle"></div>
+    <button class="sheet-close" type="button" data-sheet-close aria-label="Закрыть">×</button>
+    <p class="step-kicker">Jump.Работа</p><h2>Выберите магазин</h2>
+    <a class="store-link" href="https://apps.apple.com/ru/app/jump-%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%B0/id1550493087" target="_blank" rel="noopener"><span></span><div><small>Загрузить в</small><b>App Store</b></div></a>
+    <a class="store-link" href="https://play.google.com/store/apps/details?id=ru.jumpwork" target="_blank" rel="noopener"><span>▶</span><div><small>Доступно в</small><b>Google Play</b></div></a>
+  </dialog>
+
+  <div class="toast" role="status" aria-live="polite" data-toast>Скопировано</div>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
