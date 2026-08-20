@@ -209,8 +209,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   were not touched.
 - 2026-08-20: migration staging rehearsal on current production JSON found
   legacy `queue` applications without `queueJoinedAt`. The import now
-  backfills `applications.queue_joined_at` from application `createdAt` for
-  `queue` rows only, so production queue ordering has no `NULL` timestamps.
+  backfills `applications.queue_joined_at` from application `createdAt`, or
+  root `updatedAt` when `createdAt` is absent, for `queue` rows only, so
+  production queue ordering has no `NULL` timestamps.
 - 2026-08-13: `npm test` passed, 310/310 tests after adding the
   candidate/interview migration layer, safe identity rules and
   `candidate_identity_review_items`. `npm run test:postgres` passed outside the

@@ -363,9 +363,10 @@ having count(*) > 1;
 ```
 
 Ожидаемые значения для двух счетчиков queue-time: `0` и `0`. Импорт обязан
-backfill-ить старые `queue`-заявки без `queueJoinedAt` из `createdAt`, поэтому
-`queue_without_join_time > 0` блокирует cutover. Любая строка в остальных
-инвариантах требует ручной проверки до закрытия окна.
+backfill-ить старые `queue`-заявки без `queueJoinedAt` из `createdAt`, а если
+его нет - из root `updatedAt`, поэтому `queue_without_join_time > 0`
+блокирует cutover. Любая строка в остальных инвариантах требует ручной
+проверки до закрытия окна.
 
 ## Telegram/Outbox Проверки
 

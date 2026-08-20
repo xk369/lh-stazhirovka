@@ -194,6 +194,21 @@ test('JSON import plan preserves queue join time only for queue applications', (
     telegramUsername: 'legacy_queue_trainee',
     createdAt: '2026-07-03T08:00:00.000Z'
   });
+  source.applications.push({
+    id: 204,
+    shiftId: null,
+    inviteGroupId: null,
+    name: 'Old Queue Trainee',
+    phone: '+7 999 555-66-77',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'first',
+    limits: '',
+    status: 'queue',
+    telegramUserId: '904',
+    telegramChatId: '904',
+    telegramUsername: 'old_queue_trainee'
+  });
 
   const plan = buildBookingImportPlan(source, new Date('2026-07-26T19:00:00.000Z'));
   const byLegacyId = new Map(plan.applications.map(application => [application.legacyId, application]));
@@ -201,6 +216,7 @@ test('JSON import plan preserves queue join time only for queue applications', (
   assert.equal(byLegacyId.get(200).queueJoinedAt, null);
   assert.equal(byLegacyId.get(202).queueJoinedAt, '2026-07-02T09:00:00.000Z');
   assert.equal(byLegacyId.get(203).queueJoinedAt, '2026-07-03T08:00:00.000Z');
+  assert.equal(byLegacyId.get(204).queueJoinedAt, '2026-07-26T18:00:00.000Z');
 });
 
 test('JSON import plan never merges candidates by weak identity fields', () => {
@@ -286,6 +302,23 @@ test('PostgreSQL parity snapshot accepts imported queueJoinedAt backfill', () =>
   restored.applications.push({
     ...legacyQueueApplication,
     queueJoinedAt: '2026-07-03T08:00:00.000Z'
+  });
+  source.applications.push({
+    ...legacyQueueApplication,
+    id: 204,
+    telegramUserId: '904',
+    telegramChatId: '904',
+    telegramUsername: 'old_queue_trainee',
+    createdAt: ''
+  });
+  restored.applications.push({
+    ...legacyQueueApplication,
+    id: 204,
+    telegramUserId: '904',
+    telegramChatId: '904',
+    telegramUsername: 'old_queue_trainee',
+    createdAt: '',
+    queueJoinedAt: source.updatedAt
   });
 
   assert.deepEqual(

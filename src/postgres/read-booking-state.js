@@ -245,8 +245,9 @@ export function bookingStateParitySnapshot(state) {
       .sort((left, right) => left.id - right.id),
     applications: normalized.applications
       .map(({ createdAt, ...application }) => {
-        const queueJoinedAt = application.status === 'queue' && !application.queueJoinedAt && createdAt
-          ? timestampText(createdAt)
+        const queueJoinedAtFallback = createdAt ? timestampText(createdAt) : normalized.updatedAt;
+        const queueJoinedAt = application.status === 'queue' && !application.queueJoinedAt
+          ? queueJoinedAtFallback
           : application.queueJoinedAt;
         return compactOptionalFields({
           ...application,

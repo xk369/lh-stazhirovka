@@ -517,7 +517,7 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `status` | enum: `pending`, `queue`, `queue_expired`, `confirmed`, `invited`, `feedback`, `passed`, `failed`, `noshow` | Этап единой цепочки от кандидата до результата стажировки. |
 | `recruiter_comment` | `text not null default ''` | Внутренний комментарий по уже назначенной/исторической заявке. |
 | `recruiter_queue_comment` | `text not null default ''` | Внутренний комментарий рекрутера по кандидату в очереди; стажеру не отдается. |
-| `queue_joined_at` | `timestamptz` | Когда кандидат попал в предварительную очередь. Нужен для честного порядка: кто раньше встал, тот раньше получает предложение даты; очищается при уходе из `queue`. При импорте legacy queue-заявок без `queueJoinedAt` backfill берется из `createdAt`, чтобы очередь не получала `NULL`-время. |
+| `queue_joined_at` | `timestamptz` | Когда кандидат попал в предварительную очередь. Нужен для честного порядка: кто раньше встал, тот раньше получает предложение даты; очищается при уходе из `queue`. При импорте legacy queue-заявок без `queueJoinedAt` backfill берется из `createdAt`, а если его нет - из root `updatedAt`, чтобы очередь не получала `NULL`-время и импорт был повторяемым. |
 | `venue_id` | `text` | Площадка после отправки рабочей группы. |
 | `group_link` | `text not null default ''` | Ссылка на рабочую группу, продублированная в заявке. |
 | `candidate_report` | `boolean not null default false` | Флаг отчета стажера. |

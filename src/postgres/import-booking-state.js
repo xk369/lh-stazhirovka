@@ -267,8 +267,9 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     updatedAt: requiredTimestamp(group.sentAt, now)
   }));
 
+  const stateUpdatedAt = new Date(fallbackTimestamp);
   const applications = state.applications.map(application => {
-    const createdAt = requiredTimestamp(application.createdAt, now);
+    const createdAt = requiredTimestamp(application.createdAt, stateUpdatedAt);
     const queueJoinedAt = application.status === 'queue'
       ? optionalTimestamp(application.queueJoinedAt) || createdAt
       : null;
