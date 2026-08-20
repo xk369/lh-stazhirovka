@@ -7,41 +7,44 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 ## Last Updated
 
 - Date: 2026-08-20
-- Agent task: finalize the PostgreSQL candidate/interview foundation and
-  production queue-order migration details, keep production untouched, and keep
-  the internship migration branch test-green.
+- Agent task: complete the PostgreSQL production cutover for the internship
+  center, preserve rollback backups and keep the candidate/interview foundation
+  ready for sobes integration.
 
 ## Active Context
 
-- Production project is live and must remain untouched unless the user
-  explicitly asks for a production deploy.
-- Production URL: `https://stazhirovka.151.244.243.164.sslip.io`
-- Production server path: `/opt/loft-hall-internship-unified`
-- Production container: `loft-internship-unified`
-- Production still uses JSON storage: `data/db.json`; do not switch it until
-  the cutover freeze/go is explicit.
+- Production project is live on PostgreSQL after the explicit 2026-08-20
+  cutover go.
+- Production URL is kept in private server notes, not in GitHub.
+- Production server path and container names are kept in the private
+  server-only backup inventory, not in GitHub.
+- Production now uses PostgreSQL storage:
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true`,
+  `TELEGRAM_DELIVERY_MODE=live`.
+- Frozen JSON backup and PostgreSQL dumps remain on the server and must not be
+  edited; exact paths/checksums are intentionally omitted from GitHub.
 - Migration worktree:
   `/Users/a1/Desktop/Loft_Hall/Helper_bot/loft_hall_internship_unified_migration_integrate`
 - Active branch: `migration/postgres-foundation`
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 99% overall before production cutover / 100%
-  no-prod backend implementation plus candidate/interview schema foundation.
+- Current migration progress: 100% for the production cutover / 100% no-prod
+  backend implementation plus candidate/interview schema foundation.
 
 ## Migration Staging
 
-- URL: `https://stazhirovka-migration.151.244.243.164.sslip.io`
-- Server path: `/opt/loft-hall-internship-migration-staging`
-- App container: `loft-internship-app-migration-staging`
-- PostgreSQL container: `loft-internship-postgres-migration-staging`
+- URL is kept in private server notes.
+- Server path and container names are kept in private server notes.
 - Host port: `127.0.0.1:3502 -> 3000`
 - Storage mode target: `BOOKING_STORAGE_MODE=postgres`
 - Telegram mode: `TELEGRAM_DELIVERY_MODE=dry_run`
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
-- Current staging commit: `b1710f7`.
+- Current staging worktree was refreshed to the same branch state as the
+  production cutover; the last runtime-affecting commit is recorded in git
+  history.
 - Migration staging was refreshed from fresh production internship JSON and
   current sobes JSON on 2026-08-20, rebuilt on a clean dedicated PostgreSQL
   volume and kept in `TELEGRAM_DELIVERY_MODE=dry_run`.
@@ -60,6 +63,29 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   queue-only candidate entry -> recruiter confirmation offer -> candidate
   accept -> invite outbox -> attendance -> mentor report -> final `passed`
   status -> outbox worker dry-run.
+
+## Production Cutover Record
+
+- Cutover date: 2026-08-20.
+- Production worktree was switched to `migration/postgres-foundation`.
+- Frozen internship JSON and sobes JSON checksums are stored in the private
+  server-only backup inventory.
+- Import counts: 34 shifts, 211 applications, 171 candidate profiles, 73 invite
+  groups, 84 invite group members, 63 mentor reports.
+- Status parity after import: `confirmed=9`, `failed=20`, `invited=3`,
+  `noshow=18`, `passed=43`, `queue=86`, `queue_expired=32`.
+- Sobes import counts: 1 interview slot, 1 participant, 5 resource deliveries,
+  1 candidate event.
+- SQL invariants after import: 0 applications without candidate profile,
+  0 queue rows without `queue_joined_at`, 0 non-queue rows with
+  `queue_joined_at`, 0 duplicate active interview slots.
+- One active duplicate Telegram profile was preserved and represented as one
+  open manual review row instead of automatic deduplication.
+- PostgreSQL dumps were saved after import and after short observation in the
+  private server-only backup inventory.
+- Health after switch:
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true`,
+  `TELEGRAM_DELIVERY_MODE=live`.
 
 ## Completed In This Migration Branch
 

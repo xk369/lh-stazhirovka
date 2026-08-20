@@ -6,16 +6,17 @@
 
 ## Current Progress
 
-- Общий прогресс по полному migration plan: 99% до production cutover.
+- Общий прогресс по полному migration plan: 100% для production cutover центра
+  стажировок.
 - Готовность backend implementation в `migration/postgres-foundation`: 100%
   для no-prod/staging cutover rehearsal; candidate/interview schema foundation
   integrated for the future sobes app.
-- Production: пока остается на JSON до отдельного freeze/go для cutover.
+- Production: переключен на PostgreSQL 2026-08-20 после freeze, backup,
+  import, parity-check, health-check and short observation.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: migration staging refreshed to `b1710f7`, rebuilt on a fresh
-  dedicated PostgreSQL volume, imported from fresh production internship JSON
-  and current sobes JSON, and passed PostgreSQL writable role QA in dry-run
-  Telegram mode.
+- Текущий stage: production runtime is on `BOOKING_STORAGE_MODE=postgres` with
+  `bookingStorageWritable=true`; migration staging remains available in
+  dry-run Telegram mode.
 - Candidate/interview PostgreSQL foundation is covered by `npm test` and
   `npm run test:postgres`; sandboxed local Postgres remains blocked by macOS
   shared memory, so the gate must run outside-sandbox or on migration staging.
@@ -23,10 +24,10 @@
   `applications.queue_joined_at` is imported from production JSON, exposed by
   the PostgreSQL reader, preserved while an application remains in `queue`, set
   when candidates return to queue and cleared when they leave queue.
-- Production cutover/rollback runbook is drafted in
-  `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md`; the staging rehearsal has
-  passed, so the remaining work is the short production freeze, backup, exact
-  JSON import, parity check, env switch and observation window.
+- Production cutover/rollback runbook is recorded in
+  `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md`; backup and PostgreSQL dumps
+  for the executed cutover are stored in the private server-only backup
+  inventory, outside the GitHub repo.
 
 ## Что Уже Интегрировано В Base
 

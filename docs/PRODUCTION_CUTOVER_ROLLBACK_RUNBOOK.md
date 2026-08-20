@@ -2,8 +2,19 @@
 
 Этот документ описывает финальный переход центра стажировок с JSON на
 PostgreSQL и обратный ход, если после cutover что-то пошло не так. Он не
-разрешает деплой сам по себе: production переключается только после отдельного
-явного подтверждения владельца проекта.
+разрешает будущие деплои сам по себе: новые production изменения делаются
+только после отдельного явного подтверждения владельца проекта.
+
+## Executed Cutover
+
+- Production cutover выполнен 2026-08-20 после явного подтверждения владельца.
+- Production app: `BOOKING_STORAGE_MODE=postgres`,
+  `bookingStorageWritable=true`, `TELEGRAM_DELIVERY_MODE=live`.
+- Production worktree was switched to `migration/postgres-foundation`.
+- Exact backup directory, container names and file checksums are stored in the
+  private server-only backup inventory, not in GitHub.
+- Frozen JSON backup and PostgreSQL dumps were saved after import and after
+  short observation.
 
 ## Жесткие правила
 
@@ -63,7 +74,8 @@ rollback decision:
 Перед cutover создается отдельная папка:
 
 ```bash
-BACKUP_DIR=/opt/loft-hall-internship-unified/backups/cutover-$(date +%Y%m%d-%H%M%S)
+APP_DIR=/path/to/production/app
+BACKUP_DIR="$APP_DIR/backups/cutover-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 ```
@@ -71,17 +83,17 @@ chmod 700 "$BACKUP_DIR"
 В папке должны быть:
 
 ```bash
-cp -a /opt/loft-hall-internship-unified/data/db.json "$BACKUP_DIR/db.json.before-cutover"
-cp -a /opt/loft-hall-internship-unified/.env "$BACKUP_DIR/env.before-cutover"
-git -C /opt/loft-hall-internship-unified rev-parse HEAD > "$BACKUP_DIR/git-head.before-cutover.txt"
-docker inspect loft-internship-unified > "$BACKUP_DIR/app-container.before-cutover.inspect.json"
-docker compose -f /opt/loft-hall-internship-unified/docker-compose.yml ps > "$BACKUP_DIR/docker-ps.before-cutover.txt"
+cp -a "$APP_DIR/data/db.json" "$BACKUP_DIR/db.json.before-cutover"
+cp -a "$APP_DIR/.env" "$BACKUP_DIR/env.before-cutover"
+git -C "$APP_DIR" rev-parse HEAD > "$BACKUP_DIR/git-head.before-cutover.txt"
+docker inspect "$APP_CONTAINER" > "$BACKUP_DIR/app-container.before-cutover.inspect.json"
+docker compose -f "$APP_COMPOSE_FILE" ps > "$BACKUP_DIR/docker-ps.before-cutover.txt"
 ```
 
 Если production PostgreSQL уже поднимался для rehearsal, дополнительно:
 
 ```bash
-docker compose -f /opt/loft-hall-internship-unified/deploy/docker-compose.migration.yml exec -T postgres-migration \
+docker compose -f "$POSTGRES_COMPOSE_FILE" exec -T "$POSTGRES_SERVICE" \
   pg_dump -U loft_internship -d loft_internship_migration \
   > "$BACKUP_DIR/postgres.before-cutover.dump"
 ```
