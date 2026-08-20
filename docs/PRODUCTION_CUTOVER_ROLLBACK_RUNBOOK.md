@@ -341,7 +341,7 @@ where candidate_profile_id is null
 select trainee_telegram_user_id, count(*)
 from applications
 where trainee_telegram_user_id is not null
-  and status in ('pending', 'queue', 'queue_expired', 'confirmed', 'invited', 'feedback')
+  and status in ('pending', 'queue', 'confirmed', 'invited', 'feedback')
 group by trainee_telegram_user_id
 having count(*) > 1;
 

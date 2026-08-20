@@ -245,19 +245,33 @@ try {
   );
   const linkApplicationId = Number(linkIdResult.rows[0].next_legacy_id);
   const linkApplicationUuid = crypto.randomUUID();
+  const linkCandidateProfileUuid = crypto.randomUUID();
+  const linkName = `QA Link ${linkApplicationId}`;
+  const linkPhone = '+7 999 000-00-03';
+  await pool.query(
+    `
+      INSERT INTO candidate_profiles (
+        id, telegram_user_id, telegram_chat_id, telegram_username, full_name,
+        phone, source, current_stage, created_at, updated_at
+      )
+      VALUES ($1, NULL, NULL, '', $2, $3, 'staging_role_qa', 'internship_queue', now(), now())
+    `,
+    [linkCandidateProfileUuid, linkName, linkPhone]
+  );
   await pool.query(
     `
       INSERT INTO applications (
-        id, legacy_id, name, phone, training, training_date, attempt, limits,
-        status, telegram_code, created_at, updated_at
+        id, legacy_id, candidate_profile_id, name, phone, training, training_date, attempt,
+        limits, status, telegram_code, queue_joined_at, created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, 'passed', $5, 'first', $6, 'queue', $7, now(), now())
+      VALUES ($1, $2, $3, $4, $5, 'passed', $6, 'first', $7, 'queue', $8, now(), now(), now())
     `,
     [
       linkApplicationUuid,
       linkApplicationId,
-      `QA Link ${linkApplicationId}`,
-      '+7 999 000-00-03',
+      linkCandidateProfileUuid,
+      linkName,
+      linkPhone,
       '2026-07-20',
       'telegram link QA',
       'qa_migration_link'
