@@ -18,15 +18,16 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Production URL: `https://stazhirovka.151.244.243.164.sslip.io`
 - Production server path: `/opt/loft-hall-internship-unified`
 - Production container: `loft-internship-unified`
-- Production still uses JSON storage: `data/db.json`.
+- Production still uses JSON storage: `data/db.json`; do not switch it until
+  the cutover freeze/go is explicit.
 - Migration worktree:
   `/Users/a1/Desktop/Loft_Hall/Helper_bot/loft_hall_internship_unified_migration_integrate`
 - Active branch: `migration/postgres-foundation`
 - Draft PR: `https://github.com/xk369/lh-stazhirovka/pull/3`
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
-- Current migration progress: 95% overall / 100% no-prod backend
-  implementation plus candidate/interview schema foundation.
+- Current migration progress: 99% overall before production cutover / 100%
+  no-prod backend implementation plus candidate/interview schema foundation.
 
 ## Migration Staging
 
@@ -40,18 +41,25 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Personal trainee notifications: `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`
 - Safety result: staging can validate and write booking state only to its
   dedicated PostgreSQL database, and cannot send real Telegram messages.
-- Current staging commit: `bae4e07`.
-- Local migration branch now also contains the newer production queue-assignment
-  flow, `applications.queue_joined_at` queue ordering, and the
-  candidate/interview PostgreSQL foundation; migration staging has not yet been
-  refreshed to this local state.
-- Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
-  16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
-  25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
-  `failed=8`, `passed=17`.
+- Current staging commit: `b1710f7`.
+- Migration staging was refreshed from fresh production internship JSON and
+  current sobes JSON on 2026-08-20, rebuilt on a clean dedicated PostgreSQL
+  volume and kept in `TELEGRAM_DELIVERY_MODE=dry_run`.
+- Current staging health: `BOOKING_STORAGE_MODE=postgres`,
+  `bookingStorageWritable=true`, `TELEGRAM_DELIVERY_MODE=dry_run`.
+- Final staging SQL invariants on 2026-08-20: 173 `candidate_profiles`,
+  1 `interview_slots`, 1 `interview_participants`, 5
+  `candidate_resource_deliveries`, 0 applications without candidate profile,
+  0 queue rows without `queue_joined_at`, 0 non-queue rows with
+  `queue_joined_at`, 0 duplicate active interview slots, 3 dry-run skipped
+  notifications.
+- One legacy Telegram profile has multiple active internship applications in
+  the source data; this is intentionally preserved and represented as one open
+  `candidate_identity_review_items` manual review row instead of auto-merge.
 - Core live staging QA passed against HTTP runtime in PostgreSQL writable mode:
-  create application -> recruiter confirmation -> invite outbox -> attendance
-  -> mentor report -> final `passed` status -> outbox worker dry-run.
+  queue-only candidate entry -> recruiter confirmation offer -> candidate
+  accept -> invite outbox -> attendance -> mentor report -> final `passed`
+  status -> outbox worker dry-run.
 
 ## Completed In This Migration Branch
 
@@ -327,6 +335,16 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   `scripts/postgres-link-telegram-application-write-smoke.js` and
   `scripts/postgres-staging-role-qa.js` after adding
   `link_telegram_application`.
+- 2026-08-20: final local gate passed on `b1710f7`: `npm test` passed
+  317/317, `npm run test:postgres` passed outside the sandbox, `git diff
+  --check` passed and `node scripts/check-migration-pr-safety.js HEAD~1 HEAD`
+  passed.
+- 2026-08-20: migration staging was refreshed to `b1710f7`, production
+  internship JSON and sobes JSON were copied only into staging, the dedicated
+  staging PostgreSQL volume was recreated, `db:migrate`, `db:import-json`,
+  `db:verify-parity`, `db:import-interviews-json`, HTTP role QA and dry-run
+  notification worker passed. Production remained on commit `bad0bec` in JSON
+  mode.
 - 2026-07-30: `npm test -- --test-reporter=dot` passed after adding
   transactional PostgreSQL `link_telegram_application`, adapter routing and
   command-contract coverage.
@@ -774,35 +792,30 @@ Known doc rule:
 
 ## Next Safe Actions
 
-1. Keep production untouched and keep PR #3 in draft.
-2. Commit/push the current local migration branch after final checks.
-3. Refresh migration staging only with this branch, a fresh copied production
-   JSON snapshot and a clean PostgreSQL database:
-   `BOOKING_STORAGE_MODE=postgres`, `TELEGRAM_DELIVERY_MODE=dry_run`, no
-   production deploy and no live Telegram.
-4. Review command mapping against `/api/state`, `/api/report`,
-   `/api/assignment-offer/respond` and `/api/telegram/link` during staging QA,
-   especially the new queue-confirmation and trainee-withdraw paths.
-5. Run local tests again after any doc/code changes:
+1. Keep production untouched and keep PR #3 in draft until the cutover go.
+2. Confirm a short production freeze window with recruiters.
+3. During freeze, create a production backup directory with `data/db.json`,
+   `.env`, git head, docker inspect and docker ps.
+4. Prepare production PostgreSQL from the exact frozen backup JSON, then run
+   migrations, JSON import, parity check and an after-import dump.
+5. Switch production storage env only after parity and health are green:
+   `BOOKING_STORAGE_MODE=postgres`, valid `DATABASE_URL`,
+   `POSTGRES_SSL_MODE=disable`, `TELEGRAM_DELIVERY_MODE=live`.
+6. Observe production for the first 15 minutes and first hour per the cutover
+   runbook; keep the JSON backup untouched.
+7. Run local tests again after any doc/code changes:
    `npm test -- --test-reporter=dot`, `npm run test:postgres` and
    `git diff --check`.
-6. Run the migration PR safety check before pushing any staging-runtime commit.
-7. Do full role QA on migration staging:
+8. Run the migration PR safety check before pushing any staging-runtime commit.
+9. Do full role QA on migration staging again if any runtime code changes:
    trainee view, recruiter view, mentor report validation, registry, groups,
    archive, bad links, duplicate clicks, version conflicts, assignment offer
    accept/decline/expiry and withdrawal back to queue.
-8. For UI QA that needs Telegram identity, use signed test `initData` or a
+10. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-9. During migration staging, import current sobes JSON after the internship
-   JSON with `npm run db:import-interviews-json -- --source ...`; verify
-   `interview_slots`, `interview_participants`, `candidate_resource_deliveries`,
-   `candidate_link_clicks`, `candidate_events` and
-   `candidate_identity_review_items`.
-10. After staging QA, map the sobes MVP runtime commands onto
+11. After cutover, map the sobes MVP runtime commands onto
    `candidate_profiles`, `interview_slots`, `interview_participants`,
    `candidate_resource_deliveries` and `notifications`.
-11. Only after staging writable QA passes should we plan a production cutover
-   window and rollback path.
 
 ## Current Runtime-Wiring Notes
 
@@ -819,8 +832,8 @@ Known doc rule:
 - PostgreSQL `trainee_report_submission` is report-only: it writes a group
   delivery outbox row and an audit event, but intentionally does not bump
   booking-state version or change candidate/application status.
-- PostgreSQL writable runtime mode exists and is covered by unit +
-  PostgreSQL smoke, but it has not been deployed to migration staging yet.
+- PostgreSQL writable runtime mode exists, is covered by unit + PostgreSQL
+  smoke, and is deployed to migration staging at `b1710f7`.
 - PostgreSQL notification worker exists and is covered by unit + dry-run
   PostgreSQL smoke, but no live worker is enabled anywhere.
 - PostgreSQL `candidate_profiles` is now the shared identity layer for sobes

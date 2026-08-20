@@ -169,13 +169,17 @@ select status, count(*) from candidate_identity_review_items group by status;
 curl -fsS http://127.0.0.1:3500/api/health
 ```
 
-Ожидаемо до cutover:
+Ожидаемо до cutover для новой сборки:
 
 ```json
 {
   "bookingStorageMode": "json"
 }
 ```
+
+Старая production-сборка может отвечать только `{"ok":true,...}` без storage
+полей. В таком случае источник правды до cutover: `.env` и то, что приложение
+продолжает писать в `data/db.json`.
 
 ### Фаза 1: Backup
 

@@ -6,16 +6,16 @@
 
 ## Current Progress
 
-- Общий прогресс по полному migration plan: 95%.
+- Общий прогресс по полному migration plan: 99% до production cutover.
 - Готовность backend implementation в `migration/postgres-foundation`: 100%
   для no-prod/staging cutover rehearsal; candidate/interview schema foundation
   integrated for the future sobes app.
-- Production: не трогаем.
+- Production: пока остается на JSON до отдельного freeze/go для cutover.
 - Migration base: `migration/postgres-foundation`.
-- Текущий stage: staging-only writable runtime enabled at `bae4e07`; локальная
-  ветка дополнительно содержит свежий production queue-assignment flow и
-  `002_candidate_interviews.sql`, но migration staging еще нужно обновить,
-  переимпортировать и прогнать QA заново.
+- Текущий stage: migration staging refreshed to `b1710f7`, rebuilt on a fresh
+  dedicated PostgreSQL volume, imported from fresh production internship JSON
+  and current sobes JSON, and passed PostgreSQL writable role QA in dry-run
+  Telegram mode.
 - Candidate/interview PostgreSQL foundation is covered by `npm test` and
   `npm run test:postgres`; sandboxed local Postgres remains blocked by macOS
   shared memory, so the gate must run outside-sandbox or on migration staging.
@@ -24,8 +24,9 @@
   the PostgreSQL reader, preserved while an application remains in `queue`, set
   when candidates return to queue and cleared when they leave queue.
 - Production cutover/rollback runbook is drafted in
-  `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md`; it must be rehearsed on
-  migration staging before any production switch.
+  `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md`; the staging rehearsal has
+  passed, so the remaining work is the short production freeze, backup, exact
+  JSON import, parity check, env switch and observation window.
 
 ## Что Уже Интегрировано В Base
 
