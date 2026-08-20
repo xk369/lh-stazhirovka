@@ -11,6 +11,11 @@ services:
       - "127.0.0.1:35432:5432"
     volumes:
       - loft-internship-postgres-migration-data:/var/lib/postgresql/data
+    networks:
+      default:
+      loft-hall-internship-unified:
+        aliases:
+          - postgres-migration
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U loft_internship -d loft_internship_migration"]
       interval: 5s
@@ -20,3 +25,8 @@ services:
 volumes:
   loft-internship-postgres-migration-data:
     name: loft-internship-postgres-migration-data
+
+networks:
+  loft-hall-internship-unified:
+    external: true
+    name: loft-hall-internship-unified_default
