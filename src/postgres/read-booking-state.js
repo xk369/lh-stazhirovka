@@ -244,9 +244,15 @@ export function bookingStateParitySnapshot(state) {
       .map(shift => compactOptionalFields(shift, new Set(['canceled'])))
       .sort((left, right) => left.id - right.id),
     applications: normalized.applications
-      .map(({ createdAt: _createdAt, ...application }) => (
-        compactOptionalFields(application, new Set(['candidateReport', 'mentorReport']))
-      ))
+      .map(({ createdAt, ...application }) => {
+        const queueJoinedAt = application.status === 'queue' && !application.queueJoinedAt && createdAt
+          ? timestampText(createdAt)
+          : application.queueJoinedAt;
+        return compactOptionalFields({
+          ...application,
+          queueJoinedAt
+        }, new Set(['candidateReport', 'mentorReport']));
+      })
       .sort((left, right) => left.id - right.id),
     inviteGroups: normalized.inviteGroups
       .map(group => ({

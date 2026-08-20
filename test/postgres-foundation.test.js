@@ -263,6 +263,37 @@ test('PostgreSQL parity snapshot ignores storage-only ordering and timestamps', 
   });
 });
 
+test('PostgreSQL parity snapshot accepts imported queueJoinedAt backfill', () => {
+  const source = sourceState();
+  const restored = structuredClone(source);
+  const legacyQueueApplication = {
+    id: 203,
+    shiftId: null,
+    inviteGroupId: null,
+    name: 'Legacy Queue Trainee',
+    phone: '+7 999 222-33-44',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'first',
+    limits: '',
+    status: 'queue',
+    telegramUserId: '903',
+    telegramChatId: '903',
+    telegramUsername: 'legacy_queue_trainee',
+    createdAt: '2026-07-03T08:00:00.000Z'
+  };
+  source.applications.push(legacyQueueApplication);
+  restored.applications.push({
+    ...legacyQueueApplication,
+    queueJoinedAt: '2026-07-03T08:00:00.000Z'
+  });
+
+  assert.deepEqual(
+    bookingStateParitySnapshot(restored),
+    bookingStateParitySnapshot(source)
+  );
+});
+
 test('PostgreSQL parity verification rejects a changed business field', () => {
   const source = sourceState();
   const restored = structuredClone(source);
