@@ -123,14 +123,14 @@ response = await stateCommand(traineeInitData, {
   baseVersion: version,
   application: {
     id: applicationId,
-    shiftId: shift.id,
+    shiftId: null,
     name: traineeName,
     phone: '+7 999 000-00-01',
     training: 'passed',
     trainingDate: '2026-07-20',
     attempt: 'first',
     limits: 'QA dry-run',
-    status: 'pending',
+    status: 'queue',
     telegramCode: 'qa_migration_trainee'
   }
 });
@@ -138,18 +138,41 @@ assert.equal(response.role, 'trainee');
 
 current = await recruiterState(recruiterInitData);
 version = current.state.version;
-assert.equal(
-  current.state.applications.find(item => item.id === applicationId)?.status,
-  'pending'
-);
+const queuedApplication = current.state.applications.find(item => item.id === applicationId);
+assert.equal(queuedApplication?.status, 'queue');
+assert.equal(queuedApplication?.shiftId ?? null, null);
+assert.ok(queuedApplication?.queueJoinedAt, 'queue application stores queueJoinedAt');
 
 response = await stateCommand(recruiterInitData, {
-  action: 'set_application_status',
+  action: 'request_assignment_confirmation',
   baseVersion: version,
   applicationId,
-  status: 'confirmed'
+  shiftId: shift.id
 });
 version = response.state.version;
+const assignmentOffer = response.result?.assignmentOffer
+  || response.state.applications.find(item => item.id === applicationId)?.assignmentOffer;
+assert.ok(assignmentOffer?.token, 'assignment offer token is returned');
+
+response = await jsonRequest('/api/assignment-offer/respond', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    initData: traineeInitData,
+    applicationId,
+    token: assignmentOffer.token,
+    decision: 'accept'
+  })
+});
+assert.equal(response.result.status, 'accepted');
+assert.equal(response.result.nextStatus, 'confirmed');
+
+current = await recruiterState(recruiterInitData);
+version = current.state.version;
+const confirmedApplication = current.state.applications.find(item => item.id === applicationId);
+assert.equal(confirmedApplication?.status, 'confirmed');
+assert.equal(confirmedApplication?.shiftId, shift.id);
+assert.ok(!confirmedApplication?.queueJoinedAt, 'queueJoinedAt is cleared after assignment');
 
 response = await stateCommand(recruiterInitData, {
   action: 'send_invites',
@@ -299,7 +322,9 @@ try {
   const eventTypes = eventRows.rows.map(row => row.event_type);
   for (const expectedEvent of [
     'application_created',
-    'recruiter_confirmed',
+    'assignment_offer_requested',
+    'assignment_offer_accepted',
+    'application_assigned_to_shift',
     'application_invited',
     'attendance_marked_feedback',
     'mentor_report_received',
