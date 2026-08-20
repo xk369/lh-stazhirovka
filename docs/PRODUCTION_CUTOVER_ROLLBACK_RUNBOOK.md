@@ -362,7 +362,10 @@ group by interview_date, interview_time
 having count(*) > 1;
 ```
 
-Любая строка в этих инвариантах требует ручной проверки до закрытия окна.
+Ожидаемые значения для двух счетчиков queue-time: `0` и `0`. Импорт обязан
+backfill-ить старые `queue`-заявки без `queueJoinedAt` из `createdAt`, поэтому
+`queue_without_join_time > 0` блокирует cutover. Любая строка в остальных
+инвариантах требует ручной проверки до закрытия окна.
 
 ## Telegram/Outbox Проверки
 

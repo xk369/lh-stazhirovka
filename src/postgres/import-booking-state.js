@@ -267,48 +267,55 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     updatedAt: requiredTimestamp(group.sentAt, now)
   }));
 
-  const applications = state.applications.map(application => ({
-    id: applicationIdByLegacy.get(String(application.id)),
-    legacyId: application.id,
-    shiftId: application.shiftId === null
-      ? null
-      : shiftIdByLegacy.get(String(application.shiftId)) || null,
-    inviteGroupId: application.inviteGroupId
-      ? inviteGroupIdByLegacy.get(String(application.inviteGroupId)) || null
-      : null,
-    traineeTelegramUserId: application.telegramUserId || null,
-    traineeTelegramChatId: application.telegramChatId || null,
-    telegramUsername: application.telegramUsername || null,
-    telegramCode: application.telegramCode || null,
-    name: application.name,
-    phone: application.phone || '',
-    training: application.training,
-    trainingDate: application.trainingDate || null,
-    attempt: application.attempt,
-    limits: application.limits || '',
-    status: application.status,
-    recruiterComment: application.comment || '',
-    recruiterQueueComment: application.recruiterQueueComment || '',
-    queueJoinedAt: application.status === 'queue' ? optionalTimestamp(application.queueJoinedAt) : null,
-    venueId: application.venueId || null,
-    groupLink: application.groupLink || '',
-    candidateReport: Boolean(application.candidateReport),
-    experience: application.experience || null,
-    mentorReportReceived: Boolean(application.mentorReport),
-    mentorReportAt: optionalTimestamp(application.mentorReportAt),
-    mentorReporterTelegramUserId: application.mentorReporterTelegramUserId || null,
-    mentorDecision: application.mentorDecision || '',
-    mentorReportVenueId: application.mentorReportVenueId || '',
-    mentorReportVenue: application.mentorReportVenue || '',
-    mentorReportLoft: application.mentorReportLoft || '',
-    mentorReportHall: application.mentorReportHall || '',
-    mentorCommentForTrainee: application.mentorCommentForTrainee || '',
-    mentorCommentSentAt: optionalTimestamp(application.mentorCommentSentAt),
-    mentorCommentDeliveryStatus: application.mentorCommentDeliveryStatus || null,
-    mentorCommentDeliveryError: application.mentorCommentDeliveryError || '',
-    createdAt: requiredTimestamp(application.createdAt, now),
-    updatedAt: fallbackTimestamp
-  }));
+  const applications = state.applications.map(application => {
+    const createdAt = requiredTimestamp(application.createdAt, now);
+    const queueJoinedAt = application.status === 'queue'
+      ? optionalTimestamp(application.queueJoinedAt) || createdAt
+      : null;
+
+    return {
+      id: applicationIdByLegacy.get(String(application.id)),
+      legacyId: application.id,
+      shiftId: application.shiftId === null
+        ? null
+        : shiftIdByLegacy.get(String(application.shiftId)) || null,
+      inviteGroupId: application.inviteGroupId
+        ? inviteGroupIdByLegacy.get(String(application.inviteGroupId)) || null
+        : null,
+      traineeTelegramUserId: application.telegramUserId || null,
+      traineeTelegramChatId: application.telegramChatId || null,
+      telegramUsername: application.telegramUsername || null,
+      telegramCode: application.telegramCode || null,
+      name: application.name,
+      phone: application.phone || '',
+      training: application.training,
+      trainingDate: application.trainingDate || null,
+      attempt: application.attempt,
+      limits: application.limits || '',
+      status: application.status,
+      recruiterComment: application.comment || '',
+      recruiterQueueComment: application.recruiterQueueComment || '',
+      queueJoinedAt,
+      venueId: application.venueId || null,
+      groupLink: application.groupLink || '',
+      candidateReport: Boolean(application.candidateReport),
+      experience: application.experience || null,
+      mentorReportReceived: Boolean(application.mentorReport),
+      mentorReportAt: optionalTimestamp(application.mentorReportAt),
+      mentorReporterTelegramUserId: application.mentorReporterTelegramUserId || null,
+      mentorDecision: application.mentorDecision || '',
+      mentorReportVenueId: application.mentorReportVenueId || '',
+      mentorReportVenue: application.mentorReportVenue || '',
+      mentorReportLoft: application.mentorReportLoft || '',
+      mentorReportHall: application.mentorReportHall || '',
+      mentorCommentForTrainee: application.mentorCommentForTrainee || '',
+      mentorCommentSentAt: optionalTimestamp(application.mentorCommentSentAt),
+      mentorCommentDeliveryStatus: application.mentorCommentDeliveryStatus || null,
+      mentorCommentDeliveryError: application.mentorCommentDeliveryError || '',
+      createdAt,
+      updatedAt: fallbackTimestamp
+    };
+  });
 
   const {
     candidateProfiles,

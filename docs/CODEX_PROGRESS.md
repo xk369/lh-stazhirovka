@@ -207,6 +207,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   internship JSON import + parity, sobes JSON import and every PostgreSQL
   write/runtime smoke passed. Production, migration staging and live Telegram
   were not touched.
+- 2026-08-20: migration staging rehearsal on current production JSON found
+  legacy `queue` applications without `queueJoinedAt`. The import now
+  backfills `applications.queue_joined_at` from application `createdAt` for
+  `queue` rows only, so production queue ordering has no `NULL` timestamps.
 - 2026-08-13: `npm test` passed, 310/310 tests after adding the
   candidate/interview migration layer, safe identity rules and
   `candidate_identity_review_items`. `npm run test:postgres` passed outside the

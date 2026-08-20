@@ -178,12 +178,29 @@ test('JSON import plan preserves queue join time only for queue applications', (
     telegramChatId: '902',
     telegramUsername: 'queue_trainee'
   });
+  source.applications.push({
+    id: 203,
+    shiftId: null,
+    inviteGroupId: null,
+    name: 'Legacy Queue Trainee',
+    phone: '+7 999 222-33-44',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'first',
+    limits: '',
+    status: 'queue',
+    telegramUserId: '903',
+    telegramChatId: '903',
+    telegramUsername: 'legacy_queue_trainee',
+    createdAt: '2026-07-03T08:00:00.000Z'
+  });
 
   const plan = buildBookingImportPlan(source, new Date('2026-07-26T19:00:00.000Z'));
   const byLegacyId = new Map(plan.applications.map(application => [application.legacyId, application]));
 
   assert.equal(byLegacyId.get(200).queueJoinedAt, null);
   assert.equal(byLegacyId.get(202).queueJoinedAt, '2026-07-02T09:00:00.000Z');
+  assert.equal(byLegacyId.get(203).queueJoinedAt, '2026-07-03T08:00:00.000Z');
 });
 
 test('JSON import plan never merges candidates by weak identity fields', () => {
