@@ -345,6 +345,12 @@ where trainee_telegram_user_id is not null
 group by trainee_telegram_user_id
 having count(*) > 1;
 
+select count(*) as open_active_application_duplicate_reviews
+from candidate_identity_review_items
+where status = 'open'
+  and signal_type = 'manual_review'
+  and signal_value like 'active_applications:%';
+
 select count(*) as queue_without_join_time
 from applications
 where status = 'queue'
@@ -366,7 +372,9 @@ having count(*) > 1;
 backfill-ить старые `queue`-заявки без `queueJoinedAt` из `createdAt`, а если
 его нет - из root `updatedAt`, поэтому `queue_without_join_time > 0`
 блокирует cutover. Любая строка в остальных инвариантах требует ручной
-проверки до закрытия окна.
+проверки до закрытия окна. Для дублей активных заявок допустимый результат -
+не автоматическое удаление одной строки, а сохраненные заявки плюс открытая
+`manual_review` запись с `signal_value='active_applications:...'`.
 
 ## Telegram/Outbox Проверки
 

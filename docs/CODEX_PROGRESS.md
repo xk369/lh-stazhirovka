@@ -212,6 +212,11 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   backfills `applications.queue_joined_at` from application `createdAt`, or
   root `updatedAt` when `createdAt` is absent, for `queue` rows only, so
   production queue ordering has no `NULL` timestamps.
+- 2026-08-20: migration staging also found one Telegram profile with multiple
+  active legacy internship applications. The importer preserves all
+  applications and creates an open `candidate_identity_review_items`
+  `manual_review` row with `signal_value='active_applications:...'`; no
+  automatic deduplication is performed.
 - 2026-08-13: `npm test` passed, 310/310 tests after adding the
   candidate/interview migration layer, safe identity rules and
   `candidate_identity_review_items`. `npm run test:postgres` passed outside the

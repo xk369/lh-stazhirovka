@@ -59,6 +59,13 @@ const INVITE_GROUP_FIELDS = new Set([
   'memberIds',
   'sentAt'
 ]);
+const ACTIVE_APPLICATION_IMPORT_REVIEW_STATUSES = new Set([
+  'pending',
+  'queue',
+  'confirmed',
+  'invited',
+  'feedback'
+]);
 
 function unknownFields(value, allowedFields) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
@@ -179,6 +186,41 @@ function buildCandidateProfiles(applications, fallbackTimestamp) {
     candidateProfiles: [...profilesByKey.values()],
     profileIdByApplicationId
   };
+}
+
+function buildActiveApplicationReviewItems(applications, fallbackTimestamp) {
+  const applicationsByTelegramUserId = new Map();
+  for (const application of applications) {
+    if (!application.traineeTelegramUserId) continue;
+    if (!ACTIVE_APPLICATION_IMPORT_REVIEW_STATUSES.has(application.status)) continue;
+    const key = application.traineeTelegramUserId;
+    const items = applicationsByTelegramUserId.get(key) || [];
+    items.push(application);
+    applicationsByTelegramUserId.set(key, items);
+  }
+
+  const rows = [];
+  for (const items of applicationsByTelegramUserId.values()) {
+    if (items.length < 2) continue;
+    const candidateProfileId = items.find(item => item.candidateProfileId)?.candidateProfileId || null;
+    if (!candidateProfileId) continue;
+    const signalValue = items
+      .map(item => `${item.legacyId}:${item.status}`)
+      .join(',');
+    rows.push({
+      id: randomUUID(),
+      candidateProfileId,
+      matchedCandidateProfileId: null,
+      signalType: 'manual_review',
+      signalValue: `active_applications:${signalValue}`,
+      status: 'open',
+      resolutionNote: 'Legacy import has multiple active internship applications for one Telegram user.',
+      detectedAt: fallbackTimestamp,
+      createdAt: fallbackTimestamp,
+      updatedAt: fallbackTimestamp
+    });
+  }
+  return rows;
 }
 
 function uniqueMemberLinks(state, applicationIdByLegacy, inviteGroupIdByLegacy) {
@@ -325,6 +367,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
   for (const application of applications) {
     application.candidateProfileId = profileIdByApplicationId.get(application.id) || null;
   }
+  const identityReviewItems = buildActiveApplicationReviewItems(applications, fallbackTimestamp);
 
   const telegramUsersById = new Map();
   for (const application of applications) {
@@ -377,6 +420,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
   return {
     state,
     candidateProfiles,
+    identityReviewItems,
     telegramUsers: [...telegramUsersById.values()],
     shifts,
     inviteGroups,
@@ -432,6 +476,28 @@ async function insertCandidateProfiles(client, rows) {
       row.phone,
       row.source,
       row.currentStage,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
+}
+
+async function insertIdentityReviewItems(client, rows) {
+  for (const row of rows) {
+    await client.query(`
+      INSERT INTO candidate_identity_review_items (
+        id, candidate_profile_id, matched_candidate_profile_id, signal_type,
+        signal_value, status, resolution_note, detected_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
+      row.id,
+      row.candidateProfileId,
+      row.matchedCandidateProfileId,
+      row.signalType,
+      row.signalValue,
+      row.status,
+      row.resolutionNote,
+      row.detectedAt,
       row.createdAt,
       row.updatedAt
     ]);
@@ -650,6 +716,7 @@ async function verifyImportedCounts(client, plan) {
     shifts: plan.shifts.length,
     applications: plan.applications.length,
     candidate_profiles: plan.candidateProfiles.length,
+    candidate_identity_review_items: plan.identityReviewItems.length,
     invite_groups: plan.inviteGroups.length,
     application_assignment_offers: plan.assignmentOffers.length,
     invite_group_members: plan.inviteGroupMembers.length,
@@ -709,6 +776,7 @@ export async function importBookingState(client, sourceState, {
       [plan.state.version, plan.state.updatedAt]
     );
     await insertCandidateProfiles(client, plan.candidateProfiles);
+    await insertIdentityReviewItems(client, plan.identityReviewItems);
     await insertTelegramUsers(client, plan.telegramUsers);
     await insertRecruiters(client, recruiterTelegramIds, now);
     await insertShifts(client, plan.shifts);

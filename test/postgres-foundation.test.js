@@ -219,6 +219,34 @@ test('JSON import plan preserves queue join time only for queue applications', (
   assert.equal(byLegacyId.get(204).queueJoinedAt, '2026-07-26T18:00:00.000Z');
 });
 
+test('JSON import plan opens review item for duplicate active Telegram applications', () => {
+  const source = sourceState();
+  source.applications.push({
+    id: 202,
+    shiftId: null,
+    inviteGroupId: null,
+    name: 'Duplicate Active Trainee',
+    phone: '+7 999 777-88-99',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'repeat',
+    limits: '',
+    status: 'queue',
+    telegramUserId: '901',
+    telegramChatId: '901',
+    telegramUsername: 'waiting_trainee'
+  });
+
+  const plan = buildBookingImportPlan(source, new Date('2026-07-26T19:00:00.000Z'));
+
+  assert.equal(plan.applications.filter(application => application.traineeTelegramUserId === '901').length, 2);
+  assert.equal(plan.identityReviewItems.length, 1);
+  assert.equal(plan.identityReviewItems[0].signalType, 'manual_review');
+  assert.match(plan.identityReviewItems[0].signalValue, /^active_applications:/);
+  assert.match(plan.identityReviewItems[0].signalValue, /201:feedback/);
+  assert.match(plan.identityReviewItems[0].signalValue, /202:queue/);
+});
+
 test('JSON import plan never merges candidates by weak identity fields', () => {
   const source = sourceState();
   for (const application of source.applications) {
