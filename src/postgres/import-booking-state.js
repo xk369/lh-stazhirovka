@@ -17,6 +17,7 @@ const APPLICATION_FIELDS = new Set([
   'recruiterComment',
   'recruiterQueueComment',
   'queueComment',
+  'queueJoinedAt',
   'assignmentOffer',
   'inviteGroupId',
   'venueId',
@@ -130,6 +131,56 @@ function mapByLegacyId(items) {
   return new Map(items.map(item => [String(item.id), randomUUID()]));
 }
 
+function candidateProfileKey(application) {
+  const telegramUserId = String(application.traineeTelegramUserId || '').trim();
+  if (telegramUserId) return `telegram_user_id:${telegramUserId}`;
+
+  return `application:${application.legacyId}`;
+}
+
+function candidateStageFromApplicationStatus(status) {
+  const normalized = String(status || 'queue').trim() || 'queue';
+  return `internship_${normalized}`;
+}
+
+function buildCandidateProfiles(applications, fallbackTimestamp) {
+  const profilesByKey = new Map();
+  const profileIdByApplicationId = new Map();
+
+  for (const application of applications) {
+    const key = candidateProfileKey(application);
+    const existing = profilesByKey.get(key);
+    const profile = existing || {
+      id: randomUUID(),
+      telegramUserId: application.traineeTelegramUserId || null,
+      telegramChatId: application.traineeTelegramChatId || null,
+      telegramUsername: application.telegramUsername || '',
+      fullName: application.name,
+      phone: application.phone || '',
+      source: 'internship_json_import',
+      currentStage: candidateStageFromApplicationStatus(application.status),
+      createdAt: application.createdAt || fallbackTimestamp,
+      updatedAt: fallbackTimestamp
+    };
+
+    profile.telegramUserId = profile.telegramUserId || application.traineeTelegramUserId || null;
+    profile.telegramChatId = application.traineeTelegramChatId || profile.telegramChatId || null;
+    profile.telegramUsername = application.telegramUsername || profile.telegramUsername || '';
+    profile.fullName = application.name || profile.fullName;
+    profile.phone = application.phone || profile.phone || '';
+    profile.currentStage = candidateStageFromApplicationStatus(application.status);
+    profile.updatedAt = fallbackTimestamp;
+
+    profilesByKey.set(key, profile);
+    profileIdByApplicationId.set(application.id, profile.id);
+  }
+
+  return {
+    candidateProfiles: [...profilesByKey.values()],
+    profileIdByApplicationId
+  };
+}
+
 function uniqueMemberLinks(state, applicationIdByLegacy, inviteGroupIdByLegacy) {
   const links = new Map();
   const add = (groupLegacyId, applicationLegacyId) => {
@@ -238,6 +289,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     status: application.status,
     recruiterComment: application.comment || '',
     recruiterQueueComment: application.recruiterQueueComment || '',
+    queueJoinedAt: application.status === 'queue' ? optionalTimestamp(application.queueJoinedAt) : null,
     venueId: application.venueId || null,
     groupLink: application.groupLink || '',
     candidateReport: Boolean(application.candidateReport),
@@ -257,6 +309,14 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
     createdAt: requiredTimestamp(application.createdAt, now),
     updatedAt: fallbackTimestamp
   }));
+
+  const {
+    candidateProfiles,
+    profileIdByApplicationId
+  } = buildCandidateProfiles(applications, fallbackTimestamp);
+  for (const application of applications) {
+    application.candidateProfileId = profileIdByApplicationId.get(application.id) || null;
+  }
 
   const telegramUsersById = new Map();
   for (const application of applications) {
@@ -308,6 +368,7 @@ export function buildBookingImportPlan(sourceState, now = new Date()) {
 
   return {
     state,
+    candidateProfiles,
     telegramUsers: [...telegramUsersById.values()],
     shifts,
     inviteGroups,
@@ -327,6 +388,13 @@ async function assertEmptyTarget(client) {
   const tables = [
     'booking_state_meta',
     'data_imports',
+    'candidate_profiles',
+    'candidate_identity_review_items',
+    'interview_slots',
+    'interview_participants',
+    'candidate_resource_deliveries',
+    'candidate_link_clicks',
+    'candidate_events',
     'shifts',
     'applications',
     'application_assignment_offers',
@@ -337,6 +405,28 @@ async function assertEmptyTarget(client) {
     if (result.rows[0].count !== 0) {
       throw new Error(`PostgreSQL import target is not empty: ${table}.`);
     }
+  }
+}
+
+async function insertCandidateProfiles(client, rows) {
+  for (const row of rows) {
+    await client.query(`
+      INSERT INTO candidate_profiles (
+        id, telegram_user_id, telegram_chat_id, telegram_username,
+        full_name, phone, source, current_stage, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
+      row.id,
+      row.telegramUserId,
+      row.telegramChatId,
+      row.telegramUsername,
+      row.fullName,
+      row.phone,
+      row.source,
+      row.currentStage,
+      row.createdAt,
+      row.updatedAt
+    ]);
   }
 }
 
@@ -410,10 +500,10 @@ async function insertApplications(client, rows) {
   for (const row of rows) {
     await client.query(`
       INSERT INTO applications (
-        id, legacy_id, shift_id, invite_group_id,
+        id, legacy_id, candidate_profile_id, shift_id, invite_group_id,
         trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
         name, phone, training, training_date, attempt, limits, status,
-        recruiter_comment, recruiter_queue_comment,
+        recruiter_comment, recruiter_queue_comment, queue_joined_at,
         venue_id, group_link, candidate_report, experience,
         mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
         mentor_decision, mentor_report_venue_id, mentor_report_venue, mentor_report_loft,
@@ -421,20 +511,21 @@ async function insertApplications(client, rows) {
         mentor_comment_delivery_status, mentor_comment_delivery_error,
         created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4,
-        $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15,
-        $16, $17,
-        $18, $19, $20, $21,
-        $22, $23, $24,
-        $25, $26, $27, $28,
-        $29, $30, $31,
-        $32, $33,
-        $34, $35
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19,
+        $20, $21, $22, $23,
+        $24, $25, $26,
+        $27, $28, $29, $30,
+        $31, $32, $33,
+        $34, $35,
+        $36, $37
       )
     `, [
       row.id,
       row.legacyId,
+      row.candidateProfileId,
       row.shiftId,
       row.inviteGroupId,
       row.traineeTelegramUserId,
@@ -450,6 +541,7 @@ async function insertApplications(client, rows) {
       row.status,
       row.recruiterComment,
       row.recruiterQueueComment,
+      row.queueJoinedAt,
       row.venueId,
       row.groupLink,
       row.candidateReport,
@@ -549,6 +641,7 @@ async function verifyImportedCounts(client, plan) {
   const expected = {
     shifts: plan.shifts.length,
     applications: plan.applications.length,
+    candidate_profiles: plan.candidateProfiles.length,
     invite_groups: plan.inviteGroups.length,
     application_assignment_offers: plan.assignmentOffers.length,
     invite_group_members: plan.inviteGroupMembers.length,
@@ -607,6 +700,7 @@ export async function importBookingState(client, sourceState, {
       'INSERT INTO booking_state_meta (singleton, version, updated_at) VALUES (true, $1, $2)',
       [plan.state.version, plan.state.updatedAt]
     );
+    await insertCandidateProfiles(client, plan.candidateProfiles);
     await insertTelegramUsers(client, plan.telegramUsers);
     await insertRecruiters(client, recruiterTelegramIds, now);
     await insertShifts(client, plan.shifts);

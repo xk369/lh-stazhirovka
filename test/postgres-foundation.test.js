@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   auditBookingStateShape,
   buildBookingImportPlan
@@ -11,6 +13,17 @@ import {
 } from '../src/postgres/read-booking-state.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const dirname = path.dirname(fileURLToPath(import.meta.url));
+const migrationsDir = path.resolve(dirname, '../db/migrations');
+
+async function allMigrationSql() {
+  const files = (await fs.readdir(migrationsDir))
+    .filter(file => /^\d+_.+\.sql$/.test(file))
+    .sort((left, right) => left.localeCompare(right));
+  return (await Promise.all(
+    files.map(file => fs.readFile(path.join(migrationsDir, file), 'utf8'))
+  )).join('\n');
+}
 
 function sourceState() {
   return {
@@ -75,23 +88,27 @@ function sourceState() {
 }
 
 test('PostgreSQL schema contains every target business table', async () => {
-  const sql = await fs.readFile(
-    new URL('../db/migrations/001_initial.sql', import.meta.url),
-    'utf8'
-  );
+  const sql = await allMigrationSql();
   const tables = [
     'booking_state_meta',
     'data_imports',
     'telegram_users',
     'recruiters',
+    'candidate_profiles',
+    'candidate_identity_review_items',
     'shifts',
     'invite_groups',
     'applications',
+    'interview_slots',
+    'interview_participants',
+    'candidate_resource_deliveries',
+    'candidate_link_clicks',
     'invite_group_members',
     'mentor_reports',
     'mentor_report_topics',
     'notifications',
-    'application_events'
+    'application_events',
+    'candidate_events'
   ];
 
   for (const table of tables) {
@@ -99,6 +116,15 @@ test('PostgreSQL schema contains every target business table', async () => {
   }
   assert.match(sql, /idempotency_key text UNIQUE/);
   assert.match(sql, /row_version bigint NOT NULL DEFAULT 1/);
+  assert.match(sql, /ADD COLUMN candidate_profile_id uuid REFERENCES candidate_profiles\(id\)/);
+  assert.match(sql, /ADD COLUMN queue_joined_at timestamptz/);
+  assert.match(sql, /interview_slots_active_datetime_idx/);
+  assert.match(sql, /candidate_identity_review_items_open_unique_idx/);
+  assert.match(sql, /'registration_bot'/);
+  assert.match(sql, /'staff_bot'/);
+  assert.match(sql, /'unattested_group'/);
+  assert.match(sql, /'helper_bot'/);
+  assert.match(sql, /'self_employment'/);
 });
 
 test('Docker image contains PostgreSQL migration runtime files', async () => {
@@ -119,15 +145,61 @@ test('JSON import plan preserves counts, relationships, statuses and mentor resu
   assert.equal(plan.applications.length, 2);
   assert.equal(plan.inviteGroups.length, 1);
   assert.equal(plan.inviteGroupMembers.length, 2);
+  assert.equal(plan.candidateProfiles.length, 2);
   assert.equal(plan.telegramUsers.length, 2);
   assert.equal(plan.mentorReports.length, 1);
   assert.deepEqual(plan.applications.map(row => row.status), ['passed', 'feedback']);
+  assert.ok(plan.applications.every(application => uuidPattern.test(application.candidateProfileId)));
+  assert.ok(plan.candidateProfiles.every(profile => uuidPattern.test(profile.id)));
   assert.equal(plan.mentorReports[0].resultStatus, 'passed');
   assert.equal(plan.inviteGroupMembers[0].inviteGroupId, plan.inviteGroups[0].id);
   assert.ok(plan.inviteGroupMembers.every(link => (
     plan.applications.some(application => application.id === link.applicationId)
   )));
   assert.ok(plan.applications.every(application => uuidPattern.test(application.id)));
+});
+
+test('JSON import plan preserves queue join time only for queue applications', () => {
+  const source = sourceState();
+  source.applications[0].queueJoinedAt = '2026-07-01T10:00:00.000Z';
+  source.applications.push({
+    id: 202,
+    shiftId: null,
+    inviteGroupId: null,
+    name: 'Queue Trainee',
+    phone: '+7 999 777-88-99',
+    training: 'passed',
+    trainingDate: '2026-07-20',
+    attempt: 'first',
+    limits: '',
+    status: 'queue',
+    queueJoinedAt: '2026-07-02T09:00:00.000Z',
+    telegramUserId: '902',
+    telegramChatId: '902',
+    telegramUsername: 'queue_trainee'
+  });
+
+  const plan = buildBookingImportPlan(source, new Date('2026-07-26T19:00:00.000Z'));
+  const byLegacyId = new Map(plan.applications.map(application => [application.legacyId, application]));
+
+  assert.equal(byLegacyId.get(200).queueJoinedAt, null);
+  assert.equal(byLegacyId.get(202).queueJoinedAt, '2026-07-02T09:00:00.000Z');
+});
+
+test('JSON import plan never merges candidates by weak identity fields', () => {
+  const source = sourceState();
+  for (const application of source.applications) {
+    application.telegramUserId = '';
+    application.telegramChatId = '';
+    application.telegramUsername = 'same_username_after_rename';
+    application.phone = '+7 999 111-22-33';
+  }
+
+  const plan = buildBookingImportPlan(source, new Date('2026-07-26T19:00:00.000Z'));
+  const profileIds = new Set(plan.applications.map(application => application.candidateProfileId));
+
+  assert.equal(plan.candidateProfiles.length, 2);
+  assert.equal(profileIds.size, 2);
 });
 
 test('JSON import plan deduplicates group membership stored on both sides', () => {

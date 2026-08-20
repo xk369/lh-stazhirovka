@@ -51,6 +51,7 @@ function fakePool({
   const calls = [];
   const shifts = existingShifts.map(row => ({ ...row }));
   const apps = existingApplications.map(row => ({ ...row }));
+  const candidateProfiles = [];
   const inviteGroups = existingInviteGroups.map(row => ({ ...row }));
   const notifications = existingNotifications.map(row => ({ ...row }));
   const assignmentOffers = existingAssignmentOffers.map(row => ({ ...row }));
@@ -191,7 +192,8 @@ function fakePool({
           telegram_code: row.telegram_code ?? '',
           name: row.name ?? '',
           phone: row.phone ?? '',
-          recruiter_queue_comment: row.recruiter_queue_comment ?? ''
+          recruiter_queue_comment: row.recruiter_queue_comment ?? '',
+          queue_joined_at: row.queue_joined_at ?? null
         }] : [] };
       }
       if (/SELECT id,\s+legacy_id,\s+status,\s+recruiter_queue_comment\s+FROM applications/is.test(sql)) {
@@ -225,6 +227,7 @@ function fakePool({
           name: app.name ?? '',
           phone: app.phone ?? '',
           recruiter_queue_comment: app.recruiter_queue_comment ?? '',
+          queue_joined_at: app.queue_joined_at ?? null,
           venue_id: app.venue_id ?? null,
           group_link: app.group_link ?? '',
           application_id: app.id,
@@ -267,6 +270,7 @@ function fakePool({
               name: app.name ?? '',
               phone: app.phone ?? '',
               recruiter_queue_comment: app.recruiter_queue_comment ?? '',
+              queue_joined_at: app.queue_joined_at ?? null,
               venue_id: app.venue_id ?? null,
               group_link: app.group_link ?? '',
               application_id: app.id,
@@ -342,6 +346,7 @@ function fakePool({
           limits: row.limits ?? '',
           recruiter_comment: row.recruiter_comment ?? '',
           recruiter_queue_comment: row.recruiter_queue_comment ?? '',
+          queue_joined_at: row.queue_joined_at ?? null,
           experience: row.experience ?? null,
           mentor_report_received: Boolean(row.mentor_report_received)
         }] : [] };
@@ -439,7 +444,8 @@ function fakePool({
           shift_id: row.shift_id,
           invite_group_id: row.invite_group_id,
           group_link: row.group_link,
-          experience: row.experience
+          experience: row.experience,
+          queue_joined_at: row.queue_joined_at ?? null
         }] : [] };
       }
       if (/SELECT status, mentor_report_received\s+FROM applications\s+WHERE shift_id/i.test(sql)) {
@@ -502,65 +508,107 @@ function fakePool({
         )).length;
         return { rowCount: 1, rows: [{ assigned, offered }] };
       }
+      if (/INSERT INTO candidate_profiles/i.test(sql)) {
+        const telegramUserId = params[1] ? String(params[1]) : null;
+        let row = telegramUserId
+          ? candidateProfiles.find(profile => String(profile.telegram_user_id || '') === telegramUserId)
+          : null;
+        const sourceIsHardcoded = /'internship_application'/.test(sql);
+        if (!row) {
+          row = {
+            id: params[0],
+            telegram_user_id: telegramUserId,
+            telegram_chat_id: params[2] || null,
+            telegram_username: params[3] || '',
+            full_name: params[4] || '',
+            phone: params[5] || '',
+            source: sourceIsHardcoded ? 'internship_application' : params[6],
+            current_stage: sourceIsHardcoded ? params[6] : params[7],
+            created_at: sourceIsHardcoded ? params[7] : params[8],
+            updated_at: sourceIsHardcoded ? params[7] : params[9]
+          };
+          candidateProfiles.push(row);
+        } else {
+          row.telegram_chat_id = params[2] || row.telegram_chat_id;
+          row.telegram_username = params[3] || row.telegram_username;
+          row.full_name = params[4] || row.full_name;
+          row.phone = params[5] || row.phone;
+          row.current_stage = sourceIsHardcoded ? params[6] : params[7];
+          row.updated_at = sourceIsHardcoded ? params[7] : params[9];
+        }
+        return {
+          rowCount: 1,
+          rows: /RETURNING id/i.test(sql) ? [{ id: row.id }] : []
+        };
+      }
       if (/INSERT INTO applications/i.test(sql)) {
+        const hasCandidateProfile = /candidate_profile_id/i.test(sql);
+        const hasQueueJoinedAt = /queue_joined_at/i.test(sql);
+        const queueOffset = hasQueueJoinedAt ? 1 : 0;
         if (params.length >= 35) {
+          const offset = hasCandidateProfile ? 1 : 0;
           apps.push({
             id: params[0],
             legacy_id: params[1],
-            shift_id: params[2],
-            invite_group_id: params[3],
-            trainee_telegram_user_id: params[4],
-            trainee_telegram_chat_id: params[5],
-            telegram_username: params[6],
-            telegram_code: params[7],
-            name: params[8],
-            phone: params[9],
-            training: params[10],
-            training_date: params[11],
-            attempt: params[12],
-            limits: params[13],
-            status: params[14],
-            recruiter_comment: params[15],
-            recruiter_queue_comment: params[16],
-            venue_id: params[17],
-            group_link: params[18],
-            candidate_report: params[19],
-            experience: params[20],
-            mentor_report_received: params[21],
-            mentor_report_at: params[22],
-            mentor_reporter_telegram_user_id: params[23],
-            mentor_decision: params[24],
-            mentor_report_venue_id: params[25],
-            mentor_report_venue: params[26],
-            mentor_report_loft: params[27],
-            mentor_report_hall: params[28],
-            mentor_comment_for_trainee: params[29],
-            mentor_comment_sent_at: params[30],
-            mentor_comment_delivery_status: params[31],
-            mentor_comment_delivery_error: params[32],
-            created_at: params[33],
-            updated_at: params[34],
+            candidate_profile_id: hasCandidateProfile ? params[2] : null,
+            shift_id: params[2 + offset],
+            invite_group_id: params[3 + offset],
+            trainee_telegram_user_id: params[4 + offset],
+            trainee_telegram_chat_id: params[5 + offset],
+            telegram_username: params[6 + offset],
+            telegram_code: params[7 + offset],
+            name: params[8 + offset],
+            phone: params[9 + offset],
+            training: params[10 + offset],
+            training_date: params[11 + offset],
+            attempt: params[12 + offset],
+            limits: params[13 + offset],
+            status: params[14 + offset],
+            recruiter_comment: params[15 + offset],
+            recruiter_queue_comment: params[16 + offset],
+            queue_joined_at: hasQueueJoinedAt ? params[17 + offset] : null,
+            venue_id: params[17 + offset + queueOffset],
+            group_link: params[18 + offset + queueOffset],
+            candidate_report: params[19 + offset + queueOffset],
+            experience: params[20 + offset + queueOffset],
+            mentor_report_received: params[21 + offset + queueOffset],
+            mentor_report_at: params[22 + offset + queueOffset],
+            mentor_reporter_telegram_user_id: params[23 + offset + queueOffset],
+            mentor_decision: params[24 + offset + queueOffset],
+            mentor_report_venue_id: params[25 + offset + queueOffset],
+            mentor_report_venue: params[26 + offset + queueOffset],
+            mentor_report_loft: params[27 + offset + queueOffset],
+            mentor_report_hall: params[28 + offset + queueOffset],
+            mentor_comment_for_trainee: params[29 + offset + queueOffset],
+            mentor_comment_sent_at: params[30 + offset + queueOffset],
+            mentor_comment_delivery_status: params[31 + offset + queueOffset],
+            mentor_comment_delivery_error: params[32 + offset + queueOffset],
+            created_at: params[33 + offset + queueOffset],
+            updated_at: params[34 + offset + queueOffset],
             row_version: 1
           });
         } else {
+          const offset = hasCandidateProfile ? 1 : 0;
           apps.push({
             id: params[0],
             legacy_id: params[1],
-            shift_id: params[2],
+            candidate_profile_id: hasCandidateProfile ? params[2] : null,
+            shift_id: params[2 + offset],
             invite_group_id: null,
-            trainee_telegram_user_id: params[3],
-            trainee_telegram_chat_id: params[4],
-            telegram_username: params[5],
-            telegram_code: params[6],
-            name: params[7],
-            phone: params[8],
-            training: params[9],
-            training_date: params[10],
-            attempt: params[11],
-            limits: params[12],
-            status: params[13],
-            recruiter_comment: params[14],
+            trainee_telegram_user_id: params[3 + offset],
+            trainee_telegram_chat_id: params[4 + offset],
+            telegram_username: params[5 + offset],
+            telegram_code: params[6 + offset],
+            name: params[7 + offset],
+            phone: params[8 + offset],
+            training: params[9 + offset],
+            training_date: params[10 + offset],
+            attempt: params[11 + offset],
+            limits: params[12 + offset],
+            status: params[13 + offset],
+            recruiter_comment: params[14 + offset],
             recruiter_queue_comment: '',
+            queue_joined_at: hasQueueJoinedAt ? params[15 + offset] : null,
             venue_id: null,
             group_link: '',
             candidate_report: false,
@@ -577,8 +625,8 @@ function fakePool({
             mentor_comment_sent_at: null,
             mentor_comment_delivery_status: null,
             mentor_comment_delivery_error: '',
-            created_at: params[15],
-            updated_at: params[15],
+            created_at: params[15 + offset + queueOffset],
+            updated_at: params[15 + offset + queueOffset],
             row_version: 1
           });
         }
@@ -675,6 +723,7 @@ function fakePool({
             app.invite_group_id = groupUuid;
             app.venue_id = venueId;
             app.group_link = linkValue;
+            app.queue_joined_at = null;
             app.updated_at = nowIso;
             count += 1;
           }
@@ -757,7 +806,8 @@ function fakePool({
         return { rowCount: 1, rows: [] };
       }
       if (/UPDATE applications\s+SET shift_id = \$1,\s+invite_group_id = NULL/is.test(sql)) {
-        const target = apps.find(app => String(app.id) === String(params[14]));
+        const hasQueueJoinedAt = /queue_joined_at/i.test(sql);
+        const target = apps.find(app => String(app.id) === String(hasQueueJoinedAt ? params[16] : params[15]));
         if (target) {
           target.shift_id = params[0];
           target.invite_group_id = null;
@@ -773,6 +823,7 @@ function fakePool({
           target.limits = params[10];
           target.status = params[11];
           target.recruiter_comment = params[12];
+          target.queue_joined_at = hasQueueJoinedAt ? params[13] : target.queue_joined_at ?? null;
           target.venue_id = null;
           target.group_link = '';
           target.candidate_report = false;
@@ -789,7 +840,8 @@ function fakePool({
           target.mentor_comment_sent_at = null;
           target.mentor_comment_delivery_status = null;
           target.mentor_comment_delivery_error = '';
-          target.updated_at = params[13];
+          target.candidate_profile_id = hasQueueJoinedAt ? params[14] : params[13];
+          target.updated_at = hasQueueJoinedAt ? params[15] : params[14];
           target.row_version = Number(target.row_version || 1) + 1;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -802,9 +854,13 @@ function fakePool({
         let count = 0;
         for (const target of apps) {
           if (!targetUuids.has(String(target.id))) continue;
+          const previousStatus = String(target.status || '');
           target.shift_id = null;
           target.invite_group_id = null;
           target.status = 'queue';
+          target.queue_joined_at = /queue_joined_at/i.test(sql)
+            ? (previousStatus === 'queue' ? target.queue_joined_at ?? null : nowIso)
+            : target.queue_joined_at ?? null;
           target.venue_id = null;
           target.group_link = '';
           target.candidate_report = false;
@@ -1071,6 +1127,7 @@ function fakePool({
           target.mentor_comment_sent_at = null;
           target.mentor_comment_delivery_status = params[9];
           target.mentor_comment_delivery_error = params[10];
+          if (/queue_joined_at/i.test(sql)) target.queue_joined_at = null;
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -1094,6 +1151,7 @@ function fakePool({
           target.shift_id = shiftUuid;
           target.status = 'confirmed';
           target.recruiter_queue_comment = '';
+          target.queue_joined_at = null;
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -1109,6 +1167,7 @@ function fakePool({
           if (!targetIds.has(String(target.id))) continue;
           target.status = 'queue_expired';
           target.recruiter_queue_comment = '';
+          target.queue_joined_at = null;
           target.updated_at = nowIso;
           count += 1;
         }
@@ -1124,12 +1183,14 @@ function fakePool({
       if (/UPDATE applications\s+SET status/i.test(sql)) {
         const nextStatus = params[0];
         const nextExperience = params[1];
-        const nowIso = params[2];
-        const appUuid = String(params[3]);
+        const hasQueueJoinedAt = /queue_joined_at/i.test(sql);
+        const nowIso = hasQueueJoinedAt ? params[3] : params[2];
+        const appUuid = String(hasQueueJoinedAt ? params[4] : params[3]);
         const target = apps.find(app => String(app.id) === appUuid);
         if (target) {
           target.status = nextStatus;
           target.experience = nextExperience;
+          if (hasQueueJoinedAt) target.queue_joined_at = params[2];
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -1144,6 +1205,7 @@ function fakePool({
           target.shift_id = shiftUuid;
           target.status = nextStatus;
           target.recruiter_queue_comment = '';
+          if (/queue_joined_at/i.test(sql)) target.queue_joined_at = null;
           target.updated_at = nowIso;
         }
         return { rowCount: target ? 1 : 0, rows: [] };
@@ -1288,6 +1350,7 @@ test('upsertTraineeApplicationInPostgres creates queue application, event and ve
   assert.equal(app.telegram_username, 'trainee_user');
   assert.equal(app.phone, '+7 999 123-45-67');
   assert.equal(app.training_date, '2026-07-20');
+  assert.equal(app.queue_joined_at, now.toISOString());
   const eventInserts = pool.calls.filter(call => /INSERT INTO application_events/.test(call.sql));
   assert.equal(eventInserts.length, 1);
   assert.equal(eventInserts[0].params[3], 'application_created');
@@ -1335,7 +1398,8 @@ test('upsertTraineeApplicationInPostgres updates own queue app profile and audit
       training_date: null,
       attempt: 'repeat',
       limits: 'Было',
-      recruiter_comment: ''
+      recruiter_comment: '',
+      queue_joined_at: '2026-07-20T08:00:00.000Z'
     }]
   });
 
@@ -1357,6 +1421,7 @@ test('upsertTraineeApplicationInPostgres updates own queue app profile and audit
   assert.equal(pool.getApplications()[0].shift_id, null);
   assert.equal(pool.getApplications()[0].status, 'queue');
   assert.equal(pool.getApplications()[0].telegram_username, 'trainee_user');
+  assert.equal(pool.getApplications()[0].queue_joined_at, '2026-07-20T08:00:00.000Z');
   const eventTypes = pool.calls
     .filter(call => /INSERT INTO application_events/.test(call.sql))
     .map(call => call.params[3]);
@@ -1406,6 +1471,7 @@ test('upsertTraineeApplicationInPostgres updates own pending app back to queue',
 
   assert.equal(pool.getApplications()[0].shift_id, null);
   assert.equal(pool.getApplications()[0].status, 'queue');
+  assert.equal(pool.getApplications()[0].queue_joined_at, '2026-07-29T12:00:00.000Z');
   const eventTypes = pool.calls
     .filter(call => /INSERT INTO application_events/.test(call.sql))
     .map(call => call.params[3]);
@@ -3321,6 +3387,7 @@ const queuedApp = {
   name: 'Иван Иванов',
   phone: '+7 999 123-45-67',
   recruiter_queue_comment: 'созвониться',
+  queue_joined_at: '2026-07-20T08:00:00.000Z',
   experience: null,
   mentor_report_received: false
 };
@@ -3836,6 +3903,7 @@ test('assignShiftInPostgres moves queue application onto target shift with pendi
   const movedApp = pool.getApplications()[0];
   assert.equal(movedApp.shift_id, 'shift-uuid-target');
   assert.equal(movedApp.status, 'pending');
+  assert.equal(movedApp.queue_joined_at, null);
 
   const sqlOrder = pool.calls.map(call => call.sql.trim().replace(/\s+/g, ' '));
   const beginIndex = sqlOrder.indexOf('BEGIN');
@@ -4170,6 +4238,7 @@ test('requestAssignmentConfirmationInPostgres creates active offer without movin
   assert.equal(result.assignmentOffer.expiresAt, '2026-07-29T15:00:00.000Z');
   assert.equal(pool.getApplications()[0].status, 'queue');
   assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(pool.getApplications()[0].queue_joined_at, '2026-07-20T08:00:00.000Z');
   assert.equal(pool.getAssignmentOffers().length, 1);
   assert.equal(pool.getAssignmentOffers()[0].status, 'active');
   assert.equal(pool.getAssignmentOffers()[0].application_id, 'app-uuid-queue');
@@ -4253,6 +4322,7 @@ test('respondAssignmentOfferInPostgres accepts offer and confirms application', 
   assert.equal(pool.getApplications()[0].status, 'confirmed');
   assert.equal(pool.getApplications()[0].shift_id, 'shift-uuid-target');
   assert.equal(pool.getApplications()[0].recruiter_queue_comment, '');
+  assert.equal(pool.getApplications()[0].queue_joined_at, null);
   assert.equal(pool.getAssignmentOffers()[0].status, 'accepted');
   const eventTypes = pool.calls
     .filter(call => /INSERT INTO application_events/.test(call.sql))
@@ -4291,6 +4361,7 @@ test('expireAssignmentOffersInPostgres marks unanswered offers as queue_expired'
   assert.equal(result.expired[0].offer.token, 'offer-token');
   assert.equal(pool.getApplications()[0].status, 'queue_expired');
   assert.equal(pool.getApplications()[0].recruiter_queue_comment, '');
+  assert.equal(pool.getApplications()[0].queue_joined_at, null);
   assert.equal(pool.getAssignmentOffers()[0].status, 'expired');
   const eventInsert = pool.calls.find(call => /INSERT INTO application_events/.test(call.sql));
   assert.equal(eventInsert.params[3], 'assignment_offer_expired');
@@ -4899,6 +4970,7 @@ test('cancelInternshipInPostgres returns an invited trainee to queue and keeps r
   assert.equal(canceledApp.status, 'queue');
   assert.equal(canceledApp.shift_id, null);
   assert.equal(canceledApp.invite_group_id, null);
+  assert.equal(canceledApp.queue_joined_at, now.toISOString());
   assert.equal(canceledApp.venue_id, null);
   assert.equal(canceledApp.group_link, '');
   assert.equal(canceledApp.candidate_report, false);
@@ -5179,6 +5251,7 @@ test('withdrawConfirmedAssignmentInPostgres returns trainee to queue and exposes
   assert.equal(result.assignmentWithdrawalTarget.shift.id, 7700);
   assert.equal(pool.getApplications()[0].status, 'queue');
   assert.equal(pool.getApplications()[0].shift_id, null);
+  assert.equal(pool.getApplications()[0].queue_joined_at, now.toISOString());
   assert.deepEqual(
     pool.getInviteGroupMembers().map(member => member.application_id),
     ['app-uuid-cancel-2']
@@ -5237,6 +5310,7 @@ test('returnToQueueInPostgres clears date/group links and keeps remaining group 
   assert.equal(returnedApp.status, 'queue');
   assert.equal(returnedApp.shift_id, null);
   assert.equal(returnedApp.invite_group_id, null);
+  assert.equal(returnedApp.queue_joined_at, now.toISOString());
   assert.equal(returnedApp.venue_id, null);
   assert.equal(returnedApp.group_link, '');
   assert.equal(returnedApp.candidate_report, false);
@@ -5557,6 +5631,7 @@ test('cancelShiftInPostgres cancels the shift, returns pre-attendance trainees t
       status: app.status,
       shiftId: app.shift_id,
       inviteGroupId: app.invite_group_id,
+      queueJoinedAt: app.queue_joined_at,
       venueId: app.venue_id,
       groupLink: app.group_link,
       candidateReport: app.candidate_report,
@@ -5569,6 +5644,7 @@ test('cancelShiftInPostgres cancels the shift, returns pre-attendance trainees t
         status: 'queue',
         shiftId: null,
         inviteGroupId: null,
+        queueJoinedAt: now.toISOString(),
         venueId: null,
         groupLink: '',
         candidateReport: false,
@@ -5580,6 +5656,7 @@ test('cancelShiftInPostgres cancels the shift, returns pre-attendance trainees t
         status: 'queue',
         shiftId: null,
         inviteGroupId: null,
+        queueJoinedAt: now.toISOString(),
         venueId: null,
         groupLink: '',
         candidateReport: false,

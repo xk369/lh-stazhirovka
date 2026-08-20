@@ -6,10 +6,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Last Updated
 
-- Date: 2026-08-05
-- Agent task: merge the latest production queue-assignment features into the
-  PostgreSQL migration branch, keep production untouched, and document the
-  candidate-to-internship schema for the future interview mini app.
+- Date: 2026-08-20
+- Agent task: finalize the PostgreSQL candidate/interview foundation and
+  production queue-order migration details, keep production untouched, and keep
+  the internship migration branch test-green.
 
 ## Active Context
 
@@ -26,7 +26,7 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - PR status: draft, not merged.
 - Migration execution plan: `docs/MIGRATION_EXECUTION_PLAN.md`
 - Current migration progress: 95% overall / 100% no-prod backend
-  implementation.
+  implementation plus candidate/interview schema foundation.
 
 ## Migration Staging
 
@@ -42,8 +42,9 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
   dedicated PostgreSQL database, and cannot send real Telegram messages.
 - Current staging commit: `bae4e07`.
 - Local migration branch now also contains the newer production queue-assignment
-  flow after merging `origin/main`; migration staging has not yet been refreshed
-  to this local state.
+  flow, `applications.queue_joined_at` queue ordering, and the
+  candidate/interview PostgreSQL foundation; migration staging has not yet been
+  refreshed to this local state.
 - Fresh production snapshot imported into staging PostgreSQL on 2026-07-30:
   16 shifts, 83 applications, 37 invite groups, 39 invite-group members and
   25 mentor reports. Status parity: `queue=44`, `invited=2`, `noshow=12`,
@@ -175,9 +176,43 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Added `scripts/postgres-assignment-offer-write-smoke.js` and wired it into
   `npm run test:postgres` after `assign_shift`.
 - Published the branch and opened draft PR #3.
+- Added `db/migrations/002_candidate_interviews.sql` with
+  `candidate_profiles`, `interview_slots`, `interview_participants`,
+  `candidate_resource_deliveries`, `candidate_link_clicks`, `candidate_events`
+  and nullable interview links on `notifications`.
+- Added `applications.candidate_profile_id` so internship applications can
+  attach to the same person who came from sobes.
+- Hardened candidate identity rules: PostgreSQL now keeps weak-field matches in
+  `candidate_identity_review_items`, while import/runtime code only links
+  profiles automatically by stable `telegram_user_id`; ФИО, phone and username
+  stay search/manual-review signals.
+- Added `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md` with production
+  go/no-go gates, backup inventory, rollback levels and post-cutover
+  observation checks. This is documentation for the future approved cutover,
+  not permission to deploy.
+- Updated JSON import and demo reset planning so existing internship
+  applications create/link candidate profiles without changing legacy parity.
+- Updated `upsert_trainee_application` so new PostgreSQL trainee applications
+  upsert a shared candidate profile by Telegram ID.
+- Added `applications.queue_joined_at` to the migration target and wired it
+  through JSON import, PostgreSQL read reconstruction, trainee/recruiter write
+  commands and the recruiter queue UI sorting path. Queue timestamps are set
+  when a candidate enters/re-enters queue, preserved while they stay in queue,
+  and cleared when they leave queue.
 
 ## Current Checks
 
+- 2026-08-20: `npm test` passed, 315/315 tests. `git diff --check` passed.
+  `npm run test:postgres` passed outside the sandbox: migrations 001/002,
+  internship JSON import + parity, sobes JSON import and every PostgreSQL
+  write/runtime smoke passed. Production, migration staging and live Telegram
+  were not touched.
+- 2026-08-13: `npm test` passed, 310/310 tests after adding the
+  candidate/interview migration layer, safe identity rules and
+  `candidate_identity_review_items`. `npm run test:postgres` passed outside the
+  sandbox. The PostgreSQL gate applied `001_initial.sql` and
+  `002_candidate_interviews.sql`, imported JSON with `candidate_profiles=2`,
+  verified parity and passed every write/runtime smoke.
 - 2026-08-05: `npm test` passed, 309/309 tests after merging the latest
   production queue-assignment features into the PostgreSQL migration branch and
   adding PostgreSQL schema/import/read/write/contract coverage for
@@ -748,7 +783,15 @@ Known doc rule:
    accept/decline/expiry and withdrawal back to queue.
 8. For UI QA that needs Telegram identity, use signed test `initData` or a
    local harness; do not change the production bot WebApp URL.
-9. Only after staging writable QA passes should we plan a production cutover
+9. During migration staging, import current sobes JSON after the internship
+   JSON with `npm run db:import-interviews-json -- --source ...`; verify
+   `interview_slots`, `interview_participants`, `candidate_resource_deliveries`,
+   `candidate_link_clicks`, `candidate_events` and
+   `candidate_identity_review_items`.
+10. After staging QA, map the sobes MVP runtime commands onto
+   `candidate_profiles`, `interview_slots`, `interview_participants`,
+   `candidate_resource_deliveries` and `notifications`.
+11. Only after staging writable QA passes should we plan a production cutover
    window and rollback path.
 
 ## Current Runtime-Wiring Notes
@@ -770,6 +813,14 @@ Known doc rule:
   PostgreSQL smoke, but it has not been deployed to migration staging yet.
 - PostgreSQL notification worker exists and is covered by unit + dry-run
   PostgreSQL smoke, but no live worker is enabled anywhere.
+- PostgreSQL `candidate_profiles` is now the shared identity layer for sobes
+  and internships. `applications` links to it with `candidate_profile_id`;
+  interview-specific state must go into `interview_*` tables, not into
+  internship shifts.
+- Sobes JSON import now has a dedicated `db:import-interviews-json` path. It
+  imports current `5/5` material progress, reuses profiles only by stable
+  Telegram ID, writes weak-field matches to `candidate_identity_review_items`
+  and is covered by `npm test` plus `npm run test:postgres`.
 
 ## Do Not Forget
 

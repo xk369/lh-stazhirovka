@@ -69,6 +69,7 @@ export async function readBookingStateFromPostgres(client) {
         status,
         recruiter_comment,
         recruiter_queue_comment,
+        queue_joined_at,
         venue_id,
         group_link,
         candidate_report,
@@ -185,6 +186,7 @@ export async function readBookingStateFromPostgres(client) {
         status: row.status,
         comment: row.recruiter_comment,
         recruiterQueueComment: row.recruiter_queue_comment,
+        queueJoinedAt: timestampText(row.queue_joined_at),
         assignmentOffer: row.status === 'queue'
           ? activeOfferByApplicationLegacyId.get(
             legacyId(row.legacy_id, 'applications.legacy_id')

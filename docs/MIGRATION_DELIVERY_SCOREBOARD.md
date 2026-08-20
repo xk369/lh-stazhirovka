@@ -8,19 +8,56 @@
 
 - Общий прогресс по полному migration plan: 95%.
 - Готовность backend implementation в `migration/postgres-foundation`: 100%
-  для no-prod/staging cutover rehearsal.
+  для no-prod/staging cutover rehearsal; candidate/interview schema foundation
+  integrated for the future sobes app.
 - Production: не трогаем.
 - Migration base: `migration/postgres-foundation`.
 - Текущий stage: staging-only writable runtime enabled at `bae4e07`; локальная
-  ветка дополнительно догнала свежий production queue-assignment flow, но
-  migration staging еще нужно обновить, переимпортировать и прогнать QA заново.
-- New assignment-offer PostgreSQL smoke is wired into `npm run test:postgres`;
-  local sandbox run is blocked by PostgreSQL shared memory, so outside-sandbox or
-  migration-staging pass is still required before cutover.
+  ветка дополнительно содержит свежий production queue-assignment flow и
+  `002_candidate_interviews.sql`, но migration staging еще нужно обновить,
+  переимпортировать и прогнать QA заново.
+- Candidate/interview PostgreSQL foundation is covered by `npm test` and
+  `npm run test:postgres`; sandboxed local Postgres remains blocked by macOS
+  shared memory, so the gate must run outside-sandbox or on migration staging.
+- Queue ordering is now part of the migration target:
+  `applications.queue_joined_at` is imported from production JSON, exposed by
+  the PostgreSQL reader, preserved while an application remains in `queue`, set
+  when candidates return to queue and cleared when they leave queue.
+- Production cutover/rollback runbook is drafted in
+  `docs/PRODUCTION_CUTOVER_ROLLBACK_RUNBOOK.md`; it must be rehearsed on
+  migration staging before any production switch.
 
 ## Что Уже Интегрировано В Base
 
 - PostgreSQL schema/import/read-only parity.
+- Candidate/interview foundation:
+  - `candidate_profiles` is the shared person layer from sobes to internship;
+  - automatic identity linking uses only stable `telegram_user_id`; phone,
+    full name and username are search/review signals, not merge keys;
+  - `candidate_identity_review_items` stores potential weak-field matches for
+    manual review without merging candidate histories;
+  - `applications.candidate_profile_id` links internship applications to that
+    person;
+  - `applications.queue_joined_at` preserves the production queue order for
+    preliminary candidates and is covered by unit + real PostgreSQL smoke;
+  - `interview_slots` stores Moscow-time interview dates/venues and blocks
+    duplicate active date+time rows;
+  - `interview_participants` stores waitlist, booking, confirmation,
+    attendance, refusal-after-interview and registration/resource stages;
+  - `candidate_resource_deliveries`, `candidate_link_clicks` and
+    `candidate_events` cover resource progress, link tracking and audit;
+  - JSON import creates candidate profiles for existing applications while
+    preserving legacy state parity;
+  - `npm run db:import-interviews-json` imports sobes JSON into the shared
+    candidate/interview tables after the internship JSON import;
+  - sobes import reuses profiles only by stable `telegram_user_id`, creates
+    weak-field manual review rows and rejects multiple active interview rows for
+    one profile;
+  - resource delivery schema now matches the current `5/5` material chain:
+    `registration_bot`, `staff_bot`, `unattested_group`, `helper_bot`,
+    `self_employment`;
+  - new PostgreSQL trainee application writes upsert the shared profile by
+    Telegram ID.
 - Migration staging с `BOOKING_STORAGE_MODE=postgres`, dedicated PostgreSQL
   volume and `TELEGRAM_DELIVERY_MODE=dry_run`.
 - Telegram dry-run delivery gateway.
@@ -39,6 +76,8 @@
     client-supplied payload;
   - enforces queue-only trainee writes: new self-registration creates or updates
     `status='queue'` with `shift_id IS NULL`;
+  - sets `queue_joined_at` for newly queued applications and preserves it while
+    the same application remains in queue;
   - rejects updates to another trainee's application;
   - rejects updates once the application has progressed beyond `pending` or
     `queue`; repeat application after `failed`/`noshow` should use the existing
@@ -90,8 +129,8 @@
   - trainee-owned token response through `/api/assignment-offer/respond`;
   - accepts `accept` and `decline` decisions without `baseVersion`;
   - `accept` marks the offer `accepted`, sets application `status='confirmed'`,
-    attaches `shift_id`, clears `recruiter_queue_comment` and cancels other
-    active offers for that application;
+    attaches `shift_id`, clears `recruiter_queue_comment`/`queue_joined_at`
+    and cancels other active offers for that application;
   - `decline` marks the offer `declined`, keeps the application in `queue` and
     releases the held seat;
   - expired/unavailable responses are handled stably and return enough snapshot
@@ -101,11 +140,13 @@
   - system/internal scheduler command;
   - locks active offers whose `expires_at` has passed;
   - marks offers `expired`, moves still-queue applications to `queue_expired`,
-    clears queue comments and releases held seats;
+    clears queue comments/queue timestamps and releases held seats;
   - wired into `scripts/postgres-assignment-offer-write-smoke.js`.
 - `withdraw_confirmed_assignment` writable PostgreSQL command:
   - trainee-owned command before attendance/final stages;
   - returns own `confirmed`/`invited` application to `queue`;
+  - stamps `queue_joined_at` at the withdrawal time so the returned candidate
+    re-enters the queue in the correct order;
   - cleans shift/group/venue/report delivery fields and active offers;
   - returns a recruiter notification target for the direct Telegram delivery
     gateway;
@@ -228,6 +269,7 @@
   - accepts only pre-attendance statuses:
     `pending`, `confirmed`, `invited`;
   - returns the application to preliminary queue with `status=queue`;
+  - stamps `queue_joined_at` when the candidate re-enters queue;
   - clears shift, invite group, venue, group link, candidate report and mentor
     result/delivery fields on the application;
   - removes the application from `invite_group_members`;
@@ -253,6 +295,7 @@
   - cancels the shift with `open=false`, `canceled=true` and `canceled_at`;
   - returns only pre-attendance applications (`pending`, `confirmed`,
     `invited`) to preliminary queue;
+  - stamps `queue_joined_at` for all affected candidates at cancellation time;
   - leaves post-attendance applications (`feedback`, `passed`, `failed`,
     `noshow`) attached for history/result visibility, matching JSON runtime
     behavior;
@@ -315,6 +358,8 @@
   - rejects post-attendance/final statuses so mentor results and history are not
     silently erased;
   - returns the application to preliminary queue with `status='queue'`;
+  - preserves `queue_joined_at` for an already-queue application and stamps it
+    for candidates returning from another pre-attendance status;
   - clears shift, invite group, venue, group link, candidate-report and mentor
     result/delivery fields;
   - removes the application from `invite_group_members`;
@@ -458,7 +503,8 @@
 write layer или покрыты отдельным writable runtime path. Notification worker,
 dry-run processing и staging-only writable runtime wiring тоже реализованы.
 Следующая работа: обновить только migration staging, импортировать свежий
-production snapshot и пройти full role QA/rehearsal с queue assignment flow.
+production snapshot и пройти full role QA/rehearsal с queue assignment flow и
+новым candidate/interview schema layer.
 
 ## Runtime-Wiring Blockers
 
@@ -486,6 +532,8 @@ Claude: paused/exhausted. If Claude is reintroduced, give it only a scoped
 staging-QA or docs-verification task, not production runtime work.
 
 Codex: continue from `migration/postgres-foundation`; next recommended slice is
-commit/push the final no-prod writable runtime layer, deploy it only to
-migration staging with dry-run Telegram, rerun full role QA and keep a
-plan-vs-implementation audit before any production cutover discussion.
+deploy this candidate/interview import layer only to migration staging with
+dry-run Telegram, import fresh production internship JSON plus current sobes
+JSON into a clean PostgreSQL database, rerun full role QA and then map the sobes
+MVP runtime commands onto the new PostgreSQL tables before any production
+cutover discussion.

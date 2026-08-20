@@ -87,7 +87,7 @@ async function seedQueueState(seedIso) {
             id, legacy_id, shift_id, invite_group_id,
             trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
             name, phone, training, training_date, attempt, limits, status,
-            recruiter_comment, recruiter_queue_comment,
+            recruiter_comment, recruiter_queue_comment, queue_joined_at,
             venue_id, group_link, candidate_report, experience,
             mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
             mentor_decision, mentor_report_venue_id, mentor_report_venue,
@@ -99,7 +99,7 @@ async function seedQueueState(seedIso) {
             $1, $2, NULL, NULL,
             $4, $4, $5, '',
             $3, '+7 999 000-41-00', 'passed', '2026-09-20'::date, 'first', '', 'queue',
-            '', '',
+            '', '', $6,
             NULL, '', false, NULL,
             false, NULL, NULL,
             '', '', '',
@@ -186,6 +186,7 @@ try {
   const offeredAppA = state.applications.find(app => Number(app.id) === APP_A_LEGACY_ID);
   assert.equal(offeredAppA.status, 'queue');
   assert.equal(offeredAppA.shiftId, null);
+  assert.equal(offeredAppA.queueJoinedAt, '2026-07-29T19:00:00.000Z');
   assert.equal(offeredAppA.assignmentOffer.token, appAOffer.assignmentOffer.token);
 
   const messageResult = await recordAssignmentOfferMessageInPostgres({
@@ -222,6 +223,7 @@ try {
   assert.equal(acceptedAppA.status, 'confirmed');
   assert.equal(Number(acceptedAppA.shiftId), SHIFT_LEGACY_ID);
   assert.equal(acceptedAppA.recruiterQueueComment, '');
+  assert.equal(acceptedAppA.queueJoinedAt, '');
   assert.equal(acceptedAppA.assignmentOffer, null);
   assert.equal((await getOfferByApplication(APP_A_LEGACY_ID)).status, 'accepted');
 
@@ -240,6 +242,10 @@ try {
   assert.equal(declineResult.status, 'declined');
   assert.equal(declineResult.nextStatus, 'queue');
   assert.equal((await getOfferByApplication(APP_B_LEGACY_ID)).status, 'declined');
+  state = await currentState();
+  const declinedAppB = state.applications.find(app => Number(app.id) === APP_B_LEGACY_ID);
+  assert.equal(declinedAppB.status, 'queue');
+  assert.equal(declinedAppB.queueJoinedAt, '2026-07-29T19:00:00.000Z');
 
   await requestOffer(APP_C_LEGACY_ID, new Date('2026-07-29T19:22:00.000Z'));
   const expireResult = await expireAssignmentOffersInPostgres({
@@ -254,6 +260,7 @@ try {
   state = await currentState();
   const expiredAppC = state.applications.find(app => Number(app.id) === APP_C_LEGACY_ID);
   assert.equal(expiredAppC.status, 'queue_expired');
+  assert.equal(expiredAppC.queueJoinedAt, '');
   assert.equal(expiredAppC.assignmentOffer, null);
   assert.equal((await getOfferByApplication(APP_C_LEGACY_ID)).status, 'expired');
 
@@ -275,6 +282,7 @@ try {
   const withdrawnAppA = state.applications.find(app => Number(app.id) === APP_A_LEGACY_ID);
   assert.equal(withdrawnAppA.status, 'queue');
   assert.equal(withdrawnAppA.shiftId, null);
+  assert.equal(withdrawnAppA.queueJoinedAt, '2026-07-29T20:24:00.000Z');
 
   const eventResult = await pool.query(
     `

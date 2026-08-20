@@ -294,6 +294,49 @@ function changedTraineeProfileFields(previous, next) {
   });
 }
 
+function candidateStageFromApplicationStatus(status) {
+  const normalized = String(status || 'queue').trim() || 'queue';
+  return `internship_${normalized}`;
+}
+
+async function upsertCandidateProfileForTraineeApplication(client, application, nowIso) {
+  if (!application.telegramUserId) return null;
+
+  const result = await client.query(
+    `
+      INSERT INTO candidate_profiles (
+        id, telegram_user_id, telegram_chat_id, telegram_username,
+        full_name, phone, source, current_stage, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 'internship_application', $7, $8, $8)
+      ON CONFLICT (telegram_user_id) DO UPDATE
+        SET telegram_chat_id = COALESCE(NULLIF(EXCLUDED.telegram_chat_id, ''), candidate_profiles.telegram_chat_id),
+            telegram_username = COALESCE(NULLIF(EXCLUDED.telegram_username, ''), candidate_profiles.telegram_username),
+            full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), candidate_profiles.full_name),
+            phone = COALESCE(NULLIF(EXCLUDED.phone, ''), candidate_profiles.phone),
+            source = CASE
+              WHEN candidate_profiles.source = '' THEN EXCLUDED.source
+              ELSE candidate_profiles.source
+            END,
+            current_stage = EXCLUDED.current_stage,
+            updated_at = EXCLUDED.updated_at
+      RETURNING id
+    `,
+    [
+      randomUUID(),
+      application.telegramUserId,
+      application.telegramChatId || application.telegramUserId,
+      application.telegramUsername || '',
+      application.name,
+      application.phone,
+      candidateStageFromApplicationStatus(application.status),
+      nowIso
+    ]
+  );
+
+  return result.rows[0]?.id || null;
+}
+
 const RECRUITER_BACK_TO_PENDING_SOURCES = new Set(['confirmed', 'invited', 'feedback']);
 const SET_STATUS_TRANSITION_EVENTS = Object.freeze({
   'pending→confirmed': 'recruiter_confirmed',
@@ -596,11 +639,43 @@ async function clearBookingStateRows(client) {
   await client.query('DELETE FROM invite_group_members');
   await client.query('DELETE FROM invite_groups');
   await client.query('DELETE FROM applications');
+  await client.query('DELETE FROM candidate_identity_review_items');
+  await client.query(`
+    DELETE FROM candidate_profiles
+      WHERE NOT EXISTS (
+        SELECT 1 FROM applications
+         WHERE applications.candidate_profile_id = candidate_profiles.id
+      )
+        AND NOT EXISTS (
+          SELECT 1 FROM interview_participants
+           WHERE interview_participants.candidate_profile_id = candidate_profiles.id
+        )
+  `);
   await client.query('DELETE FROM shifts');
   return counts;
 }
 
 async function insertPlannedDemoRows(client, plan) {
+  for (const row of plan.candidateProfiles || []) {
+    await client.query(`
+      INSERT INTO candidate_profiles (
+        id, telegram_user_id, telegram_chat_id, telegram_username,
+        full_name, phone, source, current_stage, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
+      row.id,
+      row.telegramUserId,
+      row.telegramChatId,
+      row.telegramUsername,
+      row.fullName,
+      row.phone,
+      row.source,
+      row.currentStage,
+      row.createdAt,
+      row.updatedAt
+    ]);
+  }
+
   for (const row of plan.shifts) {
     await client.query(`
       INSERT INTO shifts (
@@ -622,10 +697,10 @@ async function insertPlannedDemoRows(client, plan) {
   for (const row of plan.applications) {
     await client.query(`
       INSERT INTO applications (
-        id, legacy_id, shift_id, invite_group_id,
+        id, legacy_id, candidate_profile_id, shift_id, invite_group_id,
         trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
         name, phone, training, training_date, attempt, limits, status,
-        recruiter_comment, recruiter_queue_comment,
+        recruiter_comment, recruiter_queue_comment, queue_joined_at,
         venue_id, group_link, candidate_report, experience,
         mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
         mentor_decision, mentor_report_venue_id, mentor_report_venue, mentor_report_loft,
@@ -633,20 +708,21 @@ async function insertPlannedDemoRows(client, plan) {
         mentor_comment_delivery_status, mentor_comment_delivery_error,
         created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4,
-        $5, $6, $7, $8,
-        $9, $10, $11, $12, $13, $14, $15,
-        $16, $17,
-        $18, $19, $20, $21,
-        $22, $23, $24,
-        $25, $26, $27, $28,
-        $29, $30, $31,
-        $32, $33,
-        $34, $35
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19,
+        $20, $21, $22, $23,
+        $24, $25, $26,
+        $27, $28, $29, $30,
+        $31, $32, $33,
+        $34, $35,
+        $36, $37
       )
     `, [
       row.id,
       row.legacyId,
+      row.candidateProfileId,
       row.shiftId,
       row.inviteGroupId,
       row.traineeTelegramUserId,
@@ -662,6 +738,7 @@ async function insertPlannedDemoRows(client, plan) {
       row.status,
       row.recruiterComment,
       row.recruiterQueueComment,
+      row.queueJoinedAt,
       row.venueId,
       row.groupLink,
       row.candidateReport,
@@ -944,6 +1021,14 @@ function shiftUpdatedAtAsString(value) {
   return value.toISOString();
 }
 
+function queueJoinedAtForTransition(existingApplication, nextStatus, nowIso) {
+  if (String(nextStatus || '') !== 'queue') return null;
+  if (String(existingApplication?.status || '') === 'queue') {
+    return shiftUpdatedAtAsString(existingApplication.queue_joined_at) || null;
+  }
+  return nowIso;
+}
+
 function escapeTelegramHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -1001,6 +1086,7 @@ function applicationSnapshotFromRow(row, overrides = {}) {
     groupLink: row.group_link || '',
     venueId: row.venue_id || null,
     recruiterQueueComment: row.recruiter_queue_comment || '',
+    queueJoinedAt: shiftUpdatedAtAsString(row.queue_joined_at),
     ...overrides
   };
 }
@@ -1529,7 +1615,8 @@ export async function upsertTraineeApplicationInPostgres({
               applications.attempt,
               applications.limits,
               applications.recruiter_comment,
-              applications.recruiter_queue_comment
+              applications.recruiter_queue_comment,
+              applications.queue_joined_at
          FROM applications
          LEFT JOIN shifts ON shifts.id = applications.shift_id
         WHERE applications.legacy_id = $1
@@ -1579,16 +1666,17 @@ export async function upsertTraineeApplicationInPostgres({
     const nextVersion = meta.version + 1;
     const shiftUuid = shift?.id ?? null;
     const trainingDate = application.trainingDate || null;
+    const candidateProfileId = await upsertCandidateProfileForTraineeApplication(client, application, nowIso);
     const eventRows = [];
 
     if (!existing) {
       const applicationId = randomUUID();
       await client.query(
         `INSERT INTO applications (
-            id, legacy_id, shift_id, invite_group_id,
+            id, legacy_id, candidate_profile_id, shift_id, invite_group_id,
             trainee_telegram_user_id, trainee_telegram_chat_id, telegram_username, telegram_code,
             name, phone, training, training_date, attempt, limits, status,
-            recruiter_comment, recruiter_queue_comment,
+            recruiter_comment, recruiter_queue_comment, queue_joined_at,
             venue_id, group_link, candidate_report, experience,
             mentor_report_received, mentor_report_at, mentor_reporter_telegram_user_id,
             mentor_decision, mentor_report_venue_id, mentor_report_venue,
@@ -1597,20 +1685,21 @@ export async function upsertTraineeApplicationInPostgres({
             created_at, updated_at
           )
           VALUES (
-            $1, $2, $3, NULL,
-            $4, $5, $6, $7,
-            $8, $9, $10, $11::date, $12, $13, $14,
-            $15, '',
+            $1, $2, $3, $4, NULL,
+            $5, $6, $7, $8,
+            $9, $10, $11, $12::date, $13, $14, $15,
+            $16, '', $17,
             NULL, '', false, NULL,
             false, NULL, NULL,
             '', '', '',
             '', '', '',
             NULL, NULL, '',
-            $16, $16
+            $18, $18
           )`,
         [
           applicationId,
           application.applicationLegacyId,
+          candidateProfileId,
           shiftUuid,
           application.telegramUserId,
           application.telegramChatId,
@@ -1624,6 +1713,7 @@ export async function upsertTraineeApplicationInPostgres({
           application.limits,
           application.status,
           application.comment,
+          queueJoinedAtForTransition(null, application.status, nowIso),
           nowIso
         ]
       );
@@ -1688,6 +1778,7 @@ export async function upsertTraineeApplicationInPostgres({
                 status = $12,
                 recruiter_comment = $13,
                 recruiter_queue_comment = CASE WHEN $12 = 'queue' THEN recruiter_queue_comment ELSE '' END,
+                queue_joined_at = $14,
                 venue_id = NULL,
                 group_link = '',
                 candidate_report = false,
@@ -1704,9 +1795,10 @@ export async function upsertTraineeApplicationInPostgres({
                 mentor_comment_sent_at = NULL,
                 mentor_comment_delivery_status = NULL,
                 mentor_comment_delivery_error = '',
-                updated_at = $14,
+                candidate_profile_id = $15,
+                updated_at = $16,
                 row_version = row_version + 1
-          WHERE id = $15`,
+          WHERE id = $17`,
         [
           shiftUuid,
           application.telegramUserId,
@@ -1721,6 +1813,8 @@ export async function upsertTraineeApplicationInPostgres({
           application.limits,
           application.status,
           application.comment,
+          queueJoinedAtForTransition(existing, application.status, nowIso),
+          candidateProfileId,
           nowIso,
           existing.id
         ]
@@ -2609,6 +2703,10 @@ export async function cancelShiftInPostgres({ pool, actor, command, now = new Da
             SET shift_id = NULL,
                 invite_group_id = NULL,
                 status = 'queue',
+                queue_joined_at = CASE
+                  WHEN status = 'queue' THEN queue_joined_at
+                  ELSE $1::timestamptz
+                END,
                 venue_id = NULL,
                 group_link = '',
                 candidate_report = false,
@@ -3093,7 +3191,7 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
     if (baseVersion !== meta.version) throw new PostgresCommandConflictError();
 
     const appResult = await client.query(
-      `SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience
+      `SELECT id, legacy_id, status, shift_id, invite_group_id, group_link, experience, queue_joined_at
          FROM applications
         WHERE legacy_id = $1
         FOR UPDATE`,
@@ -3144,10 +3242,17 @@ export async function setApplicationStatusInPostgres({ pool, actor, command, now
           SET status = $1,
               experience = $2,
               recruiter_queue_comment = CASE WHEN $1 = 'queue' THEN recruiter_queue_comment ELSE '' END,
-              updated_at = $3,
+              queue_joined_at = $3,
+              updated_at = $4,
               row_version = row_version + 1
-        WHERE id = $4`,
-      [nextStatus, nextExperience, nowIso, app.id]
+        WHERE id = $5`,
+      [
+        nextStatus,
+        nextExperience,
+        queueJoinedAtForTransition(app, nextStatus, nowIso),
+        nowIso,
+        app.id
+      ]
     );
     if (nextStatus !== 'queue') {
       await cancelActiveAssignmentOffers(client, { applicationUuid: app.id, nowIso });
@@ -3405,6 +3510,7 @@ export async function mentorReportResultInPostgres({
               mentor_comment_sent_at = NULL,
               mentor_comment_delivery_status = $10,
               mentor_comment_delivery_error = $11,
+              queue_joined_at = NULL,
               updated_at = $2,
               row_version = row_version + 1
         WHERE id = $12`,
@@ -3747,6 +3853,7 @@ export async function assignShiftInPostgres({ pool, actor, command, now = new Da
       `UPDATE applications
           SET shift_id = $1,
               status = $2,
+              queue_joined_at = NULL,
               recruiter_queue_comment = '',
               updated_at = $3,
               row_version = row_version + 1
@@ -4093,6 +4200,7 @@ export async function respondAssignmentOfferInPostgres({
               applications.name,
               applications.phone,
               applications.recruiter_queue_comment,
+              applications.queue_joined_at,
               applications.venue_id,
               applications.group_link,
               application_assignment_offers.id AS offer_id,
@@ -4145,6 +4253,7 @@ export async function respondAssignmentOfferInPostgres({
         `UPDATE applications
             SET status = 'queue_expired',
                 recruiter_queue_comment = '',
+                queue_joined_at = NULL,
                 updated_at = $1,
                 row_version = row_version + 1
           WHERE id = $2`,
@@ -4223,6 +4332,7 @@ export async function respondAssignmentOfferInPostgres({
               SET shift_id = $1,
                   status = 'confirmed',
                   recruiter_queue_comment = '',
+                  queue_joined_at = NULL,
                   updated_at = $2,
                   row_version = row_version + 1
             WHERE id = $3`,
@@ -4339,6 +4449,7 @@ export async function expireAssignmentOffersInPostgres({
               applications.name,
               applications.phone,
               applications.recruiter_queue_comment,
+              applications.queue_joined_at,
               applications.venue_id,
               applications.group_link,
               application_assignment_offers.id AS offer_id,
@@ -4383,6 +4494,7 @@ export async function expireAssignmentOffersInPostgres({
       `UPDATE applications
           SET status = 'queue_expired',
               recruiter_queue_comment = '',
+              queue_joined_at = NULL,
               updated_at = $1,
               row_version = row_version + 1
         WHERE id = ANY($2::uuid[])`,
@@ -4542,6 +4654,7 @@ export async function sendInvitesInPostgres({ pool, actor, command, now = new Da
               venue_id = $2,
               group_link = $3,
               recruiter_queue_comment = '',
+              queue_joined_at = NULL,
               updated_at = $4,
               row_version = row_version + 1
         WHERE id = ANY($5::uuid[])`,
@@ -4714,6 +4827,10 @@ export async function cancelInternshipInPostgres({ pool, actor, command, now = n
           SET shift_id = NULL,
               invite_group_id = NULL,
               status = 'queue',
+              queue_joined_at = CASE
+                WHEN status = 'queue' THEN queue_joined_at
+                ELSE $1::timestamptz
+              END,
               venue_id = NULL,
               group_link = '',
               candidate_report = false,
@@ -4944,6 +5061,10 @@ export async function withdrawConfirmedAssignmentInPostgres({
           SET shift_id = NULL,
               invite_group_id = NULL,
               status = 'queue',
+              queue_joined_at = CASE
+                WHEN status = 'queue' THEN queue_joined_at
+                ELSE $1::timestamptz
+              END,
               venue_id = NULL,
               group_link = '',
               candidate_report = false,
@@ -5150,6 +5271,10 @@ export async function returnToQueueInPostgres({ pool, actor, command, now = new 
           SET shift_id = NULL,
               invite_group_id = NULL,
               status = 'queue',
+              queue_joined_at = CASE
+                WHEN status = 'queue' THEN queue_joined_at
+                ELSE $1::timestamptz
+              END,
               venue_id = NULL,
               group_link = '',
               candidate_report = false,

@@ -8,6 +8,7 @@ const COMMAND_SOURCES = Object.freeze({
 
 const WRITE_TABLES = Object.freeze({
   STATE_META: 'booking_state_meta',
+  CANDIDATE_PROFILES: 'candidate_profiles',
   SHIFTS: 'shifts',
   APPLICATIONS: 'applications',
   APPLICATION_ASSIGNMENT_OFFERS: 'application_assignment_offers',
@@ -65,7 +66,7 @@ export const BOOKING_WRITE_COMMAND_CONTRACTS = Object.freeze({
   upsert_trainee_application: contract({
     action: 'upsert_trainee_application',
     actorRoles: ['trainee'],
-    writes: [...stateMetaAndEvents, WRITE_TABLES.APPLICATIONS],
+    writes: [...stateMetaAndEvents, WRITE_TABLES.CANDIDATE_PROFILES, WRITE_TABLES.APPLICATIONS],
     locks: [LOCK_SCOPES.STATE_META, LOCK_SCOPES.SHIFT, LOCK_SCOPES.APPLICATION],
     eventTypes: [
       'application_created',

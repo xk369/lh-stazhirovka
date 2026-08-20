@@ -466,7 +466,9 @@ Booking-state при этом не закрывает заявку и не ме�
 
 ## 11. Целевая PostgreSQL-схема миграции
 
-PostgreSQL-схема не создает отдельную hiring-базу. Центральный слой - `applications`: сначала это кандидат в очереди, затем та же запись получает дату, группу, отчеты и итог стажировки. Будущее мини-приложение для собеседований должно расширять этот кандидатский слой, а не дублировать людей в новой таблице с отдельной жизнью.
+PostgreSQL-схема не создает отдельную hiring-базу. Центральный слой человека - `candidate_profiles`: там живет Telegram/ФИО/телефон и общий этап кандидата. `interview_*` таблицы хранят путь собеседования, а `applications` остается стадией стажировки и ссылается на тот же профиль через `candidate_profile_id`.
+
+Важное правило безопасности данных: система не склеивает кандидатов автоматически по ФИО, телефону или `@username`. Эти поля нужны для поиска и ручной проверки. Автоматическая связь допускается только по стабильному `telegram_user_id`; все слабые совпадения должны попадать в ручной разбор через `candidate_identity_review_items`.
 
 ### Основные таблицы
 
@@ -476,6 +478,12 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `data_imports` | Журнал импортов JSON-снапшотов в пустую PostgreSQL-БД. |
 | `telegram_users` | Нормализованные Telegram-пользователи для будущего общего слоя идентичности. |
 | `recruiters` | Рекрутеры и их Telegram ID. |
+| `candidate_profiles` | Общий профиль человека от собеса до стажировки. |
+| `candidate_identity_review_items` | Очередь ручной проверки похожих профилей без автоматической склейки. |
+| `interview_slots` | Даты и площадки собеседований. |
+| `interview_participants` | Запись/лист ожидания/подтверждение/явка кандидата на собес. |
+| `candidate_resource_deliveries` | Пошаговая отправка материалов пришедшим кандидатам: 1/5, 2/5, 3/5, 4/5, 5/5. |
+| `candidate_link_clicks` | Фиксация переходов по отправленным ссылкам. |
 | `shifts` | Даты стажировок. |
 | `applications` | Главная сущность кандидата/стажера. |
 | `application_assignment_offers` | Ручные предложения даты от рекрутера с TTL и Telegram message refs. |
@@ -485,6 +493,7 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `mentor_report_topics` | Темы к повторению из отчета наставника. |
 | `notifications` | Durable outbox для Telegram-сообщений. |
 | `application_events` | PII-safe аудит действий по заявке/дате. |
+| `candidate_events` | PII-safe аудит действий до стадии стажировки. |
 
 ### `applications` в PostgreSQL
 
@@ -492,6 +501,7 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | --- | --- | --- |
 | `id` | `uuid primary key` | Внутренний устойчивый ID строки. |
 | `legacy_id` | `bigint unique` | Старый JSON `application.id`, сохраняется для parity, UI и миграционного чтения. |
+| `candidate_profile_id` | `uuid references candidate_profiles(id) on delete set null` | Связь заявки стажировки с общим профилем кандидата. |
 | `shift_id` | `uuid references shifts(id) on delete set null` | Дата стажировки после назначения. У кандидата в `queue` обычно `NULL`. |
 | `invite_group_id` | `uuid references invite_groups(id) on delete set null` | Рабочая группа после отправки приглашения. |
 | `trainee_telegram_user_id` | `text` | Владелец заявки для авторизации стажера. |
@@ -507,6 +517,7 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `status` | enum: `pending`, `queue`, `queue_expired`, `confirmed`, `invited`, `feedback`, `passed`, `failed`, `noshow` | Этап единой цепочки от кандидата до результата стажировки. |
 | `recruiter_comment` | `text not null default ''` | Внутренний комментарий по уже назначенной/исторической заявке. |
 | `recruiter_queue_comment` | `text not null default ''` | Внутренний комментарий рекрутера по кандидату в очереди; стажеру не отдается. |
+| `queue_joined_at` | `timestamptz` | Когда кандидат попал в предварительную очередь. Нужен для честного порядка: кто раньше встал, тот раньше получает предложение даты; очищается при уходе из `queue`. |
 | `venue_id` | `text` | Площадка после отправки рабочей группы. |
 | `group_link` | `text not null default ''` | Ссылка на рабочую группу, продублированная в заявке. |
 | `candidate_report` | `boolean not null default false` | Флаг отчета стажера. |
@@ -526,7 +537,36 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `row_version` | `bigint not null default 1` | Версия строки для будущих точечных конфликтов. |
 | `created_at`, `updated_at` | `timestamptz` | Служебные timestamps. |
 
-Индексы: `status`, `shift_id`, `trainee_telegram_user_id`, `telegram_username`, `lower(name)`.
+Индексы: `status`, `shift_id`, `candidate_profile_id`, `trainee_telegram_user_id`, `telegram_username`, `lower(name)`, а также частичный `applications(status, queue_joined_at)` для очереди.
+
+### Candidate/interview слой
+
+Этот слой нужен именно для нового мини-приложения собесов. Он не заменяет `applications`: кандидат сначала проходит собеседование, а после готовности к работе получает/создает `applications`-строку стажировки, связанную с тем же `candidate_profiles.id`.
+
+| Таблица | Ключевые поля и смысл |
+| --- | --- |
+| `candidate_profiles` | `telegram_user_id`, `telegram_chat_id`, `telegram_username`, `full_name`, `phone`, `source`, `current_stage`, timestamps. Это общий профиль человека и база для поиска по ФИО/телеге/телефону; слабые поля не используются для автоматической склейки. |
+| `candidate_identity_review_items` | `candidate_profile_id`, `matched_candidate_profile_id`, `signal_type`, `signal_value`, `status`, `resolution_note`, timestamps. Это список подозрительных совпадений, где рекрутер/разработчик руками решает: один человек или разные люди. |
+| `interview_slots` | `interview_date`, `interview_time`, `timezone='Europe/Moscow'`, `venue_id`, `venue_label`, `venue_address`, `seats`, `status`, `directions_material_id`, `template_cleared`, `completed_at`. Активные собесы уникальны по дате и времени, чтобы не появлялись дубли. |
+| `interview_participants` | `candidate_profile_id`, `interview_slot_id`, `waitlist_target_slot_id`, `status`, `candidate_layer_status`, `confirmation_status`, timestamps подтверждения, `attendance_status`, timestamps явки, `registration_status`, `resources_sent_at`, `left_after_interview_at`, `internship_stage`, `recruiter_note`. |
+| `candidate_resource_deliveries` | `resource_type`, `sequence_no`, `status`, `telegram_message_id`, `error`, `sent_at`. Хранит общий прогресс рассылки пришедшим кандидатам без дублирующих плашек в каждой карточке. |
+| `candidate_link_clicks` | `link_type`, `url`, `clicked_at`, `source`. Нужна для фиксации переходов, когда сам факт регистрации в чужом боте нельзя проверить напрямую. |
+| `candidate_events` | `candidate_profile_id`, `interview_slot_id`, `interview_participant_id`, `application_id`, `event_type`, `actor_type`, `payload`, `created_at`. Это аудит собесов до перехода в стажировку. |
+
+Основные статусы `interview_participants.status`: `waitlist`, `booked`, `confirmation_pending`, `confirmed`, `declined_before_interview`, `no_confirmation`, `attended`, `left_after_interview`, `no_show`, `registration_pending`, `registered`, `ready_for_internship`, `rejected`, `not_interested`.
+
+Материалы фиксируются шагами: `registration_bot`, `staff_bot`, `unattested_group`, `helper_bot`, `self_employment`. В UI это должно читаться как `1/5`, `2/5`, `3/5`, `4/5`, `5/5`, а не как отдельный статус в каждой карточке.
+
+Импорт существующего sobes JSON выполняется отдельной командой после импорта
+стажировок:
+
+```bash
+npm run db:import-interviews-json -- --source /absolute/path/to/interviews.json
+```
+
+Импорт переиспользует уже созданный `candidate_profiles` только по
+`telegram_user_id`. Совпадения по ФИО, телефону и username создают записи в
+`candidate_identity_review_items`, но не меняют связи автоматически.
 
 ### `application_assignment_offers`
 
@@ -562,8 +602,9 @@ PostgreSQL-схема не создает отдельную hiring-базу. Ц
 | `invite_group_members` | `invite_group_id`, `application_id`, `created_at`; composite primary key. |
 | `mentor_reports` | `application_id`, mentor identity, `result_status`, `decision`, score fields, venue/hall fields, comments/texts, `source`, `created_at`, `voided_at`. |
 | `mentor_report_topics` | `mentor_report_id`, `topic_order`, `title`, `created_at`. |
-| `notifications` | `application_id`, `mentor_report_id`, `type`, `chat_id`, `chat_target`, `text`, `parse_mode`, `status`, `telegram_message_id`, `error`, `idempotency_key`, retry timestamps/counters. |
+| `notifications` | `application_id`, `mentor_report_id`, `candidate_profile_id`, `interview_slot_id`, `interview_participant_id`, `type`, `chat_id`, `chat_target`, `text`, `parse_mode`, `status`, `telegram_message_id`, `error`, `idempotency_key`, retry timestamps/counters. |
 | `application_events` | `application_id`, `shift_id`, `event_type`, `actor_type`, `actor_telegram_user_id`, `payload jsonb`, `created_at`. |
+| `candidate_events` | `candidate_profile_id`, `interview_slot_id`, `interview_participant_id`, `application_id`, `event_type`, `actor_type`, `actor_telegram_user_id`, `payload jsonb`, `created_at`. |
 
 ## 12. Реестр и CSV-экспорт
 
@@ -602,11 +643,9 @@ CSV-поля:
 - полный чек-лист стажера;
 - полный чек-лист наставника по каждому пункту;
 - полный текст отчета наставника как отдельная сущность;
-- отдельная таблица пользователей;
 - отдельная таблица наставников;
-- SQL-связи/foreign keys на уровне базы.
 
-PostgreSQL migration target уже закрывает часть этих дыр: есть foreign keys, `application_events`, `mentor_reports`, `notifications` outbox и `application_assignment_offers.message_id` для запросов подтверждения даты. Но полноценный профиль пользователя, отдельная CRM по собеседованиям и полный чек-лист стажера/наставника пока не спроектированы как отдельные таблицы.
+PostgreSQL migration target уже закрывает часть этих дыр: есть foreign keys, `candidate_profiles`, `interview_*`, `candidate_events`, `application_events`, `mentor_reports`, `notifications` outbox и `application_assignment_offers.message_id`. Runtime собесов пока еще не переведен на этот PostgreSQL слой; это следующий интеграционный шаг после стабилизации схемы.
 
 ## 14. Практические правила для будущих правок
 
@@ -618,3 +657,4 @@ PostgreSQL migration target уже закрывает часть этих дыр
 6. Если действие отправляет Telegram-сообщение, сначала делать серверную валидацию state, потом отправку, чтобы не повторить баг со спамом отчетов.
 7. Если поле должно быть доступно рекруту, но не стажеру, проверять выдачу в `bookingStateForActor`.
 8. Если меняется структура state, обновлять этот документ и `docs/INTERNSHIP_WORKFLOW.md` в том же коммите.
+9. Если поле относится к собеседованию, сначала определить его владельца: личность кандидата в `candidate_profiles`, запись на конкретный собес в `interview_participants`, дата собеса в `interview_slots`, рассылка/клик в `candidate_resource_deliveries` или `candidate_link_clicks`.

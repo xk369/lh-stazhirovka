@@ -4,6 +4,8 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_SOURCE_PATH="${PROJECT_DIR}/test/fixtures/booking-state-postgres.json"
 SOURCE_PATH="${1:-${DEFAULT_SOURCE_PATH}}"
+DEFAULT_INTERVIEW_SOURCE_PATH="${PROJECT_DIR}/test/fixtures/interview-state-postgres.json"
+INTERVIEW_SOURCE_PATH="${INTERVIEW_SOURCE_PATH:-${DEFAULT_INTERVIEW_SOURCE_PATH}}"
 PG_TEST_PORT="${PG_TEST_PORT:-35439}"
 PG_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/loft-internship-pg.XXXXXX")"
 PG_DATA_DIR="${PG_TEST_DIR}/data"
@@ -36,6 +38,8 @@ DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:import-json -- --source "${SOURCE_PATH}"
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   npm run db:verify-parity -- --source "${SOURCE_PATH}"
+DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  npm run db:import-interviews-json -- --source "${INTERVIEW_SOURCE_PATH}"
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable npm run db:migrate
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
   PG_READONLY_TEST_PORT="$((PG_TEST_PORT + 1))" \
@@ -51,6 +55,18 @@ if [[ "${SOURCE_PATH}" == "${DEFAULT_SOURCE_PATH}" ]]; then
       (SELECT count(*) FROM mentor_reports),
       (SELECT count(*) FROM application_events);
   " | grep -qx "1|2|1|2|1|2"
+fi
+
+if [[ "${INTERVIEW_SOURCE_PATH}" == "${DEFAULT_INTERVIEW_SOURCE_PATH}" ]]; then
+  psql "${PG_URL}" -v ON_ERROR_STOP=1 -Atc "
+    SELECT
+      (SELECT count(*) FROM candidate_profiles),
+      (SELECT count(*) FROM interview_slots),
+      (SELECT count(*) FROM interview_participants),
+      (SELECT count(*) FROM candidate_resource_deliveries),
+      (SELECT count(*) FROM candidate_link_clicks),
+      (SELECT count(*) FROM candidate_identity_review_items);
+  " | grep -qx "3|1|2|5|1|4"
 fi
 
 DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
@@ -105,4 +121,13 @@ if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
 fi
 
 grep -q "PostgreSQL import target is not empty" "${PG_TEST_DIR}/second-import.log"
+
+if DATABASE_URL="${PG_URL}" POSTGRES_SSL_MODE=disable \
+  npm run db:import-interviews-json -- --source "${INTERVIEW_SOURCE_PATH}" \
+  >"${PG_TEST_DIR}/second-interview-import.log" 2>&1; then
+  echo "Second interview JSON import unexpectedly succeeded." >&2
+  exit 1
+fi
+
+grep -q "Interview JSON source checksum was already imported" "${PG_TEST_DIR}/second-interview-import.log"
 echo "PostgreSQL foundation integration test passed."

@@ -3269,6 +3269,7 @@
         mentorCommentDeliveryStatus: app.mentorCommentDeliveryStatus || "",
         mentorCommentDeliveryError: app.mentorCommentDeliveryError || "",
         recruiterQueueComment: app.recruiterQueueComment || "",
+        queueJoinedAt: app.queueJoinedAt || "",
         assignmentOffer: app.assignmentOffer && typeof app.assignmentOffer === "object" ? {
           token: app.assignmentOffer.token || "",
           shiftId: app.assignmentOffer.shiftId ?? null,
@@ -4383,6 +4384,7 @@
         app.telegramUserId,
         app.telegramChatId,
         app.phone,
+        app.queueJoinedAt,
         app.trainingDate,
         trainingNames[app.training],
         attemptNames[app.attempt],
@@ -4413,6 +4415,17 @@
       ].filter(Boolean).join(" ").toLowerCase();
     }
 
+    function parseQueueTimestamp(value) {
+      const time = Date.parse(value || "");
+      return Number.isFinite(time) ? time : null;
+    }
+
+    function queueSortTimestamp(app) {
+      return parseQueueTimestamp(app.queueJoinedAt)
+        ?? parseQueueTimestamp(app.createdAt)
+        ?? Number(app.id || Number.MAX_SAFE_INTEGER);
+    }
+
     function filteredQueueApplications(queue) {
       const query = queueSearch.trim().toLowerCase();
       const items = query
@@ -4424,6 +4437,9 @@
         const leftOrder = leftGroup >= 0 ? leftGroup : queuePriorityGroups.length;
         const rightOrder = rightGroup >= 0 ? rightGroup : queuePriorityGroups.length;
         if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        const leftQueuedAt = queueSortTimestamp(left);
+        const rightQueuedAt = queueSortTimestamp(right);
+        if (leftQueuedAt !== rightQueuedAt) return leftQueuedAt - rightQueuedAt;
         return String(left.name || "").localeCompare(String(right.name || ""), "ru");
       });
     }

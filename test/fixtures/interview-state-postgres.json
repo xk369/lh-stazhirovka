@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 3,
+  "version": 5,
+  "updatedAt": "2026-08-13T19:00:00.000Z",
+  "settings": {},
+  "slots": [
+    {
+      "id": "sobes-slot-001",
+      "title": "Sobesedovanie LOFT HALL",
+      "date": "2026-08-13",
+      "time": "12:00",
+      "timezone": "Europe/Moscow",
+      "venueId": "loft23",
+      "venueLabel": "LOFT#2/3",
+      "venueAddress": "ul. Leninskaya Sloboda, 26s11",
+      "seats": 4,
+      "status": "completed",
+      "directionsMaterialId": "loft_23_route",
+      "bookingText": "Short booking text",
+      "completedAt": "2026-08-13T14:00:00.000Z",
+      "createdAt": "2026-08-10T09:00:00.000Z",
+      "updatedAt": "2026-08-13T14:00:00.000Z"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "sobes-cand-900",
+      "telegramId": "900",
+      "telegram": "@passed_trainee",
+      "name": "Passed Trainee",
+      "phone": "+7 999 111-22-33",
+      "source": "sobes_mvp",
+      "status": "attended",
+      "candidateLayerStatus": "resources_sent",
+      "interviewSlotId": "sobes-slot-001",
+      "confirmationStatus": "confirmed",
+      "confirmedAt": "2026-08-12T21:05:00.000Z",
+      "attendanceStatus": "arrived",
+      "attendanceMarkedAt": "2026-08-13T12:03:00.000Z",
+      "registrationStatus": "materials_sent",
+      "resourcesSentAt": "2026-08-13T12:30:00.000Z",
+      "resourceStepsSent": [
+        { "type": "registration_bot", "sentAt": "2026-08-13T12:30:00.000Z" },
+        { "type": "staff_bot", "sentAt": "2026-08-13T12:31:00.000Z" },
+        { "type": "unattested_group", "sentAt": "2026-08-13T12:32:00.000Z" },
+        { "type": "helper_bot", "sentAt": "2026-08-13T12:33:00.000Z" },
+        { "type": "self_employment", "sentAt": "2026-08-13T12:34:00.000Z" }
+      ],
+      "linkClicks": [
+        {
+          "linkType": "registration_bot",
+          "url": "https://t.me/LoftHallRegistrationBot",
+          "clickedAt": "2026-08-13T12:40:00.000Z"
+        }
+      ],
+      "createdAt": "2026-08-10T10:00:00.000Z",
+      "updatedAt": "2026-08-13T12:34:00.000Z"
+    },
+    {
+      "id": "sobes-cand-weak",
+      "telegramId": "",
+      "telegram": "@waiting_trainee",
+      "name": "Waiting Trainee",
+      "phone": "+7 999 444-55-66",
+      "source": "sobes_mvp",
+      "status": "no_show",
+      "candidateLayerStatus": "interview_no_show",
+      "interviewSlotId": "sobes-slot-001",
+      "confirmationStatus": "confirmed",
+      "attendanceStatus": "no_show",
+      "attendanceMarkedAt": "2026-08-13T12:30:00.000Z",
+      "registrationStatus": "not_started",
+      "createdAt": "2026-08-12T10:00:00.000Z",
+      "updatedAt": "2026-08-13T12:30:00.000Z"
+    }
+  ],
+  "notifications": [],
+  "events": [],
+  "stats": {}
+}
