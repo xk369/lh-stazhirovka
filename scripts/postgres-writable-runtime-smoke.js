@@ -11,6 +11,19 @@ const botToken = '123456789:test_token_long_enough';
 const baseUrl = `http://127.0.0.1:${port}`;
 const traineeReportText = 'Тестовый отчёт стажёра через writable Postgres runtime.';
 
+function dateValueInMoscow(date) {
+  const parts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function telegramInitData(user) {
   const params = new URLSearchParams({
     auth_date: String(Math.floor(Date.now() / 1000)),
@@ -82,6 +95,7 @@ try {
   assert.equal(health.telegramDeliveryMode, 'dry_run');
   assert.equal(health.bookingStorageMode, 'postgres');
   assert.equal(health.bookingStorageWritable, true);
+  const writableShiftDate = dateValueInMoscow(new Date(Date.now() + 7 * 86_400_000));
 
   const recruiterInitData = telegramInitData({
     id: 1,
@@ -107,15 +121,15 @@ try {
       initData: recruiterInitData,
       action: 'create_shift',
       baseVersion: stateBefore.body.state.version,
-      date: '2026-08-20',
+      date: writableShiftDate,
       seats: 4
     })
   });
   assert.equal(createShiftResult.response.status, 200);
   assert.equal(createShiftResult.body.ok, true);
-  assert.equal(createShiftResult.body.result.date, '2026-08-20');
+  assert.equal(createShiftResult.body.result.date, writableShiftDate);
   assert.equal(createShiftResult.body.state.version, stateBefore.body.state.version + 1);
-  assert.ok(createShiftResult.body.state.shifts.some(shift => shift.date === '2026-08-20'));
+  assert.ok(createShiftResult.body.state.shifts.some(shift => shift.date === writableShiftDate));
 
   const reportResult = await jsonRequest('/api/report', {
     method: 'POST',

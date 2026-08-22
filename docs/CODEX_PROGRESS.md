@@ -6,10 +6,10 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 
 ## Last Updated
 
-- Date: 2026-08-20
-- Agent task: complete the PostgreSQL production cutover for the internship
-  center, preserve rollback backups and keep the candidate/interview foundation
-  ready for sobes integration.
+- Date: 2026-08-22
+- Agent task: audit production Telegram delivery after PostgreSQL cutover,
+  flush stuck mentor report group outbox rows and enable the live notification
+  worker without sending stale personal trainee backlog.
 
 ## Active Context
 
@@ -86,6 +86,14 @@ passwords, raw production data, trainee PII dumps or private `.env` values here.
 - Health after switch:
   `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true`,
   `TELEGRAM_DELIVERY_MODE=live`.
+- 2026-08-22 audit found production reports were queued but not delivered
+  because the live notification worker was not running. Three pending
+  `mentor_report` rows for `MENTOR_CHAT_ID` were manually sent to the mentor
+  report group and marked `sent`; personal stale backlog remained protected.
+- Production Compose now includes `loft-internship-notification-worker`.
+  `NOTIFICATION_WORKER_CREATED_AFTER` should be set on production before the
+  first worker start so old personal trainee rows remain pending for manual
+  review instead of being sent late.
 
 ## Completed In This Migration Branch
 
@@ -860,8 +868,10 @@ Known doc rule:
   booking-state version or change candidate/application status.
 - PostgreSQL writable runtime mode exists, is covered by unit + PostgreSQL
   smoke, and is deployed to migration staging at `b1710f7`.
-- PostgreSQL notification worker exists and is covered by unit + dry-run
-  PostgreSQL smoke, but no live worker is enabled anywhere.
+- PostgreSQL notification worker exists, is covered by unit + dry-run
+  PostgreSQL smoke, and is required in production PostgreSQL mode. If queued
+  Telegram messages stop arriving, check `docker compose ps`, worker logs and
+  the `notifications` table before changing report logic.
 - PostgreSQL `candidate_profiles` is now the shared identity layer for sobes
   and internships. `applications` links to it with `candidate_profile_id`;
   interview-specific state must go into `interview_*` tables, not into
@@ -874,7 +884,8 @@ Known doc rule:
 ## Do Not Forget
 
 - Do not merge PR #3 into `main` until the user approves.
-- Do not deploy migration branch to production.
+- Production currently runs `migration/postgres-foundation`; do not deploy
+  unreviewed migration feature branches to production.
 - Do not enable live Telegram delivery in staging.
 - Do not import over a non-empty PostgreSQL staging database.
 - Do not add mentor manual-entry behavior to production unless explicitly

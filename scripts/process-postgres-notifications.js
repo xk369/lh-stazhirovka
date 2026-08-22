@@ -23,7 +23,8 @@ try {
     botToken: String(process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '').trim(),
     limit: numericEnv('NOTIFICATION_WORKER_LIMIT', 20),
     maxAttempts: numericEnv('NOTIFICATION_WORKER_MAX_ATTEMPTS', 3),
-    retryDelayMs: numericEnv('NOTIFICATION_WORKER_RETRY_DELAY_MS', 60_000)
+    retryDelayMs: numericEnv('NOTIFICATION_WORKER_RETRY_DELAY_MS', 60_000),
+    createdAfter: process.env.NOTIFICATION_WORKER_CREATED_AFTER || null
   });
   console.log(JSON.stringify({
     ok: true,

@@ -47,9 +47,11 @@ function fakeNotificationPool(initialRows = []) {
       if (/WITH next_notifications AS/i.test(sql)) {
         const nowIso = params[0];
         const limit = Number(params[1]);
+        const createdAfter = params[2] || null;
         const claimed = rows
           .filter(row => row.status === 'pending')
           .filter(row => !row.next_attempt_at || String(row.next_attempt_at) <= nowIso)
+          .filter(row => !createdAfter || String(row.created_at) >= String(createdAfter))
           .sort((left, right) => (
             String(left.next_attempt_at || '').localeCompare(String(right.next_attempt_at || ''))
             || String(left.created_at).localeCompare(String(right.created_at))
@@ -139,6 +141,24 @@ test('claimPendingNotifications claims only due pending rows and marks them send
   assert.deepEqual(pool.rows.map(row => row.status), ['sending', 'sending', 'pending', 'failed']);
   assert.equal(pool.rows[0].attempt_count, 1);
   assert.equal(pool.rows[1].claimed_at, '2026-07-30T10:00:00.000Z');
+});
+
+test('claimPendingNotifications can ignore old backlog before a cutover timestamp', async () => {
+  const pool = fakeNotificationPool([
+    { id: 'old', created_at: '2026-07-30T09:59:59.000Z' },
+    { id: 'new', created_at: '2026-07-30T10:00:00.000Z' }
+  ]);
+
+  const claimed = await claimPendingNotifications({
+    pool,
+    limit: 10,
+    createdAfter: '2026-07-30T10:00:00.000Z',
+    now: new Date('2026-07-30T10:01:00.000Z')
+  });
+
+  assert.deepEqual(claimed.map(row => row.id), ['new']);
+  assert.equal(pool.rows[0].status, 'pending');
+  assert.equal(pool.rows[1].status, 'sending');
 });
 
 test('processPendingNotifications marks live delivery as sent', async () => {

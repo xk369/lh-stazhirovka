@@ -10,29 +10,32 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
 - Server: `roma@151.244.243.164`
 - Server path: `/opt/loft-hall-internship-unified`
 - Docker container: `loft-internship-unified`
+- Notification worker container: `loft-internship-notification-worker`
 - Host port: `127.0.0.1:3500 -> 3000`
 - To check the currently deployed commit: `cd /opt/loft-hall-internship-unified && git rev-parse --short HEAD`
-- Last verified deployed commit before Postgres roadmap was added: `9930db8`
+- Production now runs PostgreSQL storage:
+  `BOOKING_STORAGE_MODE=postgres`, `bookingStorageWritable=true`,
+  `TELEGRAM_DELIVERY_MODE=live`.
+- Telegram report delivery is asynchronous in PostgreSQL mode. `/api/report`
+  writes `notifications` outbox rows; the notification worker service must be
+  running or reports/status messages will stay `pending`.
+- During the 2026-08-22 worker enablement, old personal trainee backlog was
+  intentionally protected with `NOTIFICATION_WORKER_CREATED_AFTER` so stale
+  personal messages are not sent automatically. Mentor report group backlog was
+  manually flushed first.
 
 ## Current Migration Work
 
 - Local worktree:
   `Helper_bot/loft_hall_internship_unified_migration_integrate`
 - Branch: `migration/postgres-foundation`
-- This branch is not deployed to production.
-- Production still reads and writes only `data/db.json`.
-- PostgreSQL schema/import/runtime tools are isolated and require an explicit
-  `DATABASE_URL`.
-- `BOOKING_STORAGE_MODE=json` is the production-safe default.
-  `postgres_readonly` is allowed for read-only migration staging and rejects
-  writes with `503 BOOKING_STORAGE_READ_ONLY`.
-- `postgres` is now implemented for migration staging only: `/api/state` and
-  `/api/report` route through the PostgreSQL command adapter and the
-  `notifications` outbox; `/api/telegram/link` also routes through the
-  PostgreSQL command adapter in writable Postgres mode for old/unlinked
-  application identity binding. It must be combined with
-  `TELEGRAM_DELIVERY_MODE=dry_run` until production cutover is explicitly
-  planned.
+- This branch is the current production branch after the approved PostgreSQL
+  cutover. Do not assume production is on `main` or JSON storage.
+- PostgreSQL schema/import/runtime tools require an explicit `DATABASE_URL`.
+- `BOOKING_STORAGE_MODE=json` remains the local fallback default.
+  `postgres_readonly` rejects writes with `503 BOOKING_STORAGE_READ_ONLY`.
+  `postgres` routes `/api/state`, `/api/report` and `/api/telegram/link`
+  through the PostgreSQL command adapter and `notifications` outbox.
 - Current migration-staging Compose forces `BOOKING_STORAGE_MODE=postgres`,
   `TELEGRAM_DELIVERY_MODE=dry_run`, `TELEGRAM_POLLING=no` and
   `SUPPRESS_TRAINEE_NOTIFICATIONS=yes`.
@@ -81,9 +84,8 @@ This file is a compact handoff for future Codex turns. It is not a secret store.
   queue-assignment features and PostgreSQL support for
   `application_assignment_offers`; migration staging is still at `bae4e07`
   until explicitly refreshed.
-- Current migration progress is 95% overall. The remaining 5% is intentionally
-  reserved for explicit production cutover and observation; do not claim 100%
-  while production still runs JSON.
+- Current migration progress is 100% for the internship production cutover, but
+  operational fixes must keep the outbox worker running and monitored.
 
 ## Staging / Manual Copy
 
@@ -158,6 +160,8 @@ Report routing is server-side only. Do not hardcode chat ids in HTML.
   layer for `/api/state`, `/api/report` and `/api/telegram/link`.
 - `src/postgres/notification-worker.js` - PostgreSQL outbox processor for
   `notifications`.
+- `scripts/run-postgres-notification-worker.js` - long-running worker process
+  used by the production Compose worker service.
 - `src/booking-state-events.js` - plans application audit events from current/next booking state.
 - `src/postgres/write-application-events.js` - writes planned audit events into PostgreSQL `application_events`.
 - `deploy/docker-compose.migration-staging.yml` - отдельные app/PostgreSQL-контейнеры для read-only migration staging.
@@ -194,7 +198,8 @@ Server deploy shape:
 ```bash
 cd /opt/loft-hall-internship-unified
 git fetch origin
-git merge --ff-only origin/main
+git merge --ff-only origin/migration/postgres-foundation
 docker compose up -d --build
 curl -fsS http://127.0.0.1:3500/api/health
+docker compose ps
 ```

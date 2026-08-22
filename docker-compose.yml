@@ -13,6 +13,19 @@ services:
       - default
       - loft-hall-internship
 
+  loft-internship-notification-worker:
+    build: .
+    container_name: loft-internship-notification-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["node", "scripts/run-postgres-notification-worker.js"]
+    volumes:
+      - ./data:/app/data
+    networks:
+      - default
+      - loft-hall-internship
+
 networks:
   loft-hall-internship:
     external: true

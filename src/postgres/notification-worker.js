@@ -29,6 +29,15 @@ function normalizeRetryDelayMs(value) {
   return delay;
 }
 
+function normalizeCreatedAfter(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('notification worker createdAfter must be a valid date.');
+  }
+  return date.toISOString();
+}
+
 function sanitizeDeliveryError(error) {
   return String(error?.message || error || 'telegram_delivery_failed')
     .replace(/\s+/g, ' ')
@@ -40,9 +49,15 @@ function nextRetryDate(now, retryDelayMs) {
   return new Date(now.getTime() + retryDelayMs);
 }
 
-export async function claimPendingNotifications({ pool, limit = DEFAULT_LIMIT, now = new Date() }) {
+export async function claimPendingNotifications({
+  pool,
+  limit = DEFAULT_LIMIT,
+  now = new Date(),
+  createdAfter = null
+}) {
   const normalizedLimit = normalizeLimit(limit);
   const nowIso = now.toISOString();
+  const createdAfterIso = normalizeCreatedAfter(createdAfter);
 
   return runInPostgresTransaction(pool, async client => {
     const result = await client.query(
@@ -52,6 +67,7 @@ export async function claimPendingNotifications({ pool, limit = DEFAULT_LIMIT, n
             FROM notifications
            WHERE status = 'pending'
              AND (next_attempt_at IS NULL OR next_attempt_at <= $1)
+             AND ($3::timestamptz IS NULL OR created_at >= $3::timestamptz)
            ORDER BY next_attempt_at NULLS FIRST, created_at, id
            LIMIT $2
            FOR UPDATE SKIP LOCKED
@@ -80,7 +96,7 @@ export async function claimPendingNotifications({ pool, limit = DEFAULT_LIMIT, n
                   created_at,
                   updated_at
       `,
-      [nowIso, normalizedLimit]
+      [nowIso, normalizedLimit, createdAfterIso]
     );
     return result.rows;
   });
@@ -157,6 +173,7 @@ export async function processPendingNotifications({
   limit = DEFAULT_LIMIT,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
+  createdAfter = null,
   now = new Date(),
   logger = console
 }) {
@@ -166,7 +183,7 @@ export async function processPendingNotifications({
   }
   const normalizedMaxAttempts = normalizeMaxAttempts(maxAttempts);
   const normalizedRetryDelayMs = normalizeRetryDelayMs(retryDelayMs);
-  const claimed = await claimPendingNotifications({ pool, limit, now });
+  const claimed = await claimPendingNotifications({ pool, limit, now, createdAfter });
   const summary = {
     claimed: claimed.length,
     sent: 0,

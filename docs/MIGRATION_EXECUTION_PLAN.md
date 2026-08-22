@@ -14,8 +14,9 @@
 -> итог стажеру -> реестр -> архив/история
 ```
 
-Production до финального cutover не трогать. Все рискованные изменения сначала
-проходят через отдельный migration staging:
+Production уже переключен на PostgreSQL после отдельного согласования cutover.
+Все новые рискованные изменения по-прежнему сначала проходят через отдельный
+migration staging:
 
 - URL: `https://stazhirovka-migration.151.244.243.164.sslip.io`
 - режим Telegram: `TELEGRAM_DELIVERY_MODE=dry_run`
@@ -23,7 +24,7 @@ Production до финального cutover не трогать. Все рис�
 
 ## Общий прогресс
 
-Текущий общий прогресс: **95%**.
+Текущий общий прогресс: **100%**.
 
 Правило оценки: процент считается от полной цели, где 100% означает, что
 production работает на PostgreSQL, цепочка проверена, уведомления отслеживаются
@@ -46,7 +47,7 @@ production работает на PostgreSQL, цепочка проверена, 
 | 5. Writable Postgres command layer | 20% | готово, core staging QA пройден | Все команды `/api/state` работают транзакционно в Postgres staging без JSON-записи. |
 | 6. Notifications/outbox | 15% | готово, worker dry-run проверен | Telegram-сообщения создаются как записи `notifications`, worker отправляет и сохраняет результат. |
 | 7. Full staging QA и rehearsal | 10% | core no-prod QA пройден | Пройден полный путь всех ролей на свежей копии prod-данных, без реальных уведомлений. |
-| 8. Production cutover и наблюдение | 5% | не начато | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован. |
+| 8. Production cutover и наблюдение | 5% | готово, требуется поддерживать worker | Prod переключен на Postgres, smoke-check пройден, rollback готов и задокументирован, outbox worker включен. |
 
 ## Детальный Порядок
 
