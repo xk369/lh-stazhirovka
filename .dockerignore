@@ -3,6 +3,7 @@ npm-debug.log
 .env
 .env.*
 data
+backups
 .git
 .gitignore
 test
